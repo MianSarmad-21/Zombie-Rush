@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -11,6 +12,10 @@ namespace ZombieRush.Core
 
         public GameState State { get; private set; } = GameState.Playing;
 
+        /// Seconds to show the "YOU DIED" screen before the level reloads and
+        /// wave progress resets back to Wave 1.
+        public float autoRestartDelay = 2.5f;
+
         void Awake()
         {
             if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -20,7 +25,17 @@ namespace ZombieRush.Core
         void OnEnable() => GameEvents.OnPlayerDied += HandlePlayerDied;
         void OnDisable() => GameEvents.OnPlayerDied -= HandlePlayerDied;
 
-        void HandlePlayerDied() => SetState(GameState.GameOver);
+        void HandlePlayerDied()
+        {
+            SetState(GameState.GameOver);
+            StartCoroutine(AutoRestartRoutine());
+        }
+
+        IEnumerator AutoRestartRoutine()
+        {
+            yield return new WaitForSeconds(autoRestartDelay);
+            RestartLevel();
+        }
 
         void SetState(GameState newState)
         {

@@ -8,6 +8,8 @@ namespace ZombieRush.Player
     [RequireComponent(typeof(PlayerInventory))]
     public class PlayerWeaponController : MonoBehaviour
     {
+        public static PlayerWeaponController Instance { get; private set; }
+
         public Camera playerCamera;
         public WeaponBase[] weapons;
 
@@ -16,12 +18,20 @@ namespace ZombieRush.Player
 
         void Awake()
         {
+            Instance = this;
+
             inventory = GetComponent<PlayerInventory>();
             foreach (var weapon in weapons)
                 weapon.Init(playerCamera, inventory);
+
+            UpdateWeaponVisibility();
         }
 
-        void Start() => RaiseCurrentWeaponChanged();
+        void Start()
+        {
+            RaiseCurrentWeaponChanged();
+            RaiseAmmoStatus();
+        }
 
         void Update()
         {
@@ -33,6 +43,7 @@ namespace ZombieRush.Player
                 if (Input.GetKeyDown(KeyCode.Alpha1 + i) && i != currentIndex)
                 {
                     currentIndex = i;
+                    UpdateWeaponVisibility();
                     RaiseCurrentWeaponChanged();
                 }
             }
@@ -42,6 +53,8 @@ namespace ZombieRush.Player
 
             if (Input.GetKeyDown(KeyCode.R))
                 weapons[currentIndex].TryReload();
+
+            RaiseAmmoStatus();
         }
 
         void RaiseCurrentWeaponChanged()
@@ -51,6 +64,36 @@ namespace ZombieRush.Player
             GameEvents.RaiseWeaponChanged(name);
         }
 
+        void RaiseAmmoStatus()
+        {
+            var weapon = CurrentWeapon;
+            if (weapon == null || weapon.data == null) return;
+
+            int reserve = inventory != null ? inventory.GetReserveAmmo(weapon.data) : 0;
+            GameEvents.RaiseAmmoChanged(weapon.CurrentMagazine, weapon.data.magazineSize, reserve, weapon.IsReloading);
+        }
+
         public WeaponBase CurrentWeapon => weapons != null && weapons.Length > 0 ? weapons[currentIndex] : null;
+
+        void UpdateWeaponVisibility()
+        {
+            if (weapons == null) return;
+            for (int i = 0; i < weapons.Length; i++)
+            {
+                if (weapons[i] != null) weapons[i].gameObject.SetActive(i == currentIndex);
+            }
+        }
+
+        /// Called by a zombie's ammo drop on death - tops up reserve ammo for
+        /// every weapon the player is carrying, not just the equipped one.
+        public void AddReserveAmmoToAll(int amount)
+        {
+            if (inventory == null || weapons == null) return;
+            foreach (var weapon in weapons)
+            {
+                if (weapon != null && weapon.data != null) inventory.AddReserveAmmo(weapon.data, amount);
+            }
+            RaiseAmmoStatus();
+        }
     }
 }

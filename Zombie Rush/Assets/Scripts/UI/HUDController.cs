@@ -4,7 +4,7 @@ using ZombieRush.Core;
 
 namespace ZombieRush.UI
 {
-    /// Pure presentation: listens to GameEvents only. Health bar only for now.
+    /// Pure presentation: listens to GameEvents only.
     public class HUDController : MonoBehaviour
     {
         [Header("Health")]
@@ -12,13 +12,52 @@ namespace ZombieRush.UI
         public Text healthText;
         public float healthSmoothSpeed = 2f;
 
+        [Header("Weapon")]
+        public Text weaponNameText;
+        public Text ammoCurrentText;
+        public Text ammoMaxText;
+
+        [Header("Zone")]
+        public Text zoneText;
+
+        [Header("Coins")]
+        public Text coinsText;
+        public Text requiredCoinsText;
+
         float targetHealth01 = 1f;
         float displayedHealth01 = 1f;
 
-        void OnEnable() => GameEvents.OnPlayerHealthChanged += HandleHealthChanged;
-        void OnDisable() => GameEvents.OnPlayerHealthChanged -= HandleHealthChanged;
+        void OnEnable()
+        {
+            GameEvents.OnPlayerHealthChanged += HandleHealthChanged;
+            GameEvents.OnWeaponChanged += HandleWeaponChanged;
+            GameEvents.OnAmmoChanged += HandleAmmoChanged;
+            GameEvents.OnCoinsChanged += HandleCoinsChanged;
+        }
 
-        void Start() => ApplyBarFill(healthFill, displayedHealth01);
+        void OnDisable()
+        {
+            GameEvents.OnPlayerHealthChanged -= HandleHealthChanged;
+            GameEvents.OnWeaponChanged -= HandleWeaponChanged;
+            GameEvents.OnAmmoChanged -= HandleAmmoChanged;
+            GameEvents.OnCoinsChanged -= HandleCoinsChanged;
+        }
+
+        void Start()
+        {
+            ApplyBarFill(healthFill, displayedHealth01);
+
+            if (ZoneManager.Instance != null)
+            {
+                ZoneManager.Instance.OnZoneChanged += HandleZoneChanged;
+                HandleZoneChanged(ZoneManager.Instance.CurrentRadius, ZoneManager.Instance.maxRadius);
+            }
+        }
+
+        void OnDestroy()
+        {
+            if (ZoneManager.Instance != null) ZoneManager.Instance.OnZoneChanged -= HandleZoneChanged;
+        }
 
         void Update()
         {
@@ -30,6 +69,38 @@ namespace ZombieRush.UI
         {
             if (healthText != null) healthText.text = $"HP: {Mathf.RoundToInt(current)} / {Mathf.RoundToInt(max)}";
             targetHealth01 = max > 0 ? current / max : 0f;
+        }
+
+        void HandleWeaponChanged(string weaponName)
+        {
+            if (weaponNameText != null) weaponNameText.text = weaponName.ToUpperInvariant();
+        }
+
+        void HandleAmmoChanged(int magazine, int magazineSize, int reserve, bool isReloading)
+        {
+            if (ammoCurrentText != null) ammoCurrentText.text = isReloading ? "..." : magazine.ToString();
+            if (ammoMaxText != null) ammoMaxText.text = $"/ {magazineSize}   ({reserve})";
+        }
+
+        void HandleZoneChanged(float current, float max)
+        {
+            bool isFull = current >= max;
+            int cost = ZoneManager.Instance != null ? ZoneManager.Instance.expandCost : 0;
+
+            if (zoneText != null)
+            {
+                zoneText.text = isFull ? $"ZONE: {current:0}m (FULL)" : $"ZONE: {current:0}m / {max:0}m";
+            }
+
+            if (requiredCoinsText != null)
+            {
+                requiredCoinsText.text = isFull ? "" : $"EXPAND (P): {cost} COINS";
+            }
+        }
+
+        void HandleCoinsChanged(int total)
+        {
+            if (coinsText != null) coinsText.text = $"COINS: {total}";
         }
 
         /// Resizes the bar by moving its RectTransform's right anchor rather than relying
