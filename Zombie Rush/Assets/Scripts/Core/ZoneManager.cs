@@ -41,7 +41,7 @@ namespace ZombieRush.Core
 
         void Start()
         {
-            var playerGo = GameObject.FindGameObjectWithTag("Player");
+            var playerGo = GameObject.FindGameObjectWithTag(GameTags.Player);
             if (playerGo != null)
             {
                 player = playerGo.transform;

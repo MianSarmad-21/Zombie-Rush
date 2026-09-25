@@ -45,9 +45,18 @@ namespace ZombieRush.Zombie
             if (IsDead) return;
 
             CurrentHealth -= amount;
+            if (CurrentHealth > 0f) TriggerIfPresent(ZombieAnimatorUtil.HitParam);
             BloodEffect.Spawn(transform.position + Vector3.up * 1f);
 
             if (CurrentHealth <= 0f) Die();
+        }
+
+        bool TriggerIfPresent(string trigger)
+        {
+            var animator = GetComponentInChildren<Animator>();
+            if (!ZombieAnimatorUtil.Has(animator, trigger, AnimatorControllerParameterType.Trigger)) return false;
+            animator.SetTrigger(trigger);
+            return true;
         }
 
         void Die()
@@ -62,7 +71,7 @@ namespace ZombieRush.Zombie
             foreach (var col in GetComponents<Collider>()) col.enabled = false;
 
             BloodEffect.Spawn(transform.position + Vector3.up * 0.8f);
-            StartCoroutine(CollapseRoutine());
+            if (!TriggerIfPresent(ZombieAnimatorUtil.DieParam)) StartCoroutine(CollapseRoutine());
 
             if (Random.value <= coinDropChance && PlayerCurrency.Instance != null)
                 PlayerCurrency.Instance.AddCoins(Random.Range(minCoins, maxCoins + 1));
@@ -70,7 +79,7 @@ namespace ZombieRush.Zombie
             if (Random.value <= ammoDropChance && PlayerWeaponController.Instance != null)
                 PlayerWeaponController.Instance.AddReserveAmmoToAll(Random.Range(minAmmo, maxAmmo + 1));
 
-            Destroy(gameObject, 3f);
+            Destroy(gameObject, 4f);
         }
 
         /// No ragdoll - just tips the zombie over and sinks it slightly, so a kill

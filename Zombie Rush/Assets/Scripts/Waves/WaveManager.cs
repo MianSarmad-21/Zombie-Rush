@@ -5,6 +5,14 @@ using ZombieRush.Zombie;
 
 namespace ZombieRush.Waves
 {
+    [System.Serializable]
+    public class ZombieSpawnEntry
+    {
+        public GameObject prefab;
+        public int minWave = 1;
+        [Min(0f)] public float weight = 1f;
+    }
+
     /// Drives the wave loop: announce -> spawn zombies over time from underground
     /// spawn points -> wait for them all to die -> breather -> next wave.
     public class WaveManager : MonoBehaviour
@@ -12,7 +20,8 @@ namespace ZombieRush.Waves
         public static WaveManager Instance { get; private set; }
 
         [Header("Spawning")]
-        public GameObject zombiePrefab;
+        [Tooltip("Zombie types; each is eligible from its minWave and picked by weight.")]
+        public ZombieSpawnEntry[] zombieTypes;
         public Transform[] spawnPoints;
         public int baseZombiesPerWave = 5;
         public int extraZombiesPerWave = 2;
@@ -84,9 +93,10 @@ namespace ZombieRush.Waves
 
         void SpawnZombieAt(Transform point)
         {
-            if (zombiePrefab == null) return;
+            var prefab = PickZombiePrefab();
+            if (prefab == null) return;
 
-            var zombieGo = Instantiate(zombiePrefab, point.position, Quaternion.identity);
+            var zombieGo = Instantiate(prefab, point.position, Quaternion.identity);
 
             float multiplier = 1f + (CurrentWave - 1) * difficultyPerWave;
 
@@ -102,6 +112,25 @@ namespace ZombieRush.Waves
 
             var riser = zombieGo.AddComponent<ZombieSpawnRise>();
             riser.Init(point.position);
+        }
+
+        GameObject PickZombiePrefab()
+        {
+            if (zombieTypes == null) return null;
+
+            float total = 0f;
+            foreach (var t in zombieTypes)
+                if (t.prefab != null && CurrentWave >= t.minWave) total += t.weight;
+            if (total <= 0f) return null;
+
+            float roll = Random.value * total;
+            foreach (var t in zombieTypes)
+            {
+                if (t.prefab == null || CurrentWave < t.minWave) continue;
+                roll -= t.weight;
+                if (roll <= 0f) return t.prefab;
+            }
+            return null;
         }
 
         void HandleZombieDied(ZombieHealth zombie)

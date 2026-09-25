@@ -14,6 +14,9 @@ namespace ZombieRush.Player
         public WeaponBase[] weapons;
 
         int currentIndex;
+        int lastMag = -1, lastReserve = -1;
+        bool lastReloading;
+        WeaponBase lastWeapon;
         PlayerInventory inventory;
 
         void Awake()
@@ -70,7 +73,12 @@ namespace ZombieRush.Player
             if (weapon == null || weapon.data == null) return;
 
             int reserve = inventory != null ? inventory.GetReserveAmmo(weapon.data) : 0;
-            GameEvents.RaiseAmmoChanged(weapon.CurrentMagazine, weapon.data.magazineSize, reserve, weapon.IsReloading);
+            int mag = weapon.CurrentMagazine;
+            bool reloading = weapon.IsReloading;
+            if (weapon == lastWeapon && mag == lastMag && reserve == lastReserve && reloading == lastReloading) return;
+
+            lastWeapon = weapon; lastMag = mag; lastReserve = reserve; lastReloading = reloading;
+            GameEvents.RaiseAmmoChanged(mag, weapon.data.magazineSize, reserve, reloading);
         }
 
         public WeaponBase CurrentWeapon => weapons != null && weapons.Length > 0 ? weapons[currentIndex] : null;
