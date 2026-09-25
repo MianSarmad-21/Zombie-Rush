@@ -40,18 +40,22 @@ namespace ZombieRush.Zombie
 
         Vector3 avoidTangent;
         float avoidHoldTimer;
+        float nextProbeTime;
 
         float stuckCheckTimer;
         Vector3 positionAtLastCheck;
         float escapeTimer;
         Vector3 escapeDir;
 
+        Animator anim;
+        bool animResolved, hasSpeed, hasAttack;
+
         void Awake()
         {
             controller = GetComponent<CharacterController>();
             health = GetComponent<ZombieHealth>();
 
-            var playerGo = GameObject.FindGameObjectWithTag("Player");
+            var playerGo = GameObject.FindGameObjectWithTag(GameTags.Player);
             if (playerGo != null)
             {
                 player = playerGo.transform;
@@ -66,6 +70,8 @@ namespace ZombieRush.Zombie
             if (health.IsDead || player == null) return;
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
 
+            ResolveAnimator();
+
             float sightRange = config != null ? config.sightRange : 25f;
             Vector3 toPlayer = player.position - transform.position;
             toPlayer.y = 0f;
@@ -73,6 +79,7 @@ namespace ZombieRush.Zombie
 
             if (distance > sightRange)
             {
+                SetMoving(false);
                 ApplyGravityOnly();
                 return;
             }
@@ -84,9 +91,11 @@ namespace ZombieRush.Zombie
             {
                 FacePlayer(toPlayer);
                 ApplyGravityOnly();
+                SetMoving(false);
 
                 if (attackTimer <= 0f)
                 {
+                    if (hasAttack) anim.SetTrigger(ZombieAnimatorUtil.AttackParam);
                     attackTimer = config != null ? config.attackCooldown : 1.1f;
                     float baseDamage = config != null ? config.attackDamage : 12f;
                     playerHealth?.TakeDamage(baseDamage * difficultyMultiplier);
@@ -95,7 +104,11 @@ namespace ZombieRush.Zombie
             }
 
             // Chase, steering around anything in the way.
-            float speed = (config != null ? config.chaseSpeed : 3.5f) * Mathf.Min(difficultyMultiplier, 1.6f);
+            float runDistance = config != null ? config.runDistance : 0f;
+            bool running = runDistance <= 0f || distance <= runDistance;
+            float baseSpeed = config != null ? (running ? config.chaseSpeed : config.moveSpeed) : 3.5f;
+            float speed = baseSpeed * Mathf.Min(difficultyMultiplier, 1.6f);
+            SetMoving(true, running);
             Vector3 desired = toPlayer.normalized;
             Vector3 moveDir = ComputeMoveDirection(desired);
             FacePlayer(moveDir);
@@ -128,6 +141,9 @@ namespace ZombieRush.Zombie
                 return avoidTangent;
             }
 
+            if (Time.time < nextProbeTime) return desired;
+            nextProbeTime = Time.time + 0.08f + Random.value * 0.04f;
+
             Vector3 origin = transform.position + Vector3.up * 1f;
             if (Physics.SphereCast(origin, probeRadius, desired, out var hit, probeDistance, obstacleMask, QueryTriggerInteraction.Ignore)
                 && IsRealObstacle(hit.collider))
@@ -145,7 +161,7 @@ namespace ZombieRush.Zombie
 
         bool IsRealObstacle(Collider col)
         {
-            if (col.CompareTag("Player")) return false;
+            if (col.CompareTag(GameTags.Player)) return false;
             if (col.GetComponentInParent<ZombieHealth>() != null) return false;
             return true;
         }
@@ -170,6 +186,21 @@ namespace ZombieRush.Zombie
                 Vector3 randomDir = Quaternion.Euler(0f, Random.Range(60f, 300f), 0f) * currentMoveDir;
                 escapeDir = randomDir.normalized;
             }
+        }
+
+        void ResolveAnimator()
+        {
+            if (animResolved) return;
+            anim = GetComponentInChildren<Animator>();
+            if (anim == null || anim.runtimeAnimatorController == null) return;
+            animResolved = true;
+            hasSpeed = ZombieAnimatorUtil.Has(anim, ZombieAnimatorUtil.SpeedParam, AnimatorControllerParameterType.Float);
+            hasAttack = ZombieAnimatorUtil.Has(anim, ZombieAnimatorUtil.AttackParam, AnimatorControllerParameterType.Trigger);
+        }
+
+        void SetMoving(bool moving, bool running = true)
+        {
+            if (hasSpeed) anim.SetFloat(ZombieAnimatorUtil.SpeedParam, !moving ? 0f : (running ? 1f : 0.5f));
         }
 
         void FacePlayer(Vector3 dir)

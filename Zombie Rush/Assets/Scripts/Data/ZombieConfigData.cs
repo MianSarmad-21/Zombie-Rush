@@ -9,6 +9,8 @@ namespace ZombieRush.Data
         public float maxHealth = 60f;
         public float moveSpeed = 2.2f;
         public float chaseSpeed = 3.5f;
+        [Tooltip("Beyond this distance the zombie walks at moveSpeed, inside it runs at chaseSpeed. 0 = always run.")]
+        public float runDistance = 0f;
 
         [Header("Attack")]
         public float attackRange = 1.6f;

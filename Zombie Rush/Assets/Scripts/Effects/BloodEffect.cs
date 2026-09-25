@@ -1,16 +1,48 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ZombieRush.Effects
 {
-    /// A short-lived, fully code-driven blood burst - no imported VFX asset needed.
+    /// Pooled blood burst: particle systems are reused instead of created and
+    /// destroyed on every hit, which matters on mobile (shotgun = many hits/shot).
     public static class BloodEffect
     {
+        const int MaxPoolSize = 24;
+        const float BurstLifetime = 1.5f;
+
         static Material cachedMaterial;
+        static readonly List<ParticleSystem> pool = new List<ParticleSystem>();
 
         public static void Spawn(Vector3 position)
         {
+            var ps = GetFree();
+            if (ps == null) return;
+
+            ps.transform.position = position;
+            ps.gameObject.SetActive(true);
+            ps.Clear();
+            ps.Play();
+        }
+
+        static ParticleSystem GetFree()
+        {
+            for (int i = pool.Count - 1; i >= 0; i--)
+            {
+                if (pool[i] == null) { pool.RemoveAt(i); continue; }
+                if (!pool[i].isPlaying) return pool[i];
+            }
+
+            if (pool.Count >= MaxPoolSize) return null;
+
+            var ps = Create();
+            pool.Add(ps);
+            return ps;
+        }
+
+        static ParticleSystem Create()
+        {
             var go = new GameObject("BloodBurst");
-            go.transform.position = position;
+            Object.DontDestroyOnLoad(go);
 
             var ps = go.AddComponent<ParticleSystem>();
             var main = ps.main;
@@ -20,20 +52,20 @@ namespace ZombieRush.Effects
             main.startLifetime = 0.7f;
             main.gravityModifier = 2f;
             main.loop = false;
+            main.playOnAwake = false;
+            main.maxParticles = 32;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
 
             var emission = ps.emission;
             emission.rateOverTime = 0;
-            emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 16) });
+            emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 12) });
 
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Sphere;
             shape.radius = 0.12f;
 
-            var renderer = ps.GetComponent<ParticleSystemRenderer>();
-            renderer.material = GetMaterial();
-
-            Object.Destroy(go, 2f);
+            go.GetComponent<ParticleSystemRenderer>().material = GetMaterial();
+            return ps;
         }
 
         static Material GetMaterial()

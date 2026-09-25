@@ -12266,7 +12266,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 848eb8b61fdd4c05400cd8f02510573b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  zombiePrefab: {fileID: 100000001, guid: c5aee030cfd7f746b0d7527169839a04, type: 3}
+  zombieTypes:
+  - prefab: {fileID: 100000001, guid: c5aee030cfd7f746b0d7527169839a04, type: 3}
+    minWave: 1
+    weight: 3
+  - prefab: {fileID: 100000001, guid: aebb90a33bb7467a109467607607b5e5, type: 3}
+    minWave: 2
+    weight: 2
   spawnPoints:
   - {fileID: 995000032}
   - {fileID: 995000037}
