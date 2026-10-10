@@ -12,6 +12,8 @@ namespace ZombieRush.UI
         public Image healthFill;
         public Image healthTrail; // lags behind the fill to show how much was just lost
         public Text healthText;
+        public Image armorFill;
+        public Text armorText;
         public float trailDelay = 0.35f;
         public float trailSpeed = 0.9f;
 
@@ -35,6 +37,10 @@ namespace ZombieRush.UI
         public Text coinsText;
         public RectTransform coinsPunchTarget;
 
+        [Header("Kills")]
+        public Text killsText;
+        int kills;
+
         float health01 = 1f, trail01 = 1f, trailWait;
         float reloadElapsed, reloadDuration;
         bool reloading;
@@ -44,23 +50,27 @@ namespace ZombieRush.UI
         void Subscribe()
         {
             GameEvents.OnPlayerHealthChanged += HandleHealthChanged;
+            GameEvents.OnPlayerArmorChanged += HandleArmorChanged;
             GameEvents.OnAmmoChanged += HandleAmmoChanged;
             GameEvents.OnCoinsChanged += HandleCoinsChanged;
             GameEvents.OnZoneChanged += HandleZoneChanged;
             GameEvents.OnWaveAnnounced += HandleWaveAnnounced;
             GameEvents.OnZombiesRemainingChanged += HandleZombiesRemaining;
             GameEvents.OnWaveCompleted += HandleWaveCompleted;
+            GameEvents.OnZombieKilled += HandleZombieKilled;
         }
 
         void OnDestroy()
         {
             GameEvents.OnPlayerHealthChanged -= HandleHealthChanged;
+            GameEvents.OnPlayerArmorChanged -= HandleArmorChanged;
             GameEvents.OnAmmoChanged -= HandleAmmoChanged;
             GameEvents.OnCoinsChanged -= HandleCoinsChanged;
             GameEvents.OnZoneChanged -= HandleZoneChanged;
             GameEvents.OnWaveAnnounced -= HandleWaveAnnounced;
             GameEvents.OnZombiesRemainingChanged -= HandleZombiesRemaining;
             GameEvents.OnWaveCompleted -= HandleWaveCompleted;
+            GameEvents.OnZombieKilled -= HandleZombieKilled;
         }
 
         void Awake()
@@ -68,9 +78,17 @@ namespace ZombieRush.UI
             Subscribe(); // Awake/OnDestroy, not OnEnable/OnDisable: this component disables itself when idle.
             UITheme.SetBarFill(healthFill, 1f);
             UITheme.SetBarFill(healthTrail, 1f);
+            UITheme.SetBarFill(armorFill, 0f);
             if (reloadRoot != null) reloadRoot.SetActive(false);
             if (waveText != null) waveText.text = "WAVE -";
             if (zombiesLeftText != null) zombiesLeftText.text = "";
+            if (killsText != null) killsText.text = "0";
+        }
+
+        void HandleZombieKilled(ZombieKilledInfo info)
+        {
+            kills++;
+            if (killsText != null) killsText.text = kills.ToString();
         }
 
         void Update()
@@ -116,6 +134,12 @@ namespace ZombieRush.UI
             if (healthFill != null) healthFill.color = health01 <= 0.3f ? Color.Lerp(UITheme.Blood, Color.white, 0.15f) : UITheme.Blood;
             if (healthText != null) healthText.text = $"{Mathf.CeilToInt(current)} / {Mathf.RoundToInt(max)}";
             Wake();
+        }
+
+        void HandleArmorChanged(float current, float max)
+        {
+            UITheme.SetBarFill(armorFill, max > 0f ? current / max : 0f);
+            if (armorText != null) armorText.text = current > 0f ? Mathf.CeilToInt(current).ToString() : "";
         }
 
         void HandleAmmoChanged(AmmoInfo info)

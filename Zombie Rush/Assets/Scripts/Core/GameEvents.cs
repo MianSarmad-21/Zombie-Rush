@@ -35,6 +35,7 @@ namespace ZombieRush.Core
         public static event Action OnPlayerDied;
         public static event Action<AmmoInfo> OnAmmoChanged;
         public static event Action<int> OnCoinsChanged; // total coins
+        public static event Action<float, float> OnPlayerArmorChanged; // current, max
 
         // Combat
         public static event Action OnEnemyHit;
@@ -50,6 +51,11 @@ namespace ZombieRush.Core
         public static event Action<float, float, int> OnZoneChanged; // radius, max radius, expand cost
         public static event Action OnZoneExpandFailed;
 
+        // Safe base
+        public static event Action<bool> OnSafeBaseChanged; // local player is inside the base
+        public static event Action OnBattleStarted;          // first time a player steps out of the base
+        public static event Action<string, string> OnNotice; // short on-screen message: title, subtitle
+
         // Flow
         public static event Action<GameState> OnGameStateChanged;
 
@@ -57,6 +63,7 @@ namespace ZombieRush.Core
         public static void RaisePlayerDied() => OnPlayerDied?.Invoke();
         public static void RaiseAmmoChanged(AmmoInfo info) => OnAmmoChanged?.Invoke(info);
         public static void RaiseCoinsChanged(int total) => OnCoinsChanged?.Invoke(total);
+        public static void RaisePlayerArmorChanged(float current, float max) => OnPlayerArmorChanged?.Invoke(current, max);
 
         public static void RaiseEnemyHit() => OnEnemyHit?.Invoke();
         public static void RaiseZombieKilled(ZombieKilledInfo info) => OnZombieKilled?.Invoke(info);
@@ -68,6 +75,10 @@ namespace ZombieRush.Core
 
         public static void RaiseZoneChanged(float radius, float max, int cost) => OnZoneChanged?.Invoke(radius, max, cost);
         public static void RaiseZoneExpandFailed() => OnZoneExpandFailed?.Invoke();
+
+        public static void RaiseSafeBaseChanged(bool inside) => OnSafeBaseChanged?.Invoke(inside);
+        public static void RaiseBattleStarted() => OnBattleStarted?.Invoke();
+        public static void RaiseNotice(string title, string subtitle) => OnNotice?.Invoke(title, subtitle);
 
         public static void RaiseGameStateChanged(GameState state) => OnGameStateChanged?.Invoke(state);
     }

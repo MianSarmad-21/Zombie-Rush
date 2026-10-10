@@ -77,6 +77,9 @@ namespace ZombieRush.Waves
             if (!HasValidSetup()) yield break;
             yield return Prewarm();
 
+            // Players gear up in the safe base first; the fight starts when someone steps out.
+            while (SafeBase.Instance != null && !SafeBase.Instance.BattleStarted) yield return null;
+
             while (true)
             {
                 CurrentWave++;
@@ -85,7 +88,8 @@ namespace ZombieRush.Waves
                 GameEvents.RaiseWaveAnnounced(CurrentWave);
                 yield return new WaitForSeconds(announceDuration);
 
-                int count = baseZombiesPerWave + (CurrentWave - 1) * extraZombiesPerWave;
+                int players = PlayerCount;
+                int count = Mathf.CeilToInt((baseZombiesPerWave + (CurrentWave - 1) * extraZombiesPerWave) * Difficulty.ZombieCountMultiplier(players));
                 RemainingInWave = count;
                 GameEvents.RaiseWaveStarted(CurrentWave);
                 GameEvents.RaiseZombiesRemainingChanged(RemainingInWave);
@@ -115,7 +119,7 @@ namespace ZombieRush.Waves
                         break;
                     }
 
-                    if (spawned < count) yield return new WaitForSeconds(timeBetweenSpawns);
+                    if (spawned < count) yield return new WaitForSeconds(timeBetweenSpawns * Difficulty.SpawnIntervalMultiplier(players));
                 }
 
                 // Only zombies that actually spawned are counted, so this can't hang.
@@ -160,11 +164,19 @@ namespace ZombieRush.Waves
             var prefab = PickZombiePrefab();
             if (prefab == null) return false;
 
-            var zombie = pool.Get(prefab, point.position, Quaternion.identity);
+            // Each zombie gets its own checked spot around the pad, so a wave doesn't stack
+            // on one point and nobody surfaces inside a building or a walled-off pocket.
+            var spawnPos = point.position;
+            var zone = ZoneManager.Instance;
+            if (zone != null && ArenaSpawn.TryNear(point.position, zone.center, zone.CurrentRadius, PlayerPosition(zone.center), out var spot))
+                spawnPos = spot;
+
+            var zombie = pool.Get(prefab, spawnPos, Quaternion.identity);
             if (zombie == null) return false;
 
             float multiplier = 1f + (CurrentWave - 1) * difficultyPerWave;
-            zombie.ResetForSpawn(multiplier);
+            float healthMultiplier = multiplier * Difficulty.HealthMultiplier(PlayerCount);
+            zombie.ResetForSpawn(healthMultiplier);
 
             var ai = zombie.GetComponent<ZombieAI>();
             if (ai != null)
@@ -173,38 +185,55 @@ namespace ZombieRush.Waves
                 ai.alwaysHunt = true; // wave zombies may surface beyond sight range; they must never idle and stall the wave
             }
 
-            zombie.GetComponent<ZombieSpawnRise>().Begin(point.position);
+            zombie.GetComponent<ZombieSpawnRise>().Begin(spawnPos);
 
             AliveCount++;
             return true;
         }
 
         /// Spreads the spawn pads evenly around a ring (random rotation each call),
-        /// nudging each one inward until it lands on clear, open ground. Also used by
-        /// the editor "Merge Zones" tool to preview pad placement.
+        /// nudging each one inward until it lands on a good spawn spot (open sky, clear,
+        /// walkable route to the player - see ArenaSpawn); if its slice of the ring has
+        /// none, it searches the rest of the zone. Also used by the editor level tools.
         public void ArrangeSpawnPoints(Vector3 center, float radius)
         {
             if (spawnPoints == null || spawnPoints.Length == 0) return;
             float offset = Random.value * Mathf.PI * 2f;
             float slice = Mathf.PI * 2f / spawnPoints.Length;
+            var player = PlayerPosition(center);
 
             for (int i = 0; i < spawnPoints.Length; i++)
             {
                 var pad = spawnPoints[i];
                 if (pad == null) continue;
 
-                for (int attempt = 0; attempt < 12; attempt++)
+                for (int attempt = 0; attempt < 36; attempt++)
                 {
-                    float angle = offset + i * slice + (attempt % 3 - 1) * slice * 0.25f;
-                    float r = Mathf.Max(3f, radius - (attempt / 3) * 3f);
+                    float angle, r;
+                    if (attempt < 12)
+                    {
+                        angle = offset + i * slice + (attempt % 3 - 1) * slice * 0.25f;
+                        r = Mathf.Max(3f, radius - (attempt / 3) * 3f);
+                    }
+                    else
+                    {
+                        angle = Random.value * Mathf.PI * 2f;
+                        r = radius * Random.Range(0.45f, 1f);
+                    }
                     var probe = center + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * r;
-                    if (!ArenaGround.TryGround(probe, center.y, out var ground) || !ArenaGround.IsClear(ground, 0.6f)) continue;
+                    if (!ArenaSpawn.IsGoodSpawn(probe, center, player, out var ground)) continue;
 
                     pad.position = ground + Vector3.up * padHeightOffset;
                     break;
                 }
             }
         }
+
+        /// Players in the match (alive or not) - drives squad difficulty. Never less than 1.
+        static int PlayerCount => Mathf.Max(1, ZombieRush.Player.PlayerHealth.All.Count);
+
+        static Vector3 PlayerPosition(Vector3 fallback) =>
+            ZombieRush.Player.PlayerHealth.Instance != null ? ZombieRush.Player.PlayerHealth.Instance.transform.position : fallback;
 
         GameObject PickZombiePrefab()
         {

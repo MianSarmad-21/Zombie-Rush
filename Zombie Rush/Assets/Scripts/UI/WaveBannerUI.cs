@@ -15,12 +15,14 @@ namespace ZombieRush.UI
         public Text subtitleText;
         public Text detailText;
         public float incomingHold = 2.6f;
+        public float noticeHold = 2.4f;
         public float fadeSpeed = 5f;
 
         float holdTimer;
         float countdown;
         int lastCountdownShown = -1;
         float slam; // 1 -> 0 intro animation
+        bool showingWave;
 
         void Awake()
         {
@@ -33,24 +35,37 @@ namespace ZombieRush.UI
         {
             GameEvents.OnWaveAnnounced += HandleWaveAnnounced;
             GameEvents.OnWaveCompleted += HandleWaveCompleted;
+            GameEvents.OnNotice += HandleNotice;
         }
 
         void OnDestroy()
         {
             GameEvents.OnWaveAnnounced -= HandleWaveAnnounced;
             GameEvents.OnWaveCompleted -= HandleWaveCompleted;
+            GameEvents.OnNotice -= HandleNotice;
         }
 
         void HandleWaveAnnounced(int wave)
         {
             Show($"WAVE {wave}", "INCOMING", UITheme.Blood, incomingHold);
+            showingWave = true;
             countdown = 0f;
+            SetDetail("");
+        }
+
+        /// Short messages (safe base, pickups). Never covers a wave banner that is still showing.
+        void HandleNotice(string title, string subtitle)
+        {
+            if (enabled && holdTimer > 0f && showingWave) return;
+            Show(title, subtitle, UITheme.Cyan, noticeHold);
+            showingWave = false;
             SetDetail("");
         }
 
         void HandleWaveCompleted(int wave, float breather)
         {
             Show($"WAVE {wave}", "CLEARED", UITheme.Cyan, Mathf.Max(0.5f, breather - 0.25f));
+            showingWave = true;
             countdown = breather;
             lastCountdownShown = -1;
         }

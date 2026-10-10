@@ -11,8 +11,11 @@ namespace ZombieRush.Atmosphere
     public static class EnvironmentApplier
     {
         public const string ProfileResourcePath = "ZombieRush/Environment_Night";
+        public const string DayProfileResourcePath = "ZombieRush/Environment_Day";
 
-        static EnvironmentProfile profile;
+        const string MenuSceneName = "MainMenu";
+
+        static EnvironmentProfile night, day;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Register()
@@ -24,8 +27,10 @@ namespace ZombieRush.Atmosphere
         static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             if (mode != LoadSceneMode.Single) return;
+            if (Object.FindAnyObjectByType<KeepSceneEnvironment>() != null) return; // the map uses its own look
 
-            if (profile == null) profile = Resources.Load<EnvironmentProfile>(ProfileResourcePath);
+            // The menu keeps its own look; only gameplay follows the Day/Night choice.
+            var profile = scene.name == MenuSceneName ? Night() : Current();
             if (profile == null)
             {
                 Debug.LogWarning($"EnvironmentApplier: no profile at Resources/{ProfileResourcePath}; leaving the scene's own lighting.");
@@ -33,6 +38,23 @@ namespace ZombieRush.Atmosphere
             }
 
             Apply(profile);
+        }
+
+        /// The profile for the mode picked on the main menu (falls back to night if no day profile exists).
+        public static EnvironmentProfile Current()
+        {
+            if (ZombieRush.Core.GameSettings.TimeOfDay == ZombieRush.Core.TimeOfDay.Day)
+            {
+                if (day == null) day = Resources.Load<EnvironmentProfile>(DayProfileResourcePath);
+                if (day != null) return day;
+            }
+            return Night();
+        }
+
+        static EnvironmentProfile Night()
+        {
+            if (night == null) night = Resources.Load<EnvironmentProfile>(ProfileResourcePath);
+            return night;
         }
 
         public static void Apply(EnvironmentProfile p)

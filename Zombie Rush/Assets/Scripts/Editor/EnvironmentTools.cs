@@ -30,6 +30,12 @@ namespace ZombieRush.EditorTools
         [MenuItem("Zombie Rush/Environment/Apply Night Environment (open scene)", priority = 40)]
         public static void ApplyNight()
         {
+            if (Object.FindAnyObjectByType<ZombieRush.Atmosphere.KeepSceneEnvironment>() != null &&
+                !EditorUtility.DisplayDialog("Night Environment",
+                    "This scene uses the map pack's own sky, sun and post-processing. Applying night replaces that look.\n\nApply night anyway?",
+                    "Apply night", "Cancel"))
+                return;
+
             var sky = SetupSkyTexture();
             if (sky == null)
             {
@@ -88,6 +94,58 @@ namespace ZombieRush.EditorTools
             Undo.CollapseUndoOperations(group);
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
             Debug.Log("Zombie Rush: night environment applied (moonlit sky, moonlight, fog, post-processing). Save the scene.");
+        }
+
+        const string DaySkyMaterialPath = Folder + "/Sky_Day.mat";
+        const string DayProfilePath = "Assets/Resources/" + ZombieRush.Atmosphere.EnvironmentApplier.DayProfileResourcePath + ".asset";
+
+        /// Creates the profile used when DAY is picked on the "Select the mode" screen:
+        /// hazy overcast daylight (procedural sky, warm sun, grey-blue fog).
+        /// Safe to run again - it only fills in what's missing.
+        [MenuItem("Zombie Rush/Environment/Create Day Mode Profile", priority = 41)]
+        public static void CreateDayProfileMenu()
+        {
+            var p = EnsureDayProfile();
+            Selection.activeObject = p;
+            Debug.Log("Zombie Rush: day profile ready at " + DayProfilePath + ". Pick DAY on the main menu to play it.");
+        }
+
+        public static ZombieRush.Atmosphere.EnvironmentProfile EnsureDayProfile()
+        {
+            var profile = AssetDatabase.LoadAssetAtPath<ZombieRush.Atmosphere.EnvironmentProfile>(DayProfilePath);
+            if (profile != null) return profile;
+
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(DaySkyMaterialPath);
+            if (mat == null)
+            {
+                UIAssetGenerator.EnsureFolder(Folder);
+                mat = new Material(Shader.Find("Skybox/Procedural")) { name = "Sky_Day" };
+                mat.SetFloat("_SunSize", 0.035f);
+                mat.SetFloat("_SunSizeConvergence", 6f);
+                mat.SetFloat("_AtmosphereThickness", 1.15f);
+                mat.SetColor("_SkyTint", new Color(0.52f, 0.55f, 0.6f));
+                mat.SetColor("_GroundColor", new Color(0.36f, 0.35f, 0.33f));
+                mat.SetFloat("_Exposure", 1.05f);
+                AssetDatabase.CreateAsset(mat, DaySkyMaterialPath);
+            }
+
+            UIAssetGenerator.EnsureFolder(System.IO.Path.GetDirectoryName(DayProfilePath).Replace('\\', '/'));
+            profile = ScriptableObject.CreateInstance<ZombieRush.Atmosphere.EnvironmentProfile>();
+            profile.skybox = mat;
+            profile.ambientSky = new Color(0.52f, 0.58f, 0.68f);
+            profile.ambientEquator = new Color(0.4f, 0.4f, 0.39f);
+            profile.ambientGround = new Color(0.18f, 0.17f, 0.15f);
+            profile.reflectionIntensity = 0.9f;
+            profile.fogEnabled = true;
+            profile.fogColor = new Color(0.6f, 0.65f, 0.7f);
+            profile.fogDensity = 0.0075f;
+            profile.sunColor = new Color(1f, 0.94f, 0.84f);
+            profile.sunIntensity = 1.1f;
+            profile.sunEuler = new Vector3(42f, 215f, 0f);
+            profile.shadowStrength = 0.8f;
+            AssetDatabase.CreateAsset(profile, DayProfilePath);
+            AssetDatabase.SaveAssets();
+            return profile;
         }
 
         static Vector3 MoonDirection()
