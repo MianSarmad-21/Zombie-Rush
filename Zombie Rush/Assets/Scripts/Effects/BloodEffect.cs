@@ -8,10 +8,12 @@ namespace ZombieRush.Effects
     public static class BloodEffect
     {
         const int MaxPoolSize = 24;
-        const float BurstLifetime = 1.5f;
+        const string MaterialResourcePath = "ZombieRush/BloodParticle";
+        static readonly Color BloodColor = new Color(0.5f, 0.02f, 0.02f);
 
         static Material cachedMaterial;
         static readonly List<ParticleSystem> pool = new List<ParticleSystem>();
+        static int nextIndex;
 
         public static void Spawn(Vector3 position)
         {
@@ -19,17 +21,21 @@ namespace ZombieRush.Effects
             if (ps == null) return;
 
             ps.transform.position = position;
-            ps.gameObject.SetActive(true);
             ps.Clear();
             ps.Play();
         }
 
         static ParticleSystem GetFree()
         {
-            for (int i = pool.Count - 1; i >= 0; i--)
+            // Round-robin from the last used slot: the next one is almost always
+            // already finished, so this is O(1) in practice.
+            for (int attempts = pool.Count; attempts > 0 && pool.Count > 0; attempts--)
             {
-                if (pool[i] == null) { pool.RemoveAt(i); continue; }
-                if (!pool[i].isPlaying) return pool[i];
+                int i = nextIndex % pool.Count;
+                var candidate = pool[i];
+                if (candidate == null) { pool.RemoveAt(i); continue; }
+                nextIndex = i + 1;
+                if (!candidate.isPlaying) return candidate;
             }
 
             if (pool.Count >= MaxPoolSize) return null;
@@ -45,11 +51,14 @@ namespace ZombieRush.Effects
             Object.DontDestroyOnLoad(go);
 
             var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
             var main = ps.main;
-            main.startColor = new Color(0.5f, 0.02f, 0.02f);
+            main.startColor = BloodColor;
             main.startSpeed = new ParticleSystem.MinMaxCurve(2f, 5f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.08f, 0.18f);
             main.startLifetime = 0.7f;
+            main.duration = 0.7f;
             main.gravityModifier = 2f;
             main.loop = false;
             main.playOnAwake = false;
@@ -64,16 +73,22 @@ namespace ZombieRush.Effects
             shape.shapeType = ParticleSystemShapeType.Sphere;
             shape.radius = 0.12f;
 
-            go.GetComponent<ParticleSystemRenderer>().material = GetMaterial();
+            go.GetComponent<ParticleSystemRenderer>().sharedMaterial = GetMaterial();
             return ps;
         }
 
+        /// Prefers a material asset in Resources (created by Zombie Rush > Build tools)
+        /// because a shader looked up by name can be stripped from builds.
         static Material GetMaterial()
         {
             if (cachedMaterial != null) return cachedMaterial;
 
-            var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find("Sprites/Default");
-            cachedMaterial = new Material(shader) { color = new Color(0.5f, 0.02f, 0.02f) };
+            cachedMaterial = Resources.Load<Material>(MaterialResourcePath);
+            if (cachedMaterial != null) return cachedMaterial;
+
+            var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (shader == null) shader = Shader.Find("Sprites/Default");
+            cachedMaterial = new Material(shader) { color = BloodColor };
             return cachedMaterial;
         }
     }

@@ -4,114 +4,181 @@ using ZombieRush.Core;
 
 namespace ZombieRush.UI
 {
-    /// Pure presentation: listens to GameEvents only.
+    /// Pure presentation: listens to GameEvents only. Text is rebuilt only when a
+    /// value changes, and Update() goes to sleep when nothing is animating.
     public class HUDController : MonoBehaviour
     {
         [Header("Health")]
         public Image healthFill;
+        public Image healthTrail; // lags behind the fill to show how much was just lost
         public Text healthText;
-        public float healthSmoothSpeed = 2f;
+        public float trailDelay = 0.35f;
+        public float trailSpeed = 0.9f;
 
         [Header("Weapon")]
+        public Image weaponIcon;
         public Text weaponNameText;
-        public Text ammoCurrentText;
-        public Text ammoMaxText;
+        public Text magazineText;
+        public Text reserveText;
+        public GameObject reloadRoot;
+        public Image reloadFill;
+
+        [Header("Wave")]
+        public Text waveText;
+        public Text zombiesLeftText;
 
         [Header("Zone")]
         public Text zoneText;
+        public Image zoneFill;
 
         [Header("Coins")]
         public Text coinsText;
-        public Text requiredCoinsText;
+        public RectTransform coinsPunchTarget;
 
-        float targetHealth01 = 1f;
-        float displayedHealth01 = 1f;
+        float health01 = 1f, trail01 = 1f, trailWait;
+        float reloadElapsed, reloadDuration;
+        bool reloading;
+        float coinPunch;
+        int lastCoins = -1;
 
-        void OnEnable()
+        void Subscribe()
         {
             GameEvents.OnPlayerHealthChanged += HandleHealthChanged;
-            GameEvents.OnWeaponChanged += HandleWeaponChanged;
             GameEvents.OnAmmoChanged += HandleAmmoChanged;
             GameEvents.OnCoinsChanged += HandleCoinsChanged;
-        }
-
-        void OnDisable()
-        {
-            GameEvents.OnPlayerHealthChanged -= HandleHealthChanged;
-            GameEvents.OnWeaponChanged -= HandleWeaponChanged;
-            GameEvents.OnAmmoChanged -= HandleAmmoChanged;
-            GameEvents.OnCoinsChanged -= HandleCoinsChanged;
-        }
-
-        void Start()
-        {
-            ApplyBarFill(healthFill, displayedHealth01);
-
-            if (ZoneManager.Instance != null)
-            {
-                ZoneManager.Instance.OnZoneChanged += HandleZoneChanged;
-                HandleZoneChanged(ZoneManager.Instance.CurrentRadius, ZoneManager.Instance.maxRadius);
-            }
+            GameEvents.OnZoneChanged += HandleZoneChanged;
+            GameEvents.OnWaveAnnounced += HandleWaveAnnounced;
+            GameEvents.OnZombiesRemainingChanged += HandleZombiesRemaining;
+            GameEvents.OnWaveCompleted += HandleWaveCompleted;
         }
 
         void OnDestroy()
         {
-            if (ZoneManager.Instance != null) ZoneManager.Instance.OnZoneChanged -= HandleZoneChanged;
+            GameEvents.OnPlayerHealthChanged -= HandleHealthChanged;
+            GameEvents.OnAmmoChanged -= HandleAmmoChanged;
+            GameEvents.OnCoinsChanged -= HandleCoinsChanged;
+            GameEvents.OnZoneChanged -= HandleZoneChanged;
+            GameEvents.OnWaveAnnounced -= HandleWaveAnnounced;
+            GameEvents.OnZombiesRemainingChanged -= HandleZombiesRemaining;
+            GameEvents.OnWaveCompleted -= HandleWaveCompleted;
+        }
+
+        void Awake()
+        {
+            Subscribe(); // Awake/OnDestroy, not OnEnable/OnDisable: this component disables itself when idle.
+            UITheme.SetBarFill(healthFill, 1f);
+            UITheme.SetBarFill(healthTrail, 1f);
+            if (reloadRoot != null) reloadRoot.SetActive(false);
+            if (waveText != null) waveText.text = "WAVE -";
+            if (zombiesLeftText != null) zombiesLeftText.text = "";
         }
 
         void Update()
         {
-            displayedHealth01 = Mathf.MoveTowards(displayedHealth01, targetHealth01, healthSmoothSpeed * Time.deltaTime);
-            ApplyBarFill(healthFill, displayedHealth01);
+            bool busy = false;
+
+            // Health trail: hold briefly, then drain toward the real value.
+            if (trail01 > health01)
+            {
+                if (trailWait > 0f) trailWait -= Time.deltaTime;
+                else trail01 = Mathf.MoveTowards(trail01, health01, trailSpeed * Time.deltaTime);
+                UITheme.SetBarFill(healthTrail, trail01);
+                busy = true;
+            }
+
+            if (reloading)
+            {
+                reloadElapsed += Time.deltaTime;
+                UITheme.SetBarFill(reloadFill, reloadDuration > 0f ? reloadElapsed / reloadDuration : 1f);
+                busy = true;
+            }
+
+            if (coinPunch > 0f)
+            {
+                coinPunch = Mathf.MoveTowards(coinPunch, 0f, Time.deltaTime * 4f);
+                if (coinsPunchTarget != null) coinsPunchTarget.localScale = Vector3.one * (1f + 0.3f * coinPunch * coinPunch);
+                busy = true;
+            }
+
+            if (!busy) enabled = false;
         }
+
+        void Wake() => enabled = true;
 
         void HandleHealthChanged(float current, float max)
         {
-            if (healthText != null) healthText.text = $"HP: {Mathf.RoundToInt(current)} / {Mathf.RoundToInt(max)}";
-            targetHealth01 = max > 0 ? current / max : 0f;
+            float new01 = max > 0f ? current / max : 0f;
+            if (new01 < health01) trailWait = trailDelay;
+            health01 = new01;
+            if (trail01 < health01) { trail01 = health01; UITheme.SetBarFill(healthTrail, trail01); }
+
+            UITheme.SetBarFill(healthFill, health01);
+            if (healthFill != null) healthFill.color = health01 <= 0.3f ? Color.Lerp(UITheme.Blood, Color.white, 0.15f) : UITheme.Blood;
+            if (healthText != null) healthText.text = $"{Mathf.CeilToInt(current)} / {Mathf.RoundToInt(max)}";
+            Wake();
         }
 
-        void HandleWeaponChanged(string weaponName)
+        void HandleAmmoChanged(AmmoInfo info)
         {
-            if (weaponNameText != null) weaponNameText.text = weaponName.ToUpperInvariant();
-        }
-
-        void HandleAmmoChanged(int magazine, int magazineSize, int reserve, bool isReloading)
-        {
-            if (ammoCurrentText != null) ammoCurrentText.text = isReloading ? "..." : magazine.ToString();
-            if (ammoMaxText != null) ammoMaxText.text = $"/ {magazineSize}   ({reserve})";
-        }
-
-        void HandleZoneChanged(float current, float max)
-        {
-            bool isFull = current >= max;
-            int cost = ZoneManager.Instance != null ? ZoneManager.Instance.expandCost : 0;
-
-            if (zoneText != null)
+            if (weaponNameText != null) weaponNameText.text = info.WeaponName.ToUpperInvariant();
+            if (weaponIcon != null)
             {
-                zoneText.text = isFull ? $"ZONE: {current:0}m (FULL)" : $"ZONE: {current:0}m / {max:0}m";
+                weaponIcon.enabled = info.Icon != null;
+                if (info.Icon != null && weaponIcon.sprite != info.Icon) weaponIcon.sprite = info.Icon;
             }
 
-            if (requiredCoinsText != null)
+            if (magazineText != null)
             {
-                requiredCoinsText.text = isFull ? "" : $"EXPAND (P): {cost} COINS";
+                magazineText.text = info.Unlimited ? "--" : info.Magazine.ToString();
+                bool low = !info.Unlimited && info.Magazine <= Mathf.CeilToInt(info.MagazineSize * 0.25f);
+                magazineText.color = info.Magazine == 0 ? UITheme.Muted : (low ? UITheme.Blood : UITheme.Bone);
+            }
+
+            if (reserveText != null)
+            {
+                reserveText.text = info.Unlimited ? "" : $"/ {info.MagazineSize}   {info.Reserve}";
+                reserveText.color = info.Reserve == 0 ? UITheme.Blood : UITheme.Muted;
+            }
+
+            if (info.IsReloading != reloading)
+            {
+                reloading = info.IsReloading;
+                reloadElapsed = 0f;
+                reloadDuration = info.ReloadDuration;
+                if (reloadRoot != null) reloadRoot.SetActive(reloading);
+                UITheme.SetBarFill(reloadFill, 0f);
+                if (reloading) Wake();
             }
         }
 
         void HandleCoinsChanged(int total)
         {
-            if (coinsText != null) coinsText.text = $"COINS: {total}";
+            if (coinsText != null) coinsText.text = total.ToString();
+            if (lastCoins >= 0 && total > lastCoins) { coinPunch = 1f; Wake(); }
+            lastCoins = total;
         }
 
-        /// Resizes the bar by moving its RectTransform's right anchor rather than relying
-        /// on Image.fillAmount, which wasn't reliably reflecting on screen in the last project.
-        static void ApplyBarFill(Image bar, float t01)
+        void HandleZoneChanged(float radius, float max, int cost)
         {
-            if (bar == null) return;
-            t01 = Mathf.Clamp01(t01);
-            var rt = bar.rectTransform;
-            rt.anchorMin = new Vector2(0f, rt.anchorMin.y);
-            rt.anchorMax = new Vector2(t01, rt.anchorMax.y);
+            bool full = radius >= max - 0.01f;
+            if (zoneText != null) zoneText.text = full ? $"ZONE  {radius:0}m  ·  MAX" : $"ZONE  {radius:0}m / {max:0}m";
+            UITheme.SetBarFill(zoneFill, max > 0f ? radius / max : 1f);
+        }
+
+        void HandleWaveAnnounced(int wave)
+        {
+            if (waveText != null) waveText.text = $"WAVE {wave}";
+            if (zombiesLeftText != null) zombiesLeftText.text = "INCOMING";
+        }
+
+        void HandleZombiesRemaining(int remaining)
+        {
+            if (zombiesLeftText != null) zombiesLeftText.text = remaining == 1 ? "1 ZOMBIE LEFT" : $"{remaining} ZOMBIES LEFT";
+        }
+
+        void HandleWaveCompleted(int wave, float breather)
+        {
+            if (zombiesLeftText != null) zombiesLeftText.text = "CLEARED";
         }
     }
 }

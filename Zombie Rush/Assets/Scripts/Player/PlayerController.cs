@@ -3,9 +3,8 @@ using ZombieRush.Core;
 
 namespace ZombieRush.Player
 {
-    /// First-person movement + mouse look. Legacy Input Manager on purpose
-    /// (Project Settings > Player > Active Input Handling must be "Both" or
-    /// "Input Manager (Old)" for these Input.* calls to work).
+    /// First-person movement + look. Reads everything through GameInput, so the
+    /// same code drives keyboard/mouse and the on-screen touch controls.
     [RequireComponent(typeof(CharacterController))]
     public class PlayerController : MonoBehaviour
     {
@@ -20,7 +19,6 @@ namespace ZombieRush.Player
         public float gravity = -20f;
 
         [Header("Look")]
-        public float mouseSensitivity = 2f;
         public float lookPitchMin = -85f;
         public float lookPitchMax = 85f;
 
@@ -29,6 +27,7 @@ namespace ZombieRush.Player
         public float crouchHeight = 1.0f;
         public float standCameraY = 1.6f;
         public float crouchCameraY = 0.9f;
+        public float crouchTransitionSpeed = 8f;
 
         CharacterController controller;
         float pitch;
@@ -38,12 +37,6 @@ namespace ZombieRush.Player
         void Awake()
         {
             controller = GetComponent<CharacterController>();
-        }
-
-        void Start()
-        {
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
         }
 
         void Update()
@@ -57,45 +50,50 @@ namespace ZombieRush.Player
 
         void HandleLook()
         {
-            float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
-            float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+            Vector2 look = GameInput.ReadLook();
+            if (look == Vector2.zero) return;
 
-            transform.Rotate(Vector3.up * mouseX);
-
-            pitch = Mathf.Clamp(pitch - mouseY, lookPitchMin, lookPitchMax);
+            transform.Rotate(0f, look.x, 0f);
+            pitch = Mathf.Clamp(pitch - look.y, lookPitchMin, lookPitchMax);
             if (cameraPivot != null) cameraPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
         }
 
         void HandleCrouch()
         {
-            isCrouching = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C);
+            isCrouching = GameInput.CrouchHeld;
 
-            controller.height = Mathf.MoveTowards(controller.height, isCrouching ? crouchHeight : standHeight, Time.deltaTime * 8f);
-            controller.center = new Vector3(0f, controller.height * 0.5f, 0f);
+            float targetHeight = isCrouching ? crouchHeight : standHeight;
+            if (!Mathf.Approximately(controller.height, targetHeight))
+            {
+                controller.height = Mathf.MoveTowards(controller.height, targetHeight, Time.deltaTime * crouchTransitionSpeed);
+                controller.center = new Vector3(0f, controller.height * 0.5f, 0f);
+            }
 
             if (cameraPivot != null)
             {
                 float targetY = isCrouching ? crouchCameraY : standCameraY;
                 var pos = cameraPivot.localPosition;
-                pos.y = Mathf.MoveTowards(pos.y, targetY, Time.deltaTime * 8f);
-                cameraPivot.localPosition = pos;
+                if (!Mathf.Approximately(pos.y, targetY))
+                {
+                    pos.y = Mathf.MoveTowards(pos.y, targetY, Time.deltaTime * crouchTransitionSpeed);
+                    cameraPivot.localPosition = pos;
+                }
             }
         }
 
         void HandleMove()
         {
-            float h = Input.GetAxis("Horizontal");
-            float v = Input.GetAxis("Vertical");
-            bool sprinting = Input.GetKey(KeyCode.LeftShift) && !isCrouching && v > 0f;
+            Vector2 input = GameInput.Move;
+            bool sprinting = GameInput.SprintHeld && !isCrouching && input.y > 0f;
+            bool jumpPressed = GameInput.ConsumeJump(); // always consumed so a mid-air tap doesn't fire on landing
 
             float speed = isCrouching ? crouchSpeed : (sprinting ? sprintSpeed : walkSpeed);
-            Vector3 move = (transform.right * h + transform.forward * v);
-            if (move.sqrMagnitude > 1f) move.Normalize();
+            Vector3 move = transform.right * input.x + transform.forward * input.y;
 
             if (controller.isGrounded)
             {
                 verticalVelocity = -1f;
-                if (Input.GetButtonDown("Jump") && !isCrouching)
+                if (jumpPressed && !isCrouching)
                     verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
             }
             else

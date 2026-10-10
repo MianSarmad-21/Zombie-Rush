@@ -19,5 +19,22 @@ namespace ZombieRush.Data
 
         [Header("Detection")]
         public float sightRange = 25f; // effectively "always sees the player" until real vision/sound checks are added
+
+        static ZombieConfigData defaults;
+
+        /// Fallback used when a zombie has no config assigned, so gameplay code
+        /// never needs its own copy of these numbers.
+        public static ZombieConfigData Defaults
+        {
+            get
+            {
+                if (defaults == null)
+                {
+                    defaults = CreateInstance<ZombieConfigData>();
+                    defaults.hideFlags = HideFlags.HideAndDontSave;
+                }
+                return defaults;
+            }
+        }
     }
 }

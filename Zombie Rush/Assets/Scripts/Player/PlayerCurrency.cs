@@ -12,11 +12,21 @@ namespace ZombieRush.Player
 
         void Awake()
         {
-            if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+            if (Instance != null && Instance != this) { Destroy(this); return; }
             Instance = this;
         }
 
+        void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
+        void OnEnable() => GameEvents.OnZombieKilled += HandleZombieKilled;
+        void OnDisable() => GameEvents.OnZombieKilled -= HandleZombieKilled;
+
         void Start() => GameEvents.RaiseCoinsChanged(Coins);
+
+        void HandleZombieKilled(ZombieKilledInfo info) => AddCoins(info.Coins);
 
         public void AddCoins(int amount)
         {

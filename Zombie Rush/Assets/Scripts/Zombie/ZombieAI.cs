@@ -13,16 +13,24 @@ namespace ZombieRush.Zombie
     [RequireComponent(typeof(ZombieHealth))]
     public class ZombieAI : MonoBehaviour
     {
+        const float Gravity = 20f;
+        const float MaxSpeedMultiplier = 1.6f;
+
+        [Tooltip("Optional override; normally the config on ZombieHealth is used.")]
         public ZombieConfigData config;
 
         /// Set by whatever spawned this zombie (e.g. WaveManager) to scale attack
         /// damage and move speed up on later, harder waves. 1 = config's base values.
         public float difficultyMultiplier = 1f;
 
+        [Tooltip("Chase the player from any distance, ignoring sightRange (set for wave-spawned zombies).")]
+        public bool alwaysHunt;
+
         [Header("Obstacle avoidance")]
         public float probeDistance = 1.6f;
         public float probeRadius = 0.45f;
         public float avoidCommitTime = 0.35f; // briefly commits to a tangent direction to avoid jittering
+        [Tooltip("Tip: put zombies on their own layer and exclude it here to skip zombie-vs-zombie probe hits entirely.")]
         public LayerMask obstacleMask = ~0;
 
         [Header("Last-resort unstuck")]
@@ -32,6 +40,7 @@ namespace ZombieRush.Zombie
 
         CharacterController controller;
         ZombieHealth health;
+        ZombieConfigData cfg;
         Transform player;
         PlayerHealth playerHealth;
 
@@ -47,22 +56,36 @@ namespace ZombieRush.Zombie
         float escapeTimer;
         Vector3 escapeDir;
 
-        Animator anim;
-        bool animResolved, hasSpeed, hasAttack;
-
         void Awake()
         {
             controller = GetComponent<CharacterController>();
             health = GetComponent<ZombieHealth>();
+            cfg = config != null ? config : health.Config;
+        }
 
-            var playerGo = GameObject.FindGameObjectWithTag(GameTags.Player);
-            if (playerGo != null)
-            {
-                player = playerGo.transform;
-                playerHealth = playerGo.GetComponent<PlayerHealth>();
-            }
-
+        // Also runs when a pooled zombie is reused, so all steering state starts fresh.
+        void OnEnable()
+        {
+            ResolvePlayer();
+            attackTimer = 0f;
+            gravityVelocity = 0f;
+            avoidHoldTimer = 0f;
+            escapeTimer = 0f;
+            stuckCheckTimer = 0f;
+            nextProbeTime = 0f;
             positionAtLastCheck = transform.position;
+        }
+
+        void ResolvePlayer()
+        {
+            if (player != null) return;
+            playerHealth = PlayerHealth.Instance;
+            if (playerHealth == null)
+            {
+                var go = GameObject.FindGameObjectWithTag(GameTags.Player);
+                if (go != null) playerHealth = go.GetComponent<PlayerHealth>();
+            }
+            if (playerHealth != null) player = playerHealth.transform;
         }
 
         void Update()
@@ -70,48 +93,43 @@ namespace ZombieRush.Zombie
             if (health.IsDead || player == null) return;
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
 
-            ResolveAnimator();
-
-            float sightRange = config != null ? config.sightRange : 25f;
             Vector3 toPlayer = player.position - transform.position;
             toPlayer.y = 0f;
-            float distance = toPlayer.magnitude;
+            float sqrDistance = toPlayer.sqrMagnitude;
 
-            if (distance > sightRange)
+            if (!alwaysHunt && sqrDistance > cfg.sightRange * cfg.sightRange)
             {
-                SetMoving(false);
+                health.Anim.SetSpeed(0f);
                 ApplyGravityOnly();
                 return;
             }
 
-            float attackRange = config != null ? config.attackRange : 1.6f;
             attackTimer -= Time.deltaTime;
 
-            if (distance <= attackRange)
+            if (sqrDistance <= cfg.attackRange * cfg.attackRange)
             {
-                FacePlayer(toPlayer);
+                FaceDirection(toPlayer);
                 ApplyGravityOnly();
-                SetMoving(false);
+                health.Anim.SetSpeed(0f);
 
                 if (attackTimer <= 0f)
                 {
-                    if (hasAttack) anim.SetTrigger(ZombieAnimatorUtil.AttackParam);
-                    attackTimer = config != null ? config.attackCooldown : 1.1f;
-                    float baseDamage = config != null ? config.attackDamage : 12f;
-                    playerHealth?.TakeDamage(baseDamage * difficultyMultiplier);
+                    health.Anim.TriggerAttack();
+                    attackTimer = cfg.attackCooldown;
+                    if (playerHealth != null) playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
                 }
                 return;
             }
 
             // Chase, steering around anything in the way.
-            float runDistance = config != null ? config.runDistance : 0f;
-            bool running = runDistance <= 0f || distance <= runDistance;
-            float baseSpeed = config != null ? (running ? config.chaseSpeed : config.moveSpeed) : 3.5f;
-            float speed = baseSpeed * Mathf.Min(difficultyMultiplier, 1.6f);
-            SetMoving(true, running);
-            Vector3 desired = toPlayer.normalized;
+            float distance = Mathf.Sqrt(sqrDistance);
+            bool running = cfg.runDistance <= 0f || distance <= cfg.runDistance;
+            float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * Mathf.Min(difficultyMultiplier, MaxSpeedMultiplier);
+            health.Anim.SetSpeed(running ? 1f : 0.5f);
+
+            Vector3 desired = toPlayer / distance;
             Vector3 moveDir = ComputeMoveDirection(desired);
-            FacePlayer(moveDir);
+            FaceDirection(moveDir);
 
             UpdateLastResortUnstuck(moveDir);
             if (escapeTimer > 0f)
@@ -121,18 +139,14 @@ namespace ZombieRush.Zombie
             }
 
             Vector3 move = moveDir * speed;
-
-            if (controller.isGrounded) gravityVelocity = -1f;
-            else gravityVelocity -= 20f * Time.deltaTime;
-
-            move.y = gravityVelocity;
+            move.y = UpdateGravity();
             controller.Move(move * Time.deltaTime);
         }
 
         /// Sphere-casts along the desired direction; if something's in the way,
         /// slides along its surface (perpendicular to the hit normal, on whichever
         /// side keeps making progress toward the player) instead of pushing
-        /// straight into it.
+        /// straight into it. Probes are staggered (~10/s per zombie) to spread the physics cost.
         Vector3 ComputeMoveDirection(Vector3 desired)
         {
             if (avoidHoldTimer > 0f)
@@ -144,7 +158,7 @@ namespace ZombieRush.Zombie
             if (Time.time < nextProbeTime) return desired;
             nextProbeTime = Time.time + 0.08f + Random.value * 0.04f;
 
-            Vector3 origin = transform.position + Vector3.up * 1f;
+            Vector3 origin = transform.position + Vector3.up;
             if (Physics.SphereCast(origin, probeRadius, desired, out var hit, probeDistance, obstacleMask, QueryTriggerInteraction.Ignore)
                 && IsRealObstacle(hit.collider))
             {
@@ -176,44 +190,33 @@ namespace ZombieRush.Zombie
             stuckCheckTimer += Time.deltaTime;
             if (stuckCheckTimer < stuckCheckInterval) return;
 
-            float moved = Vector3.Distance(transform.position, positionAtLastCheck);
+            float movedSqr = (transform.position - positionAtLastCheck).sqrMagnitude;
             stuckCheckTimer = 0f;
             positionAtLastCheck = transform.position;
 
-            if (moved < stuckDistanceThreshold)
+            if (movedSqr < stuckDistanceThreshold * stuckDistanceThreshold)
             {
                 escapeTimer = escapeDuration;
-                Vector3 randomDir = Quaternion.Euler(0f, Random.Range(60f, 300f), 0f) * currentMoveDir;
-                escapeDir = randomDir.normalized;
+                escapeDir = (Quaternion.Euler(0f, Random.Range(60f, 300f), 0f) * currentMoveDir).normalized;
             }
         }
 
-        void ResolveAnimator()
-        {
-            if (animResolved) return;
-            anim = GetComponentInChildren<Animator>();
-            if (anim == null || anim.runtimeAnimatorController == null) return;
-            animResolved = true;
-            hasSpeed = ZombieAnimatorUtil.Has(anim, ZombieAnimatorUtil.SpeedParam, AnimatorControllerParameterType.Float);
-            hasAttack = ZombieAnimatorUtil.Has(anim, ZombieAnimatorUtil.AttackParam, AnimatorControllerParameterType.Trigger);
-        }
-
-        void SetMoving(bool moving, bool running = true)
-        {
-            if (hasSpeed) anim.SetFloat(ZombieAnimatorUtil.SpeedParam, !moving ? 0f : (running ? 1f : 0.5f));
-        }
-
-        void FacePlayer(Vector3 dir)
+        void FaceDirection(Vector3 dir)
         {
             if (dir.sqrMagnitude < 0.01f) return;
-            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir.normalized), Time.deltaTime * 8f);
+            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * 8f);
+        }
+
+        float UpdateGravity()
+        {
+            if (controller.isGrounded) gravityVelocity = -1f;
+            else gravityVelocity -= Gravity * Time.deltaTime;
+            return gravityVelocity;
         }
 
         void ApplyGravityOnly()
         {
-            if (controller.isGrounded) gravityVelocity = -1f;
-            else gravityVelocity -= 20f * Time.deltaTime;
-            controller.Move(new Vector3(0f, gravityVelocity, 0f) * Time.deltaTime);
+            controller.Move(new Vector3(0f, UpdateGravity(), 0f) * Time.deltaTime);
         }
     }
 }

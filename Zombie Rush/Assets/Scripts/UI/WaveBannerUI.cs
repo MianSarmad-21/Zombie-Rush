@@ -1,87 +1,101 @@
-using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
-using ZombieRush.Waves;
+using ZombieRush.Core;
 
 namespace ZombieRush.UI
 {
-    /// "WAVE X INCOMING" banner shown for the announce window before a wave
-    /// starts spawning, plus a small confirmation flash when a wave clears.
+    /// "WAVE 3 / INCOMING" slam-in banner before a wave, and "WAVE 3 / CLEARED"
+    /// with a next-wave countdown during the breather. Runs on scaled time so it
+    /// freezes with the pause menu.
     public class WaveBannerUI : MonoBehaviour
     {
-        public GameObject bannerRoot;
-        public Text bannerText;
-        public float fadeSpeed = 6f;
+        public CanvasGroup group;
+        public RectTransform animRoot;
+        public Text titleText;
+        public Text subtitleText;
+        public Text detailText;
+        public float incomingHold = 2.6f;
+        public float fadeSpeed = 5f;
 
-        CanvasGroup group;
-        float targetAlpha;
-        Coroutine hideRoutine;
+        float holdTimer;
+        float countdown;
+        int lastCountdownShown = -1;
+        float slam; // 1 -> 0 intro animation
 
         void Awake()
         {
-            group = bannerRoot != null ? bannerRoot.GetComponent<CanvasGroup>() : null;
-        }
-
-        // Subscribing here (not OnEnable) matters: OnEnable can run before
-        // WaveManager.Awake() has set Instance, depending on object order in the
-        // scene, silently skipping the subscription. Start() is guaranteed to run
-        // after every object's Awake().
-        //
-        // Also important: this script lives on bannerRoot itself, so it must NEVER
-        // SetActive(false) that object - doing so would disable this component too,
-        // firing OnDisable and unsubscribing permanently after the first hide (that
-        // was the actual bug behind "wave 2 doesn't announce"). Visibility is done
-        // purely via the CanvasGroup's alpha instead, so the GameObject - and this
-        // script - stay active and subscribed for the whole session.
-        void Start()
-        {
+            Subscribe(); // Awake/OnDestroy, not OnEnable/OnDisable: this component disables itself when idle.
             if (group != null) group.alpha = 0f;
-
-            if (WaveManager.Instance != null)
-            {
-                WaveManager.Instance.OnWaveAnnounced += HandleWaveAnnounced;
-                WaveManager.Instance.OnWaveCompleted += HandleWaveCompleted;
-            }
+            enabled = false;
         }
 
-        void OnDisable()
+        void Subscribe()
         {
-            if (WaveManager.Instance != null)
-            {
-                WaveManager.Instance.OnWaveAnnounced -= HandleWaveAnnounced;
-                WaveManager.Instance.OnWaveCompleted -= HandleWaveCompleted;
-            }
+            GameEvents.OnWaveAnnounced += HandleWaveAnnounced;
+            GameEvents.OnWaveCompleted += HandleWaveCompleted;
         }
 
-        void Update()
+        void OnDestroy()
         {
-            if (group == null) return;
-            group.alpha = Mathf.MoveTowards(group.alpha, targetAlpha, fadeSpeed * Time.deltaTime);
+            GameEvents.OnWaveAnnounced -= HandleWaveAnnounced;
+            GameEvents.OnWaveCompleted -= HandleWaveCompleted;
         }
 
         void HandleWaveAnnounced(int wave)
         {
-            if (bannerText != null) bannerText.text = $"WAVE {wave} INCOMING";
-            ShowFor(WaveManager.Instance != null ? WaveManager.Instance.announceDuration : 3f);
+            Show($"WAVE {wave}", "INCOMING", UITheme.Blood, incomingHold);
+            countdown = 0f;
+            SetDetail("");
         }
 
-        void HandleWaveCompleted(int wave)
+        void HandleWaveCompleted(int wave, float breather)
         {
-            if (bannerText != null) bannerText.text = $"WAVE {wave} CLEARED";
-            ShowFor(2f);
+            Show($"WAVE {wave}", "CLEARED", UITheme.Cyan, Mathf.Max(0.5f, breather - 0.25f));
+            countdown = breather;
+            lastCountdownShown = -1;
         }
 
-        void ShowFor(float seconds)
+        void Show(string title, string subtitle, Color subtitleColor, float hold)
         {
-            targetAlpha = 1f;
-            if (hideRoutine != null) StopCoroutine(hideRoutine);
-            hideRoutine = StartCoroutine(HideAfter(seconds));
+            if (titleText != null) titleText.text = title;
+            if (subtitleText != null) { subtitleText.text = subtitle; subtitleText.color = subtitleColor; }
+            holdTimer = hold;
+            slam = 1f;
+            enabled = true;
         }
 
-        IEnumerator HideAfter(float seconds)
+        void SetDetail(string text)
         {
-            yield return new WaitForSeconds(seconds);
-            targetAlpha = 0f;
+            if (detailText != null) detailText.text = text;
+        }
+
+        void Update()
+        {
+            float dt = Time.deltaTime;
+
+            if (countdown > 0f)
+            {
+                countdown -= dt;
+                int shown = Mathf.CeilToInt(countdown);
+                if (shown != lastCountdownShown)
+                {
+                    lastCountdownShown = shown;
+                    SetDetail(shown > 0 ? $"NEXT WAVE IN {shown}" : "");
+                }
+            }
+
+            if (slam > 0f)
+            {
+                slam = Mathf.MoveTowards(slam, 0f, dt * 3.5f);
+                float k = slam * slam;
+                if (animRoot != null) animRoot.localScale = Vector3.one * (1f + 0.35f * k);
+            }
+
+            holdTimer -= dt;
+            float target = holdTimer > 0f ? 1f : 0f;
+            if (group != null) group.alpha = Mathf.MoveTowards(group.alpha, target, fadeSpeed * dt);
+
+            if (holdTimer <= 0f && (group == null || group.alpha <= 0f) && countdown <= 0f) enabled = false;
         }
     }
 }
