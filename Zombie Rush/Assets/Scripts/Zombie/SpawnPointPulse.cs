@@ -6,6 +6,8 @@ namespace ZombieRush.Zombie
     /// zombies are about to come up from.
     public class SpawnPointPulse : MonoBehaviour
     {
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
         public float minAlpha = 0.25f;
         public float maxAlpha = 0.65f;
         public float speed = 2f;
@@ -18,7 +20,9 @@ namespace ZombieRush.Zombie
         {
             rend = GetComponent<Renderer>();
             block = new MaterialPropertyBlock();
-            baseColor = rend.sharedMaterial.GetColor("_BaseColor");
+            var mat = rend != null ? rend.sharedMaterial : null;
+            if (mat == null || !mat.HasProperty(BaseColorId)) { enabled = false; return; }
+            baseColor = mat.GetColor(BaseColorId);
         }
 
         void Update()
@@ -26,16 +30,8 @@ namespace ZombieRush.Zombie
             float t = (Mathf.Sin(Time.time * speed) + 1f) * 0.5f;
             var c = baseColor;
             c.a = Mathf.Lerp(minAlpha, maxAlpha, t);
-            rend.GetPropertyBlock(block);
-            block.SetColor("_BaseColor", c);
+            block.SetColor(BaseColorId, c);
             rend.SetPropertyBlock(block);
-        }
-
-        /// Briefly flares brighter right as a wave starts spawning nearby.
-        public void Flare()
-        {
-            // handled by the natural pulse loop for now - kept as an extension point
-            // for the wave manager to call without needing to know pulse internals.
         }
     }
 }

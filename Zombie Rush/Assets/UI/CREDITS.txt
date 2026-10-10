@@ -1,0 +1,13 @@
+Zombie Rush - UI art credits
+============================
+
+Icons (Assets/UI/Icons) - from https://game-icons.net, licensed CC BY 3.0
+(https://creativecommons.org/licenses/by/3.0/). Rasterised to PNG with a drop shadow.
+Credit must appear in the game's credits / store page:
+  Lorc, Delapouite, John Colburn, Zeromancer, Skoll and Guard13007 - game-icons.net
+
+Fonts (Assets/UI/Fonts) - SIL Open Font License 1.1 (licence files alongside):
+  Oswald (The Oswald Project Authors), Rubik Dirt (The Rubik Filtered Project Authors)
+
+Textures (Assets/UI/Art) - generated for this project (panels, brush strokes,
+blood splatter, buttons, bars). No third-party licence.

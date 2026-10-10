@@ -6,6 +6,8 @@ namespace ZombieRush.Data
     public class WeaponData : ScriptableObject
     {
         public string weaponName = "Weapon";
+        [Tooltip("HUD icon (white on transparent).")]
+        public Sprite icon;
         public float damage = 25f;
         public float fireRate = 8f; // rounds per second
         public float range = 100f;

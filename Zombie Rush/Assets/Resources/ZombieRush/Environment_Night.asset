@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ed55b2fdf1454f8a9e31545df95c3dbe, type: 3}
+  m_Name: Environment_Night
+  m_EditorClassIdentifier: 
+  skybox: {fileID: 2100000, guid: 4d293ad1fb8cb7748b7951956f907565, type: 2}
+  ambientSky: {r: 0.16, g: 0.22, b: 0.38, a: 1}
+  ambientEquator: {r: 0.1, g: 0.13, b: 0.22, a: 1}
+  ambientGround: {r: 0.04, g: 0.045, b: 0.07, a: 1}
+  reflectionIntensity: 0.4
+  fogEnabled: 1
+  fogColor: {r: 0.045, g: 0.065, b: 0.11, a: 1}
+  fogDensity: 0.01
+  sunColor: {r: 0.62, g: 0.72, b: 1, a: 1}
+  sunIntensity: 0.55
+  sunEuler: {x: 30, y: 215, z: 0}
+  shadowStrength: 0.85

@@ -8,100 +8,100 @@ namespace ZombieRush.Player
     [RequireComponent(typeof(PlayerInventory))]
     public class PlayerWeaponController : MonoBehaviour
     {
-        public static PlayerWeaponController Instance { get; private set; }
-
         public Camera playerCamera;
         public WeaponBase[] weapons;
 
         int currentIndex;
+        PlayerInventory inventory;
+
+        // Last values pushed to the HUD, so the event only fires on real changes.
+        WeaponBase lastWeapon;
         int lastMag = -1, lastReserve = -1;
         bool lastReloading;
-        WeaponBase lastWeapon;
-        PlayerInventory inventory;
+
+        public WeaponBase CurrentWeapon => weapons != null && weapons.Length > 0 ? weapons[currentIndex] : null;
 
         void Awake()
         {
-            Instance = this;
-
             inventory = GetComponent<PlayerInventory>();
+            if (weapons == null) weapons = new WeaponBase[0];
+
             foreach (var weapon in weapons)
-                weapon.Init(playerCamera, inventory);
+                if (weapon != null) weapon.Init(playerCamera, inventory);
 
             UpdateWeaponVisibility();
         }
 
-        void Start()
-        {
-            RaiseCurrentWeaponChanged();
-            RaiseAmmoStatus();
-        }
+        void OnEnable() => GameEvents.OnZombieKilled += HandleZombieKilled;
+        void OnDisable() => GameEvents.OnZombieKilled -= HandleZombieKilled;
+
+        void Start() => RaiseAmmoStatus(force: true);
 
         void Update()
         {
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
-            if (weapons == null || weapons.Length == 0) return;
+            if (weapons.Length == 0) return;
 
-            for (int i = 0; i < weapons.Length && i < 9; i++)
+            int slot = GameInput.WeaponSlotPressed(weapons.Length);
+            if (slot >= 0) SelectWeapon(slot);
+            if (GameInput.ConsumeSwapWeapon()) SelectWeapon((currentIndex + 1) % weapons.Length);
+
+            var weapon = CurrentWeapon;
+            if (weapon != null)
             {
-                if (Input.GetKeyDown(KeyCode.Alpha1 + i) && i != currentIndex)
-                {
-                    currentIndex = i;
-                    UpdateWeaponVisibility();
-                    RaiseCurrentWeaponChanged();
-                }
+                if (GameInput.FireHeld) weapon.TryUse();
+                if (GameInput.ConsumeReload()) weapon.TryReload();
             }
 
-            if (Input.GetMouseButton(0))
-                weapons[currentIndex].TryUse();
-
-            if (Input.GetKeyDown(KeyCode.R))
-                weapons[currentIndex].TryReload();
-
-            RaiseAmmoStatus();
+            RaiseAmmoStatus(force: false);
         }
 
-        void RaiseCurrentWeaponChanged()
+        public void SelectWeapon(int index)
         {
-            var weapon = CurrentWeapon;
-            string name = weapon != null && weapon.data != null ? weapon.data.weaponName : "None";
-            GameEvents.RaiseWeaponChanged(name);
+            if (index < 0 || index >= weapons.Length || index == currentIndex) return;
+            currentIndex = index;
+            UpdateWeaponVisibility();
+            RaiseAmmoStatus(force: true);
         }
 
-        void RaiseAmmoStatus()
+        void RaiseAmmoStatus(bool force)
         {
             var weapon = CurrentWeapon;
             if (weapon == null || weapon.data == null) return;
 
-            int reserve = inventory != null ? inventory.GetReserveAmmo(weapon.data) : 0;
+            int reserve = inventory.GetReserveAmmo(weapon.data);
             int mag = weapon.CurrentMagazine;
             bool reloading = weapon.IsReloading;
-            if (weapon == lastWeapon && mag == lastMag && reserve == lastReserve && reloading == lastReloading) return;
+            if (!force && weapon == lastWeapon && mag == lastMag && reserve == lastReserve && reloading == lastReloading) return;
 
             lastWeapon = weapon; lastMag = mag; lastReserve = reserve; lastReloading = reloading;
-            GameEvents.RaiseAmmoChanged(mag, weapon.data.magazineSize, reserve, reloading);
+            GameEvents.RaiseAmmoChanged(new AmmoInfo
+            {
+                WeaponName = weapon.data.weaponName,
+                Icon = weapon.data.icon,
+                Magazine = mag,
+                MagazineSize = weapon.data.magazineSize,
+                Reserve = reserve,
+                IsReloading = reloading,
+                ReloadDuration = weapon.data.reloadTime,
+                Unlimited = weapon.data.unlimitedUses,
+            });
         }
-
-        public WeaponBase CurrentWeapon => weapons != null && weapons.Length > 0 ? weapons[currentIndex] : null;
 
         void UpdateWeaponVisibility()
         {
-            if (weapons == null) return;
             for (int i = 0; i < weapons.Length; i++)
-            {
                 if (weapons[i] != null) weapons[i].gameObject.SetActive(i == currentIndex);
-            }
         }
 
-        /// Called by a zombie's ammo drop on death - tops up reserve ammo for
-        /// every weapon the player is carrying, not just the equipped one.
-        public void AddReserveAmmoToAll(int amount)
+        /// A zombie's ammo drop tops up reserve ammo for every weapon the player
+        /// is carrying, not just the equipped one.
+        void HandleZombieKilled(ZombieKilledInfo info)
         {
-            if (inventory == null || weapons == null) return;
+            if (info.Ammo <= 0) return;
             foreach (var weapon in weapons)
-            {
-                if (weapon != null && weapon.data != null) inventory.AddReserveAmmo(weapon.data, amount);
-            }
-            RaiseAmmoStatus();
+                if (weapon != null && weapon.data != null) inventory.AddReserveAmmo(weapon.data, info.Ammo);
+            RaiseAmmoStatus(force: false);
         }
     }
 }
