@@ -1,5 +1,6 @@
 using UnityEngine;
 using ZombieRush.Core;
+using ZombieRush.Data;
 using ZombieRush.Weapons;
 
 namespace ZombieRush.Player
@@ -10,8 +11,11 @@ namespace ZombieRush.Player
     {
         public Camera playerCamera;
         public WeaponBase[] weapons;
+        [Tooltip("How many weapons (from the top of the list) the player starts with. The rest are picked up from the racks in the safe base.")]
+        public int startingWeapons = 1;
 
         int currentIndex;
+        bool[] unlocked;
         PlayerInventory inventory;
 
         // Last values pushed to the HUD, so the event only fires on real changes.
@@ -25,6 +29,8 @@ namespace ZombieRush.Player
         {
             inventory = GetComponent<PlayerInventory>();
             if (weapons == null) weapons = new WeaponBase[0];
+            unlocked = new bool[weapons.Length];
+            for (int i = 0; i < weapons.Length; i++) unlocked[i] = i < Mathf.Max(1, startingWeapons);
 
             foreach (var weapon in weapons)
                 if (weapon != null) weapon.Init(playerCamera, inventory);
@@ -44,7 +50,7 @@ namespace ZombieRush.Player
 
             int slot = GameInput.WeaponSlotPressed(weapons.Length);
             if (slot >= 0) SelectWeapon(slot);
-            if (GameInput.ConsumeSwapWeapon()) SelectWeapon((currentIndex + 1) % weapons.Length);
+            if (GameInput.ConsumeSwapWeapon()) SelectWeapon(NextUnlocked(currentIndex));
 
             var weapon = CurrentWeapon;
             if (weapon != null)
@@ -58,10 +64,55 @@ namespace ZombieRush.Player
 
         public void SelectWeapon(int index)
         {
-            if (index < 0 || index >= weapons.Length || index == currentIndex) return;
+            if (index < 0 || index >= weapons.Length || index == currentIndex || !unlocked[index]) return;
             currentIndex = index;
             UpdateWeaponVisibility();
             RaiseAmmoStatus(force: true);
+        }
+
+        int NextUnlocked(int from)
+        {
+            for (int step = 1; step <= weapons.Length; step++)
+            {
+                int i = (from + step) % weapons.Length;
+                if (unlocked[i]) return i;
+            }
+            return from;
+        }
+
+        public bool IsUnlocked(WeaponData data) => IndexOf(data) is int i && i >= 0 && unlocked[i];
+
+        /// Gives the player this weapon (from a base rack) and equips it. False if they already had it.
+        public bool Unlock(WeaponData data)
+        {
+            int i = IndexOf(data);
+            if (i < 0 || unlocked[i]) return false;
+            unlocked[i] = true;
+            SelectWeapon(i);
+            return true;
+        }
+
+        /// Tops reserve ammo up to the max for every weapon the player has. False if all were already full.
+        public bool RefillAmmo()
+        {
+            bool changed = false;
+            for (int i = 0; i < weapons.Length; i++)
+            {
+                var data = weapons[i] != null ? weapons[i].data : null;
+                if (!unlocked[i] || data == null || data.unlimitedUses) continue;
+                int before = inventory.GetReserveAmmo(data);
+                inventory.AddReserveAmmo(data, data.maxReserveAmmo);
+                changed |= inventory.GetReserveAmmo(data) != before;
+            }
+            RaiseAmmoStatus(force: true);
+            return changed;
+        }
+
+        int IndexOf(WeaponData data)
+        {
+            for (int i = 0; i < weapons.Length; i++)
+                if (weapons[i] != null && weapons[i].data == data) return i;
+            return -1;
         }
 
         void RaiseAmmoStatus(bool force)

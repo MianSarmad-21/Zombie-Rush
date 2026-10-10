@@ -34,6 +34,7 @@ namespace ZombieRush.EditorTools
             A = UIAssetGenerator.Ensure();
             AssignWeaponIcons();
             RemoveOldUI();
+            WaitForPlayerOnGameOver();
             EnsureEventSystem();
 
             var root = CreateRootCanvas("GameUI", 10);
@@ -61,6 +62,7 @@ namespace ZombieRush.EditorTools
                 !EditorUtility.DisplayDialog("Main Menu exists", $"{MainMenuScenePath} already exists. Replace it?", "Replace", "Cancel"))
                 return;
 
+            EnvironmentTools.EnsureDayProfile(); // the DAY card needs it
             A = UIAssetGenerator.Ensure();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -84,13 +86,27 @@ namespace ZombieRush.EditorTools
             foreach (var guid in AssetDatabase.FindAssets("t:WeaponData"))
             {
                 var data = AssetDatabase.LoadAssetAtPath<WeaponData>(AssetDatabase.GUIDToAssetPath(guid));
-                if (data == null || data.icon != null) continue;
+                if (data == null) continue;
+                // Fill empty icons and upgrade the old flat ones to the styled kit; keep custom art.
+                bool replaceable = data.icon == null || AssetDatabase.GetAssetPath(data.icon).StartsWith(UIAssetGenerator.IconFolder + "/");
+                if (!replaceable) continue;
                 string n = (data.weaponName + data.name).ToLowerInvariant();
-                var icon = n.Contains("shotgun") ? A.Icon("sawed-off-shotgun") : n.Contains("pistol") ? A.Icon("pistol-gun") : null;
-                if (icon == null) continue;
+                var icon = n.Contains("shotgun") ? A.IconX("shotgun") : n.Contains("pistol") ? A.IconX("pistol") : null;
+                if (icon == null || icon == data.icon) continue;
                 Undo.RecordObject(data, "Assign weapon icon");
                 data.icon = icon;
                 EditorUtility.SetDirty(data);
+            }
+        }
+
+        /// The results screen has Replay / Home buttons, so the run no longer auto-restarts.
+        static void WaitForPlayerOnGameOver()
+        {
+            foreach (var gm in Object.FindObjectsByType<GameManager>(FindObjectsInactive.Include))
+            {
+                if (gm.autoRestartDelay <= 0f) continue;
+                Undo.RecordObject(gm, "Build Zombie Rush UI");
+                gm.autoRestartDelay = 0f;
             }
         }
 
@@ -209,114 +225,136 @@ namespace ZombieRush.EditorTools
                 touchPoses.Add(new RectPose { anchorMin = touchAnchor, anchorMax = touchAnchor, pivot = touchPivot, anchoredPosition = touchPos });
             }
 
-            // ---- Top centre: wave title on a brush stroke, zombies left, zone -----
+            // ---- Top centre: carbon wave plate, zombies left, zone ---------------
             var top = Node("WaveStatus", hudGo.transform);
-            Place(top, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(760f, 170f));
-            var stroke = Img(top.transform, "Brush", A.Brush, UITheme.Ink.WithAlpha(0.88f), Image.Type.Sliced);
-            Place(stroke.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, 6f), new Vector2(720f, 150f));
+            Place(top, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -14f), new Vector2(640f, 190f));
+            var plate = SlicedSlant(top.transform, "Plate", A.BtnSlant, new Vector2(0f, 0f), new Vector2(560f, 96f));
+            Place(plate.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(560f, 96f));
 
-            hud.waveText = Txt(top.transform, "WaveText", "WAVE 1", A.Logo, 62, UITheme.Bone, TextAnchor.MiddleCenter);
-            Place(hud.waveText.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(700f, 76f));
-            Shadowed(hud.waveText, 0.8f, new Vector2(3f, -3f));
+            hud.waveText = Title(top.transform, "WaveText", "WAVE 1", 58, TitleGold);
+            Place(hud.waveText.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(520f, 76f));
 
+            var statsBg = Img(top.transform, "StatsBar", A.BarSlantFrame, Color.white.WithAlpha(0.9f), Image.Type.Sliced);
+            Place(statsBg.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -100f), new Vector2(600f, 46f));
             var stats = Node("Stats", top.transform);
-            Place(stats, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -88f), new Vector2(700f, 34f));
+            Place(stats, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -100f), new Vector2(600f, 46f));
             var row = stats.AddComponent<HorizontalLayoutGroup>();
             row.childAlignment = TextAnchor.MiddleCenter;
-            row.spacing = 10f;
+            row.spacing = 8f;
             row.childControlWidth = true;
             row.childControlHeight = false;
             row.childForceExpandWidth = false;
             row.childForceExpandHeight = false;
 
-            IconInRow(stats.transform, "ZombieIcon", A.Icon("raise-zombie"), UITheme.Blood, 34f);
-            hud.zombiesLeftText = RowText(stats.transform, "ZombiesLeft", "5 ZOMBIES LEFT", A.Bold, 24, UITheme.Blood);
-            var sep = RowText(stats.transform, "Sep", "  |  ", A.Medium, 22, UITheme.Dim);
+            IconInRow(stats.transform, "ZombieIcon", A.IconX("zombie"), Color.white, 42f);
+            hud.zombiesLeftText = RowText(stats.transform, "ZombiesLeft", "5 ZOMBIES LEFT", A.Bold, 24, UITheme.Bone);
+            var sep = RowText(stats.transform, "Sep", "   ", A.Medium, 22, UITheme.Dim);
             sep.name = "Separator";
-            IconInRow(stats.transform, "ZoneIcon", A.Icon("radar-sweep"), UITheme.Cyan, 28f);
+            IconInRow(stats.transform, "ZoneIcon", A.IconX("zone"), Color.white, 38f);
             hud.zoneText = RowText(stats.transform, "ZoneText", "ZONE  30m / 90m", A.Medium, 22, UITheme.Cyan);
 
-            var zoneBar = Img(top.transform, "ZoneBar", A.BarFrame, Color.white.WithAlpha(0.6f), Image.Type.Sliced);
-            Place(zoneBar.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -132f), new Vector2(300f, 14f));
+            var zoneBar = Img(top.transform, "ZoneBar", A.BarSlantFrame, Color.white, Image.Type.Sliced);
+            Place(zoneBar.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -152f), new Vector2(340f, 18f));
+            zoneBar.pixelsPerUnitMultiplier = 2.6f;
             var zoneInner = Node("Inner", zoneBar.transform);
-            Stretch(zoneInner, 3f, 3f, 3f, 3f);
-            hud.zoneFill = Img(zoneInner.transform, "Fill", A.White, UITheme.Cyan);
+            Stretch(zoneInner, 4f, 3f, 4f, 3f);
+            hud.zoneFill = Img(zoneInner.transform, "Fill", A.BarSlantFill, UITheme.Cyan, Image.Type.Sliced);
+            hud.zoneFill.pixelsPerUnitMultiplier = 3f;
             Stretch(hud.zoneFill.gameObject);
 
-            // ---- Coins plate (top-left) -------------------------------------------
-            var coins = Plate(hudGo.transform, "Coins", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -28f), new Vector2(290f, 84f));
-            var coinIcon = Img(coins, "CoinIcon", A.Icon("two-coins"), UITheme.Gold);
-            Place(coinIcon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(18f, 0f), new Vector2(58f, 58f));
-            var coinsLabel = Txt(coins, "Label", "COINS", A.Medium, 16, UITheme.Muted, TextAnchor.UpperLeft);
-            Place(coinsLabel.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(90f, -10f), new Vector2(180f, 22f));
-            hud.coinsText = Txt(coins, "CoinsText", "0", A.Bold, 42, UITheme.Gold, TextAnchor.MiddleLeft);
-            Place(hud.coinsText.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(90f, 6f), new Vector2(190f, 52f));
-            hud.coinsText.rectTransform.pivot = new Vector2(0.15f, 0.5f);
-            hud.coinsText.rectTransform.anchoredPosition = new Vector2(118f, 32f);
+            // ---- Health plate (top-left) ------------------------------------------
+            var health = Plate(hudGo.transform, "Health", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -24f), new Vector2(560f, 108f));
+            var heart = Img(health, "HeartIcon", A.IconX("health"), Color.white);
+            Place(heart.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(34f, 0f), new Vector2(96f, 96f));
+            var hpLabel = Txt(health, "Label", "HEALTH", A.Bold, 20, UITheme.Muted, TextAnchor.UpperLeft);
+            Place(hpLabel.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(140f, -12f), new Vector2(200f, 26f));
+            hud.healthText = Txt(health, "Value", "100 / 100", A.Bold, 26, UITheme.Bone, TextAnchor.UpperRight);
+            Place(hud.healthText.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-40f, -8f), new Vector2(200f, 32f));
+            Shadowed(hud.healthText);
+
+            var barFrame = Img(health, "Bar", A.BarSlantFrame, Color.white, Image.Type.Sliced);
+            Place(barFrame.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(134f, 30f), new Vector2(390f, 36f));
+            var barInner = Node("Inner", barFrame.transform);
+            Stretch(barInner, 6f, 5f, 6f, 5f);
+            hud.healthTrail = Img(barInner.transform, "Trail", A.BarSlantFill, UITheme.Bone.WithAlpha(0.85f), Image.Type.Sliced);
+            hud.healthTrail.pixelsPerUnitMultiplier = 1.2f;
+            Stretch(hud.healthTrail.gameObject);
+            hud.healthFill = Img(barInner.transform, "Fill", A.BarSlantFill, UITheme.Blood, Image.Type.Sliced);
+            hud.healthFill.pixelsPerUnitMultiplier = 1.2f;
+            Stretch(hud.healthFill.gameObject);
+
+            // Armor: thin steel-blue bar under the health bar (filled from the base's armor crates).
+            var armorFrame = Img(health, "ArmorBar", A.BarSlantFrame, Color.white, Image.Type.Sliced);
+            Place(armorFrame.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(128f, 8f), new Vector2(330f, 20f));
+            armorFrame.pixelsPerUnitMultiplier = 2.6f;
+            var armorInner = Node("Inner", armorFrame.transform);
+            Stretch(armorInner, 4f, 3f, 4f, 3f);
+            hud.armorFill = Img(armorInner.transform, "Fill", A.BarSlantFill, UITheme.Cyan, Image.Type.Sliced);
+            hud.armorFill.pixelsPerUnitMultiplier = 3f;
+            Stretch(hud.armorFill.gameObject);
+            hud.armorText = Txt(health, "ArmorValue", "", A.Bold, 18, UITheme.Cyan, TextAnchor.MiddleLeft);
+            Place(hud.armorText.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(464f, 8f), new Vector2(70f, 22f));
+            Shadowed(hud.armorText);
+
+            // ---- Coins + kills (under health) ---------------------------------------
+            var coins = Plate(hudGo.transform, "Coins", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -142f), new Vector2(270f, 84f));
+            var coinIcon = Img(coins, "CoinIcon", A.IconX("coin"), Color.white);
+            Place(coinIcon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(30f, 0f), new Vector2(70f, 70f));
+            hud.coinsText = Txt(coins, "CoinsText", "0", A.Bold, 44, UITheme.Gold, TextAnchor.MiddleLeft);
+            Place(hud.coinsText.gameObject, new Vector2(0f, 0.5f), new Vector2(0.1f, 0.5f), new Vector2(112f, 0f), new Vector2(150f, 60f));
             Shadowed(hud.coinsText);
             hud.coinsPunchTarget = hud.coinsText.rectTransform;
+
+            var killsPlate = Plate(hudGo.transform, "Kills", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(314f, -142f), new Vector2(230f, 84f));
+            var skull = Img(killsPlate, "KillsIcon", A.IconX("kills"), Color.white);
+            Place(skull.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(30f, 0f), new Vector2(64f, 64f));
+            hud.killsText = Txt(killsPlate, "KillsText", "0", A.Bold, 44, UITheme.Bone, TextAnchor.MiddleLeft);
+            Place(hud.killsText.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(106f, 0f), new Vector2(120f, 60f));
+            Shadowed(hud.killsText);
 
             // ---- Expand prompts -------------------------------------------------------
             ExpandPromptPC(hudGo.transform);
             ExpandPromptTouch(hudGo.transform);
 
-            // ---- Health plate (PC bottom-left / touch under coins) ------------------
-            var health = Plate(hudGo.transform, "Health", Vector2.zero, Vector2.zero, new Vector2(32f, 30f), new Vector2(500f, 96f));
-            var heart = Img(health, "HeartIcon", A.Icon("heart-plus"), UITheme.Blood);
-            Place(heart.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(16f, 0f), new Vector2(62f, 62f));
-            var hpLabel = Txt(health, "Label", "HEALTH", A.Medium, 18, UITheme.Muted, TextAnchor.UpperLeft);
-            Place(hpLabel.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(92f, -12f), new Vector2(200f, 24f));
-            hud.healthText = Txt(health, "Value", "100 / 100", A.Bold, 24, UITheme.Bone, TextAnchor.UpperRight);
-            Place(hud.healthText.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-22f, -8f), new Vector2(200f, 30f));
-            Shadowed(hud.healthText);
-
-            var barFrame = Img(health, "Bar", A.BarFrame, Color.white, Image.Type.Sliced);
-            Place(barFrame.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(90f, 16f), new Vector2(388f, 34f));
-            var barInner = Node("Inner", barFrame.transform);
-            Stretch(barInner, 5f, 5f, 5f, 5f);
-            hud.healthTrail = Img(barInner.transform, "Trail", A.BarFill, UITheme.Bone.WithAlpha(0.8f), Image.Type.Sliced);
-            Stretch(hud.healthTrail.gameObject);
-            hud.healthFill = Img(barInner.transform, "Fill", A.BarFill, UITheme.Blood, Image.Type.Sliced);
-            Stretch(hud.healthFill.gameObject);
-            Responsive(health.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -122f));
-
             // ---- Weapon plate (PC bottom-right / touch top-right) ------------------
-            var weapon = Plate(hudGo.transform, "Weapon", new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-32f, 30f), new Vector2(470f, 150f));
-            var hazard = Img(weapon, "Hazard", A.Hazard, Color.white.WithAlpha(0.85f), Image.Type.Tiled);
-            Place(hazard.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -6f), new Vector2(420f, 8f));
-            hazard.pixelsPerUnitMultiplier = 4f;
-
-            hud.weaponIcon = Img(weapon, "WeaponIcon", A.Icon("pistol-gun"), UITheme.Bone.WithAlpha(0.92f));
-            Place(hud.weaponIcon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(14f, -4f), new Vector2(130f, 130f));
+            var weapon = Plate(hudGo.transform, "Weapon", new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-32f, 30f), new Vector2(520f, 160f));
+            hud.weaponIcon = Img(weapon, "WeaponIcon", A.IconX("pistol"), Color.white);
+            Place(hud.weaponIcon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(40f, 0f), new Vector2(150f, 150f));
             hud.weaponIcon.preserveAspect = true;
 
-            hud.weaponNameText = Txt(weapon, "WeaponName", "PISTOL", A.Medium, 22, UITheme.Muted, TextAnchor.UpperRight);
-            Place(hud.weaponNameText.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-24f, -20f), new Vector2(300f, 30f));
-            hud.magazineText = Txt(weapon, "Magazine", "12", A.Bold, 80, UITheme.Bone, TextAnchor.LowerRight);
-            Place(hud.magazineText.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-150f, 14f), new Vector2(170f, 100f));
+            hud.weaponNameText = Txt(weapon, "WeaponName", "PISTOL", A.Bold, 24, UITheme.Muted, TextAnchor.UpperRight);
+            Place(hud.weaponNameText.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-30f, -16f), new Vector2(300f, 32f));
+            hud.magazineText = Txt(weapon, "Magazine", "12", A.Bold, 88, UITheme.Bone, TextAnchor.LowerRight);
+            Place(hud.magazineText.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-160f, 14f), new Vector2(170f, 108f));
             Shadowed(hud.magazineText, 0.8f, new Vector2(3f, -3f));
-            hud.reserveText = Txt(weapon, "Reserve", "/ 12   60", A.Medium, 26, UITheme.Muted, TextAnchor.LowerLeft);
-            Place(hud.reserveText.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-14f, 30f), new Vector2(134f, 40f));
+            var ammoIcon = Img(weapon, "AmmoIcon", A.IconX("ammo"), Color.white);
+            Place(ammoIcon.gameObject, new Vector2(1f, 0f), new Vector2(0.5f, 0.5f), new Vector2(-132f, 84f), new Vector2(44f, 44f));
+            hud.reserveText = Txt(weapon, "Reserve", "/ 12   60", A.Bold, 26, UITheme.Muted, TextAnchor.LowerLeft);
+            Place(hud.reserveText.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-16f, 30f), new Vector2(140f, 40f));
 
             var reload = Node("Reload", weapon);
-            Place(reload, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-24f, 14f), new Vector2(300f, 12f));
-            var reloadTrack = Img(reload.transform, "Track", A.BarFrame, Color.white.WithAlpha(0.5f), Image.Type.Sliced);
+            Place(reload, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-30f, 12f), new Vector2(320f, 16f));
+            var reloadTrack = Img(reload.transform, "Track", A.BarSlantFrame, Color.white, Image.Type.Sliced);
+            reloadTrack.pixelsPerUnitMultiplier = 2.6f;
             Stretch(reloadTrack.gameObject);
             var reloadInner = Node("Inner", reload.transform);
-            Stretch(reloadInner, 2f, 2f, 2f, 2f);
-            hud.reloadFill = Img(reloadInner.transform, "Fill", A.White, UITheme.Blood);
+            Stretch(reloadInner, 4f, 3f, 4f, 3f);
+            hud.reloadFill = Img(reloadInner.transform, "Fill", A.BarSlantFill, UITheme.Gold, Image.Type.Sliced);
+            hud.reloadFill.pixelsPerUnitMultiplier = 3f;
             Stretch(hud.reloadFill.gameObject);
-            var reloadLabel = Txt(reload.transform, "Label", "RELOADING", A.Bold, 18, UITheme.Blood, TextAnchor.LowerLeft);
-            Place(reloadLabel.gameObject, new Vector2(0f, 1f), new Vector2(0f, 0f), new Vector2(0f, 4f), new Vector2(200f, 24f));
+            var reloadLabel = Txt(reload.transform, "Label", "RELOADING", A.Bold, 20, UITheme.Gold, TextAnchor.LowerLeft);
+            Place(reloadLabel.gameObject, new Vector2(0f, 1f), new Vector2(0f, 0f), new Vector2(0f, 4f), new Vector2(200f, 26f));
+            Shadowed(reloadLabel);
             hud.reloadRoot = reload;
             reload.SetActive(false);
 
             var swapHint = Node("SwapHint", weapon);
-            Place(swapHint, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(-10f, -6f), new Vector2(220f, 30f));
-            var swapIcon = Img(swapHint.transform, "Icon", A.Icon("cycle"), UITheme.Gold);
-            Place(swapIcon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(28f, 28f));
-            var swapText = Txt(swapHint.transform, "Text", "TAP TO SWAP", A.Medium, 18, UITheme.Gold, TextAnchor.MiddleLeft);
-            Place(swapText.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(34f, 0f), new Vector2(180f, 30f));
+            Place(swapHint, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(-10f, -6f), new Vector2(230f, 34f));
+            var swapIcon = Img(swapHint.transform, "Icon", A.IconX("restart"), Color.white);
+            Place(swapIcon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(34f, 34f));
+            var swapText = Txt(swapHint.transform, "Text", "TAP TO SWAP", A.Bold, 20, UITheme.Gold, TextAnchor.MiddleLeft);
+            Place(swapText.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(40f, 0f), new Vector2(180f, 30f));
+            Shadowed(swapText);
             touchOnly.Add(swapHint);
 
             var swapArea = Node("SwapTouchArea", weapon);
@@ -324,7 +362,7 @@ namespace ZombieRush.EditorTools
             swapArea.AddComponent<EmptyGraphic>().raycastTarget = true;
             swapArea.AddComponent<TouchButton>().action = TouchAction.SwapWeapon;
             touchOnly.Add(swapArea);
-            Responsive(weapon.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-150f, -28f));
+            Responsive(weapon.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-180f, -24f));
 
             BuildCrosshair(hudGo.transform);
 
@@ -338,25 +376,25 @@ namespace ZombieRush.EditorTools
         static void ExpandPromptPC(Transform parent)
         {
             var holder = Node("ExpandPrompt_PC", parent);
-            Place(holder, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -124f), new Vector2(400f, 52f));
+            Place(holder, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -240f), new Vector2(470f, 70f));
             var content = Node("Content", holder.transform);
             Stretch(content);
-            var bg = Img(content.transform, "Bg", A.ButtonPlate, Color.white.WithAlpha(0.92f), Image.Type.Sliced);
+            var bg = SlicedSlant(content.transform, "Bg", A.BtnSlant, Vector2.zero, new Vector2(470f, 70f));
             Stretch(bg.gameObject);
-            var frame = Img(content.transform, "Frame", A.Frame, UITheme.Gold, Image.Type.Sliced);
+            var frame = SlicedSlant(content.transform, "Frame", A.BtnSlantGlow, Vector2.zero, new Vector2(470f, 70f));
+            frame.color = UITheme.Gold;
             Stretch(frame.gameObject);
-            frame.pixelsPerUnitMultiplier = 2.4f;
 
-            var key = Img(content.transform, "KeyCap", A.ButtonPlate, UITheme.Gold, Image.Type.Sliced);
-            Place(key.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(10f, 0f), new Vector2(36f, 36f));
-            key.pixelsPerUnitMultiplier = 3f;
-            var keyText = Txt(key.transform, "Key", "P", A.Bold, 22, UITheme.Ink, TextAnchor.MiddleCenter);
+            var key = Img(content.transform, "KeyCap", A.BtnSquare, Color.white);
+            Place(key.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(54f, 0f), new Vector2(56f, 46f));
+            var keyText = Txt(key.transform, "Key", "P", A.Bold, 24, UITheme.Gold, TextAnchor.MiddleCenter);
             Stretch(keyText.gameObject);
 
-            var icon = Img(content.transform, "Icon", A.Icon("expand"), UITheme.Gold);
-            Place(icon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(54f, 0f), new Vector2(30f, 30f));
-            var label = Txt(content.transform, "Label", "EXPAND ZONE  ·  20 COINS", A.Bold, 21, UITheme.Gold, TextAnchor.MiddleLeft);
-            Place(label.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(94f, 1f), new Vector2(300f, 40f));
+            var icon = Img(content.transform, "Icon", A.IconX("expand"), Color.white);
+            Place(icon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(116f, 0f), new Vector2(40f, 40f));
+            var label = Txt(content.transform, "Label", "EXPAND ZONE  ·  20 COINS", A.Bold, 22, UITheme.Gold, TextAnchor.MiddleLeft);
+            Place(label.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(164f, 1f), new Vector2(280f, 40f));
+            Shadowed(label);
 
             var prompt = holder.AddComponent<ExpandPromptUI>();
             prompt.content = content;
@@ -369,20 +407,21 @@ namespace ZombieRush.EditorTools
         static void ExpandPromptTouch(Transform parent)
         {
             var holder = Node("ExpandPrompt_Touch", parent);
-            Place(holder, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -232f), new Vector2(250f, 92f));
+            Place(holder, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -240f), new Vector2(300f, 100f));
             var content = Node("Content", holder.transform);
             Stretch(content);
-            var bg = Img(content.transform, "Bg", A.ButtonPlate, Color.white, Image.Type.Sliced);
+            var bg = SlicedSlant(content.transform, "Bg", A.BtnSlant, Vector2.zero, new Vector2(300f, 100f));
             Stretch(bg.gameObject);
             bg.raycastTarget = true;
-            var frame = Img(content.transform, "Frame", A.Frame, UITheme.Gold, Image.Type.Sliced);
+            var frame = SlicedSlant(content.transform, "Frame", A.BtnSlantGlow, Vector2.zero, new Vector2(300f, 100f));
+            frame.color = UITheme.Gold;
             Stretch(frame.gameObject);
-            frame.pixelsPerUnitMultiplier = 2.4f;
-            var icon = Img(content.transform, "Icon", A.Icon("expand"), UITheme.Gold);
-            Place(icon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(14f, 0f), new Vector2(54f, 54f));
+            var icon = Img(content.transform, "Icon", A.IconX("expand"), Color.white);
+            Place(icon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(66f, 0f), new Vector2(58f, 58f));
             var label = Txt(content.transform, "Label", "EXPAND\n20 COINS", A.Bold, 22, UITheme.Gold, TextAnchor.MiddleLeft);
-            Place(label.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(80f, 0f), new Vector2(160f, 80f));
+            Place(label.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(132f, 0f), new Vector2(150f, 80f));
             label.lineSpacing = 0.9f;
+            Shadowed(label);
             var btn = content.AddComponent<TouchButton>();
             btn.action = TouchAction.ExpandZone;
 
@@ -469,6 +508,8 @@ namespace ZombieRush.EditorTools
             Place(stickBase, Vector2.zero, new Vector2(0.5f, 0.5f), new Vector2(260f, 220f), new Vector2(270f, 270f));
             stick.visualGroup = stickBase.AddComponent<CanvasGroup>();
             stick.visualGroup.blocksRaycasts = false;
+            var baseDisc = Img(stickBase.transform, "Disc", A.TouchDisc, Color.white.WithAlpha(0.55f));
+            Stretch(baseDisc.gameObject, 14f, 14f, 14f, 14f);
             var baseImg = Img(stickBase.transform, "Base", A.StickBase, UITheme.Bone);
             Stretch(baseImg.gameObject);
             var knob = Img(stickBase.transform, "Knob", A.StickKnob, Color.white);
@@ -478,29 +519,27 @@ namespace ZombieRush.EditorTools
             stick.radius = 112f;
 
             // Action buttons: thumb arc in the bottom-right.
-            var fire = RoundButton(controls.transform, "Fire", "FIRE", "gunshot", 250f, new Vector2(-215f, 225f), UITheme.Blood, TouchAction.Fire);
+            var fire = RoundButton(controls.transform, "Fire", "FIRE", "fire", 250f, new Vector2(-215f, 225f), UITheme.Blood, TouchAction.Fire);
             fire.dragToLook = true;
-            RoundButton(controls.transform, "Reload", "RELOAD", "reload-gun-barrel", 138f, new Vector2(-470f, 110f), UITheme.Bone, TouchAction.Reload);
-            RoundButton(controls.transform, "Jump", "JUMP", "jump-across", 138f, new Vector2(-462f, 330f), UITheme.Bone, TouchAction.Jump);
-            RoundButton(controls.transform, "Crouch", "CROUCH", "kneeling", 126f, new Vector2(-270f, 485f), UITheme.Cyan, TouchAction.Crouch);
+            RoundButton(controls.transform, "Reload", "RELOAD", "reload", 138f, new Vector2(-470f, 110f), UITheme.Gold, TouchAction.Reload);
+            RoundButton(controls.transform, "Jump", "JUMP", "jump", 138f, new Vector2(-462f, 330f), UITheme.Bone, TouchAction.Jump);
+            RoundButton(controls.transform, "Crouch", "CROUCH", "crouch", 126f, new Vector2(-270f, 485f), UITheme.Cyan, TouchAction.Crouch);
 
             // Pause, top-right.
             var pause = Node("Pause", controls.transform);
-            Place(pause, Vector2.one, Vector2.one, new Vector2(-32f, -28f), new Vector2(96f, 96f));
-            var pauseBg = Img(pause.transform, "Bg", A.Panel, Color.white, Image.Type.Sliced);
+            Place(pause, Vector2.one, Vector2.one, new Vector2(-28f, -24f), new Vector2(130f, 100f));
+            var pauseBg = Img(pause.transform, "Bg", A.BtnSquare, Color.white);
             Stretch(pauseBg.gameObject);
-            pauseBg.pixelsPerUnitMultiplier = 2.2f;
             pauseBg.raycastTarget = true;
-            var pauseFrame = Img(pause.transform, "Frame", A.Frame, UITheme.Bone.WithAlpha(0.7f), Image.Type.Sliced);
-            Stretch(pauseFrame.gameObject);
-            pauseFrame.pixelsPerUnitMultiplier = 2.6f;
-            Line(pause.transform, "BarL", new Vector2(-11f, 0f), new Vector2(11f, 38f), UITheme.Bone);
-            Line(pause.transform, "BarR", new Vector2(11f, 0f), new Vector2(11f, 38f), UITheme.Bone);
+            var pauseGlow = Img(pause.transform, "Glow", A.BtnSquareGlow, Color.white.WithAlpha(0f));
+            Stretch(pauseGlow.gameObject);
+            var pauseIcon = Img(pause.transform, "Icon", A.IconX("pause"), Color.white);
+            Place(pauseIcon.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(62f, 62f));
             var pauseBtn = pause.AddComponent<TouchButton>();
             pauseBtn.action = TouchAction.Pause;
-            pauseBtn.visual = pauseFrame;
-            pauseBtn.normalColor = UITheme.Bone.WithAlpha(0.7f);
-            pauseBtn.pressedColor = UITheme.Blood;
+            pauseBtn.visual = pauseGlow;
+            pauseBtn.normalColor = Color.white.WithAlpha(0f);
+            pauseBtn.pressedColor = Color.white;
 
             controls.SetActive(false); // shown at runtime only when the touch scheme is active
         }
@@ -509,20 +548,21 @@ namespace ZombieRush.EditorTools
         {
             var go = Node(name, parent);
             Place(go, new Vector2(1f, 0f), new Vector2(0.5f, 0.5f), pos, new Vector2(size, size));
-            var disc = Img(go.transform, "Disc", A.RoundButton, Color.white.WithAlpha(0.92f));
+            var disc = Img(go.transform, "Disc", A.TouchDisc, Color.white.WithAlpha(0.95f));
             Stretch(disc.gameObject);
             disc.raycastTarget = true;
-            var ring = Img(go.transform, "Ring", A.RingTicks, accent.WithAlpha(0.75f));
-            Stretch(ring.gameObject, 6f, 6f, 6f, 6f);
-            var glyph = Img(go.transform, "Icon", A.Icon(icon), UITheme.Bone);
-            Place(glyph.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, size * 0.06f), Vector2.one * size * 0.46f);
-            var text = Txt(go.transform, "Caption", caption, A.Bold, Mathf.RoundToInt(Mathf.Clamp(size * 0.11f, 14f, 26f)), UITheme.Bone.WithAlpha(0.85f), TextAnchor.MiddleCenter);
+            var ring = Img(go.transform, "Ring", A.RingTicks, accent.WithAlpha(0.6f));
+            Stretch(ring.gameObject, 12f, 12f, 12f, 12f);
+            var glyph = Img(go.transform, "Icon", A.IconX(icon), Color.white);
+            Place(glyph.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, size * 0.07f), Vector2.one * size * 0.5f);
+            var text = Txt(go.transform, "Caption", caption, A.Bold, Mathf.RoundToInt(Mathf.Clamp(size * 0.1f, 14f, 26f)), UITheme.Bone.WithAlpha(0.9f), TextAnchor.MiddleCenter);
             Place(text.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0.5f), new Vector2(0f, size * 0.2f), new Vector2(size, 30f));
+            Shadowed(text);
 
             var btn = go.AddComponent<TouchButton>();
             btn.action = action;
             btn.visual = ring;
-            btn.normalColor = accent.WithAlpha(0.75f);
+            btn.normalColor = accent.WithAlpha(0.6f);
             btn.pressedColor = Color.Lerp(accent, Color.white, 0.35f);
             btn.toggledColor = UITheme.Cyan;
             return btn;
@@ -531,7 +571,7 @@ namespace ZombieRush.EditorTools
         static void BuildWaveBanner(Transform parent)
         {
             var go = Node("WaveBanner", parent);
-            Place(go, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -360f), new Vector2(1500f, 300f));
+            Place(go, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -380f), new Vector2(1500f, 320f));
             NestedCanvas(go, false);
             var ui = go.AddComponent<WaveBannerUI>();
             ui.group = go.AddComponent<CanvasGroup>();
@@ -542,45 +582,45 @@ namespace ZombieRush.EditorTools
             Stretch(anim);
             ui.animRoot = anim.GetComponent<RectTransform>();
 
-            var splat = Img(anim.transform, "Blood", A.Blood, UITheme.BloodDark.WithAlpha(0.8f));
-            Place(splat.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-380f, 20f), new Vector2(420f, 420f));
+            var splat = Img(anim.transform, "Blood", A.Blood, UITheme.BloodDark.WithAlpha(0.85f));
+            Place(splat.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-400f, 30f), new Vector2(440f, 440f));
             var brush = Img(anim.transform, "Brush", A.Brush, UITheme.Ink.WithAlpha(0.92f), Image.Type.Sliced);
-            Place(brush.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 12f), new Vector2(1180f, 240f));
+            Place(brush.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 12f), new Vector2(1180f, 250f));
 
-            ui.titleText = Txt(anim.transform, "Title", "WAVE 1", A.Logo, 128, UITheme.Bone, TextAnchor.MiddleCenter);
-            Place(ui.titleText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 44f), new Vector2(1200f, 150f));
-            Shadowed(ui.titleText, 0.85f, new Vector2(5f, -5f));
+            ui.titleText = Title(anim.transform, "Title", "WAVE 1", 132, TitleGold);
+            Place(ui.titleText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 46f), new Vector2(1200f, 160f));
 
             var lineL = Img(anim.transform, "LineL", A.Divider, UITheme.Blood);
-            Place(lineL.gameObject, new Vector2(0.5f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-150f, -52f), new Vector2(260f, 8f));
+            Place(lineL.gameObject, new Vector2(0.5f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-160f, -56f), new Vector2(260f, 8f));
             var lineR = Img(anim.transform, "LineR", A.Divider, UITheme.Blood);
-            Place(lineR.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0f, 0.5f), new Vector2(150f, -52f), new Vector2(260f, 8f));
+            Place(lineR.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0f, 0.5f), new Vector2(160f, -56f), new Vector2(260f, 8f));
 
-            ui.subtitleText = Txt(anim.transform, "Subtitle", "INCOMING", A.Bold, 42, UITheme.Blood, TextAnchor.MiddleCenter);
-            Place(ui.subtitleText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -52f), new Vector2(300f, 56f));
-            Shadowed(ui.subtitleText);
+            ui.subtitleText = Txt(anim.transform, "Subtitle", "INCOMING", A.Bold, 44, UITheme.Blood, TextAnchor.MiddleCenter);
+            Place(ui.subtitleText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -56f), new Vector2(300f, 56f));
+            Outlined(ui.subtitleText);
 
-            ui.detailText = Txt(anim.transform, "Detail", "", A.Medium, 26, UITheme.Bone.WithAlpha(0.75f), TextAnchor.MiddleCenter);
-            Place(ui.detailText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -120f), new Vector2(1200f, 40f));
+            ui.detailText = Txt(anim.transform, "Detail", "", A.Bold, 28, UITheme.Bone.WithAlpha(0.85f), TextAnchor.MiddleCenter);
+            Place(ui.detailText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -124f), new Vector2(1200f, 40f));
             Shadowed(ui.detailText);
         }
 
         static void BuildPauseMenu(Transform parent, OptionsMenuUI options)
         {
-            var go = MenuScreen(parent, "PauseMenu", 0.7f);
+            var go = MenuScreen(parent, "PauseMenu", 0.62f);
             var ui = go.AddComponent<PauseMenuUI>();
             ui.panel = go.GetComponent<UIPanel>();
             ui.options = options;
 
-            var card = Card(go.transform, new Vector2(660f, 700f));
-            CardTitle(card, "PAUSED", "THE HORDE WAITS");
+            var card = GrungePanel(go.transform, new Vector2(880f, 820f), Vector2.zero);
+            var title = Title(card, "Title", "PAUSED", 124, TitleGold);
+            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -150f), new Vector2(800f, 150f));
 
-            var list = Node("Buttons", card);
-            Place(list, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -200f), new Vector2(560f, 420f));
-            ui.resumeButton = MenuButton(list.transform, "Resume", "RESUME", "play-button", 42, new Vector2(0f, 0f), new Vector2(560f, 84f));
-            ui.restartButton = MenuButton(list.transform, "Restart", "RESTART  ·  WAVE 1", "cycle", 42, new Vector2(0f, -100f), new Vector2(560f, 84f));
-            ui.optionsButton = MenuButton(list.transform, "Options", "OPTIONS", "cog", 42, new Vector2(0f, -200f), new Vector2(560f, 84f));
-            ui.menuButton = MenuButton(list.transform, "QuitToMenu", "QUIT TO MENU", "exit-door", 42, new Vector2(0f, -300f), new Vector2(560f, 84f));
+            var size = new Vector2(540f, 104f);
+            var top = new Vector2(0.5f, 1f);
+            ui.resumeButton = SlantButton(card, "Resume", "RESUME", top, new Vector2(0f, -300f), size, 50);
+            ui.restartButton = SlantButton(card, "Restart", "RESTART", top, new Vector2(0f, -418f), size, 50);
+            ui.optionsButton = SlantButton(card, "Options", "OPTIONS", top, new Vector2(0f, -536f), size, 50);
+            ui.menuButton = SlantButton(card, "Home", "HOME", top, new Vector2(0f, -654f), size, 50);
             ui.panel.firstSelected = ui.resumeButton;
         }
 
@@ -595,43 +635,74 @@ namespace ZombieRush.EditorTools
             panel.fadeSpeed = 3f;
             var ui = go.AddComponent<GameOverUI>();
             ui.panel = panel;
+            ui.starFull = A.StarFull;
+            ui.starEmpty = A.StarEmpty;
 
-            var tint = Img(go.transform, "Tint", A.White, UITheme.BloodDark.WithAlpha(0.86f));
+            var tint = Img(go.transform, "Tint", A.White, UITheme.Ink.WithAlpha(0.8f));
             Stretch(tint.gameObject);
             tint.raycastTarget = true;
-            var grain = Img(go.transform, "Grain", A.Grain, Color.black.WithAlpha(0.35f), Image.Type.Tiled);
-            Stretch(grain.gameObject);
-            var vignette = Img(go.transform, "Vignette", A.Vignette, Color.black.WithAlpha(0.95f));
+            var frame = Img(go.transform, "BloodFrame", A.BloodFrame, Color.white);
+            Stretch(frame.gameObject);
+            var vignette = Img(go.transform, "Vignette", A.Vignette, Color.black.WithAlpha(0.9f));
             Stretch(vignette.gameObject, -100f, -100f, -100f, -100f);
-            var splat = Img(go.transform, "Blood", A.Blood, UITheme.Blood.WithAlpha(0.35f));
-            Place(splat.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 140f), new Vector2(1000f, 1000f));
 
-            var title = Node("TitleRoot", go.transform);
-            Place(title, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(1400f, 260f));
+            var card = GrungePanel(go.transform, new Vector2(1180f, 920f), new Vector2(0f, 10f));
+
+            var title = Node("TitleRoot", card);
+            Place(title, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -150f), new Vector2(1000f, 160f));
             ui.titleRoot = title.GetComponent<RectTransform>();
-            var skull = Img(title.transform, "Skull", A.Icon("broken-skull"), UITheme.Bone.WithAlpha(0.9f));
-            Place(skull.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, 40f), new Vector2(130f, 130f));
-            var titleText = Txt(title.transform, "Title", "YOU DIED", A.Logo, 200, UITheme.Blood, TextAnchor.MiddleCenter);
-            Place(titleText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -30f), new Vector2(1400f, 230f));
-            Shadowed(titleText, 0.95f, new Vector2(7f, -7f));
+            var titleText = Title(title.transform, "Title", "YOU DIED", 136, TitleBlood);
+            Stretch(titleText.gameObject);
+            var skullL = Img(title.transform, "SkullL", A.IconX("skull"), Color.white);
+            Place(skullL.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-400f, 0f), new Vector2(96f, 96f));
+            var skullR = Img(title.transform, "SkullR", A.IconX("skull"), Color.white);
+            Place(skullR.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(400f, 0f), new Vector2(96f, 96f));
 
-            ui.waveText = Txt(go.transform, "Wave", "YOU SURVIVED TO WAVE 1", A.Bold, 44, UITheme.Bone, TextAnchor.MiddleCenter);
-            Place(ui.waveText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -40f), new Vector2(1200f, 60f));
-            Shadowed(ui.waveText);
+            // Star rating
+            var starRow = Node("Stars", card);
+            Place(starRow, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -284f), new Vector2(620f, 120f));
+            ui.stars = new Image[5];
+            for (int i = 0; i < 5; i++)
+            {
+                var s = Img(starRow.transform, "Star" + (i + 1), A.StarEmpty, Color.white);
+                float lift = i == 2 ? 14f : (i == 1 || i == 3 ? 6f : 0f);
+                Place(s.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2((i - 2) * 118f, lift), Vector2.one * (i == 2 ? 124f : 112f));
+                ui.stars[i] = s;
+            }
 
-            var best = Node("Best", go.transform);
-            Place(best, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -96f), new Vector2(600f, 44f));
-            var trophy = Img(best.transform, "Trophy", A.Icon("trophy-cup"), UITheme.Gold);
-            Place(trophy.gameObject, new Vector2(0.5f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-130f, 0f), new Vector2(40f, 40f));
-            ui.bestText = Txt(best.transform, "Text", "BEST  ·  WAVE 1", A.Medium, 30, UITheme.Muted, TextAnchor.MiddleCenter);
-            Stretch(ui.bestText.gameObject);
+            // Results table
+            var rows = Node("Results", card);
+            Place(rows, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -360f), new Vector2(760f, 300f));
+            ui.waveText = ResultRow(rows.transform, "Wave", "WAVE REACHED", "zombie", 0);
+            ui.killsText = ResultRow(rows.transform, "Kills", "KILLS", "kills", 1);
+            ui.coinsText = ResultRow(rows.transform, "Coins", "COINS EARNED", "coin", 2);
+            ui.bestText = ResultRow(rows.transform, "Best", "BEST WAVE", "trophy", 3);
 
-            ui.restartButton = PlateButton(go.transform, "Restart", "RESTART", "cycle", new Vector2(-180f, -210f), new Vector2(320f, 92f), true);
-            ui.menuButton = PlateButton(go.transform, "MainMenu", "MAIN MENU", "exit-door", new Vector2(180f, -210f), new Vector2(320f, 92f), false);
+            var buttonSize = new Vector2(400f, 104f);
+            ui.restartButton = SlantButton(card, "Replay", "REPLAY", new Vector2(0.5f, 0f), new Vector2(-230f, 120f), buttonSize, 50);
+            ui.menuButton = SlantButton(card, "Home", "HOME", new Vector2(0.5f, 0f), new Vector2(230f, 120f), buttonSize, 50);
             panel.firstSelected = ui.restartButton;
 
-            ui.countdownText = Txt(go.transform, "Countdown", "RESTARTING IN 3", A.Medium, 24, UITheme.Muted, TextAnchor.MiddleCenter);
-            Place(ui.countdownText.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -300f), new Vector2(800f, 36f));
+            ui.countdownText = Txt(go.transform, "Countdown", "PRESS R TO RESTART", A.Bold, 24, UITheme.Muted, TextAnchor.MiddleCenter);
+            Place(ui.countdownText.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0.5f), new Vector2(0f, 36f), new Vector2(800f, 36f));
+            Shadowed(ui.countdownText);
+        }
+
+        static Text ResultRow(Transform parent, string name, string label, string icon, int index)
+        {
+            var row = Node("Row_" + name, parent);
+            Place(row, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -index * 72f), new Vector2(760f, 66f));
+            var strip = Img(row.transform, "Strip", A.BarSlantFrame, Color.white.WithAlpha(0.55f), Image.Type.Sliced);
+            Stretch(strip.gameObject);
+            var img = Img(row.transform, "Icon", A.IconX(icon), Color.white);
+            Place(img.gameObject, new Vector2(0f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(54f, 0f), new Vector2(58f, 58f));
+            var t = Txt(row.transform, "Label", label, A.Bold, 34, UITheme.Bone, TextAnchor.MiddleLeft);
+            Place(t.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(100f, 0f), new Vector2(400f, 50f));
+            Shadowed(t);
+            var v = Txt(row.transform, "Value", "0", A.Bold, 40, UITheme.Gold, TextAnchor.MiddleRight);
+            Place(v.gameObject, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-40f, 0f), new Vector2(260f, 56f));
+            Shadowed(v, 0.8f, new Vector2(2f, -2f));
+            return v;
         }
 
         // =====================================================================
@@ -640,35 +711,33 @@ namespace ZombieRush.EditorTools
 
         static OptionsMenuUI BuildOptions(Transform parent)
         {
-            var go = MenuScreen(parent, "OptionsMenu", 0.78f);
+            var go = MenuScreen(parent, "OptionsMenu", 0.7f);
             var ui = go.AddComponent<OptionsMenuUI>();
             ui.panel = go.GetComponent<UIPanel>();
 
-            var card = Card(go.transform, new Vector2(1360f, 860f));
-            CardTitle(card, "OPTIONS", "TUNE YOUR SURVIVAL");
+            var card = GrungePanel(go.transform, new Vector2(1440f, 940f), Vector2.zero);
+            var title = Title(card, "Title", "OPTIONS", 104, TitleGold);
+            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -130f), new Vector2(900f, 130f));
 
-            var left = Column(card, "Left", new Vector2(-340f, -180f));
-            var right = Column(card, "Right", new Vector2(340f, -180f));
+            var left = Column(card, "Left", new Vector2(-350f, -210f));
+            var right = Column(card, "Right", new Vector2(350f, -210f));
 
-            Section(left, "GRAPHICS", "tv");
+            Section(left, "GRAPHICS", "graphics");
             ui.quality = Cycler(Row(left, "QUALITY"), "Quality");
             ui.frameRate = Cycler(Row(left, "FRAME RATE"), "FrameRate");
-            Section(left, "CONTROLS", "gamepad");
+            Section(left, "CONTROLS", "controls");
             ui.sensitivity = SliderControl(Row(left, "LOOK SENSITIVITY"), "Sensitivity", out ui.sensitivityValue);
             ui.invertY = Cycler(Row(left, "INVERT LOOK Y"), "InvertY");
             ui.controlScheme = Cycler(Row(left, "CONTROLS"), "Controls");
 
-            Section(right, "AUDIO", "speaker");
+            Section(right, "AUDIO", "audio");
             ui.masterVolume = SliderControl(Row(right, "MASTER VOLUME"), "Master", out ui.masterValue);
             ui.sfxVolume = SliderControl(Row(right, "SOUND EFFECTS"), "Sfx", out ui.sfxValue);
             ui.musicVolume = SliderControl(Row(right, "MUSIC"), "Music", out ui.musicValue);
-            Section(right, "FEEDBACK", "smartphone");
+            Section(right, "FEEDBACK", "feedback");
             ui.vibration = Cycler(Row(right, "VIBRATION"), "Vibration");
 
-            ui.backButton = PlateButton(card, "Back", "BACK", "exit-door", Vector2.zero, new Vector2(300f, 84f), false);
-            var backRt = ui.backButton.GetComponent<RectTransform>();
-            backRt.anchorMin = backRt.anchorMax = new Vector2(0.5f, 0f);
-            backRt.anchoredPosition = new Vector2(0f, 76f);
+            ui.backButton = SlantButton(card, "Back", "BACK", new Vector2(0.5f, 0f), new Vector2(0f, 118f), new Vector2(380f, 100f), 48);
             ui.panel.firstSelected = ui.backButton;
             return ui;
         }
@@ -676,7 +745,7 @@ namespace ZombieRush.EditorTools
         static Transform Column(Transform card, string name, Vector2 pos)
         {
             var col = Node(name, card);
-            Place(col, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), pos, new Vector2(600f, 520f));
+            Place(col, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), pos, new Vector2(620f, 540f));
             var v = col.AddComponent<VerticalLayoutGroup>();
             v.spacing = 4f;
             v.childControlHeight = false;
@@ -690,23 +759,25 @@ namespace ZombieRush.EditorTools
         static void Section(Transform column, string title, string icon)
         {
             var go = Node("Section_" + title, column);
-            go.GetComponent<RectTransform>().sizeDelta = new Vector2(600f, 58f);
-            var img = Img(go.transform, "Icon", A.Icon(icon), UITheme.Blood);
-            Place(img.gameObject, Vector2.zero, Vector2.zero, new Vector2(0f, 8f), new Vector2(34f, 34f));
-            var t = Txt(go.transform, "Title", title, A.Bold, 26, UITheme.Blood, TextAnchor.LowerLeft);
-            Stretch(t.gameObject, 44f, 0f, 0f, 8f);
-            var line = Img(go.transform, "Line", A.Divider, UITheme.Bone.WithAlpha(0.18f));
-            Place(line.gameObject, Vector2.zero, Vector2.zero, new Vector2(0f, -2f), new Vector2(600f, 8f));
+            go.GetComponent<RectTransform>().sizeDelta = new Vector2(620f, 64f);
+            var img = Img(go.transform, "Icon", A.IconX(icon), Color.white);
+            Place(img.gameObject, Vector2.zero, Vector2.zero, new Vector2(-4f, 4f), new Vector2(50f, 50f));
+            var t = Txt(go.transform, "Title", title, A.Bold, 30, UITheme.Gold, TextAnchor.LowerLeft);
+            Stretch(t.gameObject, 54f, 0f, 0f, 10f);
+            Shadowed(t);
+            var line = Img(go.transform, "Line", A.Divider, UITheme.Blood.WithAlpha(0.9f));
+            Place(line.gameObject, Vector2.zero, Vector2.zero, new Vector2(0f, -2f), new Vector2(620f, 8f));
         }
 
         static Transform Row(Transform column, string label)
         {
             var row = Node("Row_" + label, column);
-            row.GetComponent<RectTransform>().sizeDelta = new Vector2(600f, 68f);
-            var t = Txt(row.transform, "Label", label, A.Medium, 25, UITheme.Bone, TextAnchor.MiddleLeft);
-            Place(t.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(250f, 60f));
+            row.GetComponent<RectTransform>().sizeDelta = new Vector2(620f, 70f);
+            var t = Txt(row.transform, "Label", label, A.Bold, 26, UITheme.Bone, TextAnchor.MiddleLeft);
+            Place(t.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(260f, 60f));
+            Shadowed(t);
             var control = Node("Control", row.transform);
-            Place(control, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), Vector2.zero, new Vector2(340f, 58f));
+            Place(control, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), Vector2.zero, new Vector2(350f, 58f));
             return control.transform;
         }
 
@@ -714,9 +785,8 @@ namespace ZombieRush.EditorTools
         {
             var go = Node(name, slot);
             Stretch(go);
-            var bg = Img(go.transform, "Bg", A.ButtonPlate, Color.white, Image.Type.Sliced);
+            var bg = Img(go.transform, "Bg", A.BarSlantFrame, Color.white, Image.Type.Sliced);
             Stretch(bg.gameObject);
-            bg.pixelsPerUnitMultiplier = 1.6f;
 
             var cycler = go.AddComponent<OptionCycler>();
             cycler.prevButton = ArrowButton(go.transform, "Prev", true);
@@ -738,7 +808,7 @@ namespace ZombieRush.EditorTools
 
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = arrow;
-            btn.colors = Tint(UITheme.Blood);
+            btn.colors = Tint(UITheme.Gold);
             return btn;
         }
 
@@ -748,21 +818,22 @@ namespace ZombieRush.EditorTools
             Stretch(go, 0f, 0f, 64f, 0f);
             var slider = go.AddComponent<Slider>();
 
-            var track = Img(go.transform, "Track", A.BarFrame, Color.white, Image.Type.Sliced);
+            var track = Img(go.transform, "Track", A.BarSlantFrame, Color.white, Image.Type.Sliced);
             var trackRt = track.rectTransform;
             trackRt.anchorMin = new Vector2(0f, 0.5f);
             trackRt.anchorMax = new Vector2(1f, 0.5f);
-            trackRt.sizeDelta = new Vector2(0f, 22f);
+            trackRt.sizeDelta = new Vector2(0f, 26f);
+            track.pixelsPerUnitMultiplier = 1.8f;
             track.raycastTarget = true;
 
             var fillArea = Node("FillArea", go.transform);
             var faRt = fillArea.GetComponent<RectTransform>();
             faRt.anchorMin = new Vector2(0f, 0.5f);
             faRt.anchorMax = new Vector2(1f, 0.5f);
-            faRt.sizeDelta = new Vector2(-8f, 12f);
-            var fill = Img(fillArea.transform, "Fill", A.BarFill, UITheme.Blood, Image.Type.Sliced);
+            faRt.sizeDelta = new Vector2(-8f, 16f);
+            var fill = Img(fillArea.transform, "Fill", A.BarSlantFill, UITheme.Blood, Image.Type.Sliced);
             Stretch(fill.gameObject);
-            fill.pixelsPerUnitMultiplier = 2f;
+            fill.pixelsPerUnitMultiplier = 2.2f;
 
             var handleArea = Node("HandleArea", go.transform);
             Stretch(handleArea, 20f, 0f, 20f, 0f);
@@ -770,16 +841,17 @@ namespace ZombieRush.EditorTools
             handle.preserveAspect = true;
             handle.raycastTarget = true;
             var hRt = handle.rectTransform;
-            hRt.sizeDelta = new Vector2(44f, 0f);
+            hRt.sizeDelta = new Vector2(46f, 0f);
 
             slider.fillRect = fill.rectTransform;
             slider.handleRect = hRt;
             slider.targetGraphic = handle;
             slider.direction = Slider.Direction.LeftToRight;
-            slider.colors = Tint(UITheme.Bone);
+            slider.colors = Tint(UITheme.Gold);
 
-            valueText = Txt(slot, name + "Value", "0", A.Bold, 26, UITheme.Bone, TextAnchor.MiddleRight);
+            valueText = Txt(slot, name + "Value", "0", A.Bold, 28, UITheme.Gold, TextAnchor.MiddleRight);
             Place(valueText.gameObject, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), Vector2.zero, new Vector2(56f, 50f));
+            Shadowed(valueText);
             return slider;
         }
 
@@ -800,14 +872,16 @@ namespace ZombieRush.EditorTools
 
         static void BuildMainMenu(Transform root)
         {
-            var shadeLeft = Img(root, "ShadeLeft", A.GradientH, UITheme.Ink.WithAlpha(0.96f));
+            var shadeLeft = Img(root, "ShadeLeft", A.GradientH, UITheme.Ink.WithAlpha(0.94f));
             var slRt = shadeLeft.rectTransform;
             slRt.anchorMin = Vector2.zero;
-            slRt.anchorMax = new Vector2(0.66f, 1f);
+            slRt.anchorMax = new Vector2(0.62f, 1f);
             slRt.offsetMin = slRt.offsetMax = Vector2.zero;
-            var vignette = Img(root, "Vignette", A.Vignette, Color.black.WithAlpha(0.9f));
+            var vignette = Img(root, "Vignette", A.Vignette, Color.black.WithAlpha(0.85f));
             Stretch(vignette.gameObject, -120f, -120f, -120f, -120f);
-            var grain = Img(root, "Grain", A.Grain, Color.black.WithAlpha(0.22f), Image.Type.Tiled);
+            var bloodFrame = Img(root, "BloodFrame", A.BloodFrame, Color.white);
+            Stretch(bloodFrame.gameObject);
+            var grain = Img(root, "Grain", A.Grain, Color.black.WithAlpha(0.2f), Image.Type.Tiled);
             Stretch(grain.gameObject);
 
             var safe = SafeArea(root);
@@ -823,46 +897,45 @@ namespace ZombieRush.EditorTools
             ui.mainPanel = panel;
             ui.options = options;
 
-            // Logo: "ZOMBIE" over a blood splatter, "RUSH" in red.
-            var logo = Node("Logo", main.transform);
-            Place(logo, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(110f, -70f), new Vector2(900f, 380f));
-            var splat = Img(logo.transform, "Blood", A.Blood, UITheme.BloodDark.WithAlpha(0.9f));
-            Place(splat.gameObject, new Vector2(0f, 1f), new Vector2(0.5f, 0.5f), new Vector2(560f, -230f), new Vector2(560f, 560f));
-            var hazardIcon = Img(logo.transform, "Biohazard", A.Icon("biohazard"), UITheme.Gold.WithAlpha(0.85f));
-            Place(hazardIcon.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(6f, 4f), new Vector2(64f, 64f));
-            var tagline = Txt(logo.transform, "Tagline", "W A V E    S U R V I V A L", A.Medium, 24, UITheme.Gold.WithAlpha(0.85f), TextAnchor.MiddleLeft);
-            Place(tagline.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(84f, -12f), new Vector2(700f, 40f));
-            var zombie = Txt(logo.transform, "Zombie", "ZOMBIE", A.Logo, 172, UITheme.Bone, TextAnchor.UpperLeft);
-            Place(zombie.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, -56f), new Vector2(900f, 190f));
-            Shadowed(zombie, 0.9f, new Vector2(6f, -6f));
-            var rush = Txt(logo.transform, "Rush", "RUSH", A.Logo, 172, UITheme.Blood, TextAnchor.UpperLeft);
-            Place(rush.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, -206f), new Vector2(900f, 190f));
-            Shadowed(rush, 0.9f, new Vector2(6f, -6f));
+            // Logo
+            var logo = Img(main.transform, "Logo", A.LogoImage, Color.white);
+            Place(logo.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(70f, -26f), new Vector2(700f, 320f));
+            logo.preserveAspect = true;
 
-            var hazard = Img(main.transform, "Hazard", A.Hazard, Color.white.WithAlpha(0.9f), Image.Type.Tiled);
-            Place(hazard.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(110f, -486f), new Vector2(560f, 10f));
-            hazard.pixelsPerUnitMultiplier = 3.2f;
-
-            // Buttons
-            var list = Node("Buttons", main.transform);
-            Place(list, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(92f, -520f), new Vector2(640f, 420f));
-            ui.playButton = MenuButton(list.transform, "Play", "PLAY", "play-button", 56, new Vector2(0f, 0f), new Vector2(640f, 92f));
-            ui.multiplayerButton = MenuButton(list.transform, "Multiplayer", "MULTIPLAYER", "backup", 56, new Vector2(0f, -102f), new Vector2(640f, 92f));
-            var soon = Txt(ui.multiplayerButton.transform, "Soon", "CO-OP  ·  SOON", A.Bold, 18, UITheme.Gold.WithAlpha(0.85f), TextAnchor.MiddleLeft);
-            Place(soon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(470f, -2f), new Vector2(170f, 30f));
-            ui.optionsButton = MenuButton(list.transform, "Options", "OPTIONS", "cog", 56, new Vector2(0f, -204f), new Vector2(640f, 92f));
-            ui.quitButton = MenuButton(list.transform, "Quit", "QUIT", "exit-door", 56, new Vector2(0f, -306f), new Vector2(640f, 92f));
+            // Slanted carbon buttons, left column (like the reference layout)
+            var size = new Vector2(600f, 104f);
+            var tl = new Vector2(0f, 1f);
+            ui.playButton = SlantButton(main.transform, "Play", "PLAY", tl, new Vector2(110f + size.x / 2f, -404f), size, 56);
+            ui.multiplayerButton = SlantButton(main.transform, "Multiplayer", "MULTIPLAYER", tl, new Vector2(110f + size.x / 2f, -520f), size, 56);
+            var soon = Title(ui.multiplayerButton.transform, "Soon", "SOON", 30, TitleGold);
+            Place(soon.gameObject, new Vector2(1f, 0.5f), new Vector2(0f, 0.5f), new Vector2(4f, 0f), new Vector2(120f, 40f));
+            soon.rectTransform.localEulerAngles = new Vector3(0f, 0f, 8f);
+            ui.optionsButton = SlantButton(main.transform, "Options", "OPTIONS", tl, new Vector2(110f + size.x / 2f, -636f), size, 56);
+            ui.quitButton = SlantButton(main.transform, "Quit", "QUIT", tl, new Vector2(110f + size.x / 2f, -752f), size, 56);
             panel.firstSelected = ui.playButton;
 
-            var best = Node("Best", main.transform);
-            Place(best, Vector2.zero, Vector2.zero, new Vector2(110f, 44f), new Vector2(600f, 48f));
-            var trophy = Img(best.transform, "Trophy", A.Icon("trophy-cup"), UITheme.Gold);
-            Place(trophy.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(42f, 42f));
-            ui.bestWaveText = Txt(best.transform, "Text", "BEST  ·  WAVE 0", A.Bold, 28, UITheme.Gold, TextAnchor.MiddleLeft);
-            Place(ui.bestWaveText.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(54f, 0f), new Vector2(500f, 44f));
+            // Quick toggles, bottom-left
+            var bl = Vector2.zero;
+            var sq = new Vector2(150f, 112f);
+            ui.soundToggle = IconButton(main.transform, "Sound", A.IconX("sound-on"), bl, new Vector2(110f + 75f, 112f), sq, out ui.soundIcon);
+            ui.soundOnSprite = A.IconX("sound-on");
+            ui.soundOffSprite = A.IconX("sound-off");
+            ui.musicToggle = IconButton(main.transform, "Music", A.IconX("music"), bl, new Vector2(110f + 75f + 168f, 112f), sq, out ui.musicIcon);
+            ui.vibrationToggle = IconButton(main.transform, "Vibration", A.IconX("vibration"), bl, new Vector2(110f + 75f + 336f, 112f), sq, out ui.vibrationIcon);
 
-            ui.versionText = Txt(main.transform, "Version", "v0.1", A.Medium, 20, UITheme.Dim, TextAnchor.LowerRight);
-            Place(ui.versionText.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-48f, 44f), new Vector2(400f, 30f));
+            // Best wave + version, bottom-right
+            var best = Node("Best", main.transform);
+            Place(best, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-60f, 70f), new Vector2(520f, 64f));
+            var trophy = Img(best.transform, "Trophy", A.IconX("trophy"), Color.white);
+            Place(trophy.gameObject, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-400f, 0f), new Vector2(64f, 64f));
+            ui.bestWaveText = Txt(best.transform, "Text", "BEST  ·  WAVE 0", A.Bold, 34, UITheme.Gold, TextAnchor.MiddleRight);
+            Place(ui.bestWaveText.gameObject, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), Vector2.zero, new Vector2(390f, 56f));
+            Shadowed(ui.bestWaveText);
+
+            ui.versionText = Txt(main.transform, "Version", "v0.1", A.Medium, 20, UITheme.Muted, TextAnchor.LowerRight);
+            Place(ui.versionText.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-60f, 30f), new Vector2(400f, 30f));
+
+            BuildModeSelect(root, ui);
 
             // Fade-from-black overlay (also blocks clicks while loading).
             var fader = Img(root, "Fader", A.White, UITheme.Ink);
@@ -874,6 +947,89 @@ namespace ZombieRush.EditorTools
 
             options.transform.SetAsLastSibling();
             fader.transform.SetAsLastSibling();
+        }
+
+        /// "SELECT THE MODE": torn red panel with a SOLO and a SQUAD card.
+        static void BuildModeSelect(Transform root, MainMenuUI ui)
+        {
+            var go = MenuScreen(root, "ModeSelect", 0.55f);
+            ui.modePanel = go.GetComponent<UIPanel>();
+
+            var card = GrungePanel(go.transform, new Vector2(1360f, 860f), new Vector2(0f, 20f));
+            var title = Title(card, "Title", "SELECT THE MODE", 96, TitleGold);
+            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -130f), new Vector2(1200f, 130f));
+
+            ui.soloButton = ModeCard(card, "Solo", "SOLO", A.ModeSolo, "crosshair", new Vector2(-310f, -30f));
+            ui.squadButton = ModeCard(card, "Squad", "SQUAD", A.ModeSquad, "multiplayer", new Vector2(310f, -30f));
+            ui.modePanel.firstSelected = ui.soloButton;
+
+            var safe = SafeArea(go.transform);
+            ui.modeBackButton = SlantButton(safe, "Back", "BACK", new Vector2(1f, 0f), new Vector2(-260f, 90f), new Vector2(380f, 104f), 50);
+
+            BuildSquadLobby(root, ui);
+        }
+
+        /// SQUAD matchmaking screen: four player slots, a status line and Cancel.
+        /// MainMenuUI drives it; the online matchmaking plugs into it.
+        static void BuildSquadLobby(Transform root, MainMenuUI ui)
+        {
+            var go = MenuScreen(root, "SquadLobby", 0.6f);
+            ui.squadPanel = go.GetComponent<UIPanel>();
+
+            var card = GrungePanel(go.transform, new Vector2(1360f, 760f), new Vector2(0f, 20f));
+            var title = Title(card, "Title", "SQUAD", 110, TitleGold);
+            Place(title.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -120f), new Vector2(1200f, 140f));
+
+            ui.squadSlots = new Image[GameMode.SquadSize];
+            for (int i = 0; i < ui.squadSlots.Length; i++)
+            {
+                float x = (i - (ui.squadSlots.Length - 1) * 0.5f) * 260f;
+                var slot = SlicedSlant(card, $"Slot{i + 1}", A.BtnSquare, new Vector2(x, 10f), new Vector2(220f, 220f));
+                var icon = Img(slot.transform, "Icon", A.IconX("multiplayer"), Color.white);
+                Place(icon.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(140f, 140f));
+                ui.squadSlots[i] = icon;
+            }
+
+            ui.squadStatusText = Txt(card, "Status", "SEARCHING FOR PLAYERS...", A.Bold, 40, UITheme.Bone, TextAnchor.MiddleCenter);
+            Place(ui.squadStatusText.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0.5f), new Vector2(0f, 150f), new Vector2(1200f, 60f));
+            Shadowed(ui.squadStatusText);
+
+            var safe = SafeArea(go.transform);
+            ui.squadCancelButton = SlantButton(safe, "Cancel", "CANCEL", new Vector2(1f, 0f), new Vector2(-260f, 90f), new Vector2(380f, 104f), 50);
+            ui.squadPanel.firstSelected = ui.squadCancelButton;
+        }
+
+        static Button ModeCard(Transform parent, string name, string label, Sprite picture, string icon, Vector2 pos)
+        {
+            var go = Node(name, parent);
+            Place(go, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), pos, new Vector2(520f, 540f));
+
+            var pic = Img(go.transform, "Picture", picture, Color.white);
+            Place(pic.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(520f, 390f));
+            pic.raycastTarget = true;
+            var glow = Img(go.transform, "Glow", A.ModeGlow, Color.white.WithAlpha(0f));
+            Place(glow.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(520f, 390f));
+            var badge = Img(go.transform, "Icon", A.IconX(icon), Color.white);
+            Place(badge.gameObject, new Vector2(0f, 1f), new Vector2(0.5f, 0.5f), new Vector2(84f, -34f), new Vector2(104f, 104f));
+
+            var plate = SlicedSlant(go.transform, "Plate", A.BtnSlant, Vector2.zero, new Vector2(400f, 100f));
+            Place(plate.gameObject, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(400f, 100f));
+            plate.raycastTarget = true;
+            var text = Txt(plate.transform, "Label", label, A.Bold, 52, UITheme.Bone, TextAnchor.MiddleCenter);
+            Stretch(text.gameObject);
+            Outlined(text);
+
+            var btn = go.AddComponent<Button>();
+            btn.transition = Selectable.Transition.None;
+            btn.targetGraphic = pic;
+            var fx = go.AddComponent<UIButtonFX>();
+            fx.highlight = glow;
+            fx.label = text;
+            fx.shift = 0f;
+            fx.pressScale = 0.97f;
+            fx.labelNormal = UITheme.Bone;
+            fx.labelActive = Color.white;
+            return btn;
         }
 
         static void BuildMenuBackdrop()
@@ -946,6 +1102,10 @@ namespace ZombieRush.EditorTools
         // Shared factories
         // =====================================================================
 
+        static readonly Color[] TitleGold = { UITheme.Hex(0xFFF0A0), UITheme.Hex(0xFFB020), UITheme.Hex(0xD9480F) };
+        static readonly Color[] TitleBlood = { UITheme.Hex(0xFF8A6A), UITheme.Hex(0xE0201C), UITheme.Hex(0x7A0505) };
+
+        /// Full-screen modal: dims the game, blocks clicks, fades via UIPanel.
         static GameObject MenuScreen(Transform parent, string name, float dim)
         {
             var go = Node(name, parent);
@@ -955,117 +1115,108 @@ namespace ZombieRush.EditorTools
             group.alpha = 0f; // hidden in the editor too; set alpha to 1 to edit it visually
             go.AddComponent<UIPanel>();
 
-            var shade = Img(go.transform, "Dim", A.White, UITheme.Ink.WithAlpha(dim));
+            var shade = Img(go.transform, "Dim", A.White, Color.black.WithAlpha(dim));
             Stretch(shade.gameObject);
             shade.raycastTarget = true; // block clicks to whatever is behind
-            var grain = Img(go.transform, "Grain", A.Grain, Color.black.WithAlpha(0.25f), Image.Type.Tiled);
-            Stretch(grain.gameObject);
+            var frame = Img(go.transform, "BloodFrame", A.BloodFrame, Color.white.WithAlpha(0.85f));
+            Stretch(frame.gameObject);
             return go;
         }
 
-        /// Gunmetal panel with a hazard-stripe header.
-        static Transform Card(Transform parent, Vector2 size)
+        /// Torn blood-red grunge sheet (the backing of every menu card).
+        static Transform GrungePanel(Transform parent, Vector2 size, Vector2 pos)
         {
-            var card = Img(parent, "Card", A.Panel, Color.white, Image.Type.Sliced);
-            Place(card.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, size);
-            var hazard = Img(card.transform, "Hazard", A.Hazard, Color.white.WithAlpha(0.9f), Image.Type.Tiled);
-            Place(hazard.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -14f), new Vector2(size.x - 80f, 10f));
-            hazard.pixelsPerUnitMultiplier = 3.2f;
-            var frame = Img(card.transform, "Frame", A.Frame, UITheme.Bone.WithAlpha(0.25f), Image.Type.Sliced);
-            Stretch(frame.gameObject, -6f, -6f, -6f, -6f);
+            var card = Img(parent, "Card", A.PanelGrunge, Color.white, Image.Type.Sliced);
+            Place(card.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), pos, size);
+            card.raycastTarget = true;
             return card.transform;
         }
 
-        static void CardTitle(Transform card, string title, string subtitle)
+        /// Big grungy title (Rubik Dirt) with a gold or blood gradient and a dark outline.
+        static Text Title(Transform parent, string name, string text, int size, Color[] gradient)
         {
-            var t = Txt(card, "Title", title, A.Logo, 72, UITheme.Bone, TextAnchor.MiddleCenter);
-            Place(t.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -86f), new Vector2(900f, 96f));
-            Shadowed(t, 0.85f, new Vector2(4f, -4f));
-            var stroke = Img(card, "TitleStroke", A.BrushThin, UITheme.Blood, Image.Type.Sliced);
-            Place(stroke.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -138f), new Vector2(320f, 26f));
-            stroke.pixelsPerUnitMultiplier = 4f;
-            var sub = Txt(card, "Subtitle", subtitle, A.Bold, 17, UITheme.Bone, TextAnchor.MiddleCenter);
-            Place(sub.gameObject, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -138f), new Vector2(600f, 26f));
+            var t = Txt(parent, name, text, A.Logo, size, Color.white, TextAnchor.MiddleCenter);
+            var g = t.gameObject.AddComponent<UIGradient>();
+            g.Set(gradient[0], gradient[1], gradient[2]);
+            var o = t.gameObject.AddComponent<Outline>();
+            o.effectColor = new Color(0.1f, 0.01f, 0f, 0.95f);
+            o.effectDistance = new Vector2(Mathf.Max(2f, size * 0.025f), -Mathf.Max(2f, size * 0.025f));
+            Shadowed(t, 0.85f, new Vector2(size * 0.04f, -size * 0.05f));
+            return t;
         }
 
-        /// Gunmetal plate used as a backing for HUD groups.
-        static Transform Plate(Transform parent, string name, Vector2 anchor, Vector2 pivot, Vector2 pos, Vector2 size)
+        /// A 9-sliced slanted sprite whose borders scale with the height, so the
+        /// slant and red caps keep their shape at any button size.
+        static Image SlicedSlant(Transform parent, string name, Sprite sprite, Vector2 pos, Vector2 size)
         {
-            var img = Img(parent, name, A.Panel, Color.white.WithAlpha(0.9f), Image.Type.Sliced);
-            img.pixelsPerUnitMultiplier = 1.6f;
-            Place(img.gameObject, anchor, pivot, pos, size);
-            return img.transform;
+            var img = Img(parent, name, sprite, Color.white, Image.Type.Sliced);
+            Place(img.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), pos, size);
+            if (sprite != null) img.pixelsPerUnitMultiplier = sprite.rect.height / size.y;
+            return img;
         }
 
-        /// Icon + label menu entry; a red dry-brush stroke sweeps in on hover/selection.
-        static Button MenuButton(Transform parent, string name, string label, string icon, int fontSize, Vector2 pos, Vector2 size)
+        /// Slanted carbon button with red hatched caps; glows red on hover/selection.
+        static Button SlantButton(Transform parent, string name, string label, Vector2 anchor, Vector2 pos, Vector2 size, int fontSize)
         {
             var go = Node(name, parent);
-            Place(go, new Vector2(0f, 1f), new Vector2(0f, 1f), pos, size);
-            var hit = go.AddComponent<EmptyGraphic>();
-            hit.raycastTarget = true;
+            Place(go, anchor, new Vector2(0.5f, 0.5f), pos, size);
 
-            var highlight = Img(go.transform, "Highlight", A.Brush, UITheme.Blood.WithAlpha(0f), Image.Type.Sliced);
-            Stretch(highlight.gameObject, -24f, -6f, 0f, -6f);
-            highlight.pixelsPerUnitMultiplier = 1.4f;
+            var plate = SlicedSlant(go.transform, "Plate", A.BtnSlant, Vector2.zero, size);
+            Stretch(plate.gameObject);
+            plate.raycastTarget = true;
+            var glow = SlicedSlant(go.transform, "Glow", A.BtnSlantGlow, Vector2.zero, size);
+            Stretch(glow.gameObject);
+            glow.color = Color.white.WithAlpha(0f);
 
             var content = Node("Content", go.transform);
             Stretch(content);
-            var glyph = Img(content.transform, "Icon", A.Icon(icon), UITheme.Bone);
-            Place(glyph.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(24f, 0f), Vector2.one * size.y * 0.58f);
-            var text = Txt(content.transform, "Label", label, A.Medium, fontSize, UITheme.Bone, TextAnchor.MiddleLeft);
-            Stretch(text.gameObject, 40f + size.y * 0.58f, 0f, 0f, 0f);
-            Shadowed(text);
+            var text = Txt(content.transform, "Label", label, A.Bold, fontSize, UITheme.Bone, TextAnchor.MiddleCenter);
+            Stretch(text.gameObject, size.y * 0.9f, 0f, size.y * 0.9f, 4f);
+            Outlined(text);
 
             var btn = go.AddComponent<Button>();
             btn.transition = Selectable.Transition.None;
-            btn.targetGraphic = hit;
+            btn.targetGraphic = plate;
 
             var fx = go.AddComponent<UIButtonFX>();
-            fx.highlight = highlight;
+            fx.highlight = glow;
             fx.label = text;
             fx.content = content.GetComponent<RectTransform>();
+            fx.shift = 6f;
             fx.labelNormal = UITheme.Bone;
             fx.labelActive = Color.white;
             return btn;
         }
 
-        /// Chamfered metal button with icon; primary buttons carry a red brush stroke.
-        static Button PlateButton(Transform parent, string name, string label, string icon, Vector2 pos, Vector2 size, bool primary)
+        /// Small slanted icon button (bottom-row toggles).
+        static Button IconButton(Transform parent, string name, Sprite icon, Vector2 anchor, Vector2 pos, Vector2 size, out Image iconImage)
         {
             var go = Node(name, parent);
-            Place(go, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), pos, size);
-
-            var bg = Img(go.transform, "Plate", A.ButtonPlate, Color.white, Image.Type.Sliced);
-            Stretch(bg.gameObject);
-            bg.raycastTarget = true;
-            if (primary)
-            {
-                var stroke = Img(go.transform, "Stroke", A.Brush, UITheme.Blood.WithAlpha(0.95f), Image.Type.Sliced);
-                Stretch(stroke.gameObject, 6f, 6f, 6f, 6f);
-                stroke.pixelsPerUnitMultiplier = 2f;
-            }
-            var frame = Img(go.transform, "Frame", A.Frame, UITheme.Bone.WithAlpha(0f), Image.Type.Sliced);
-            Stretch(frame.gameObject, -4f, -4f, -4f, -4f);
-            frame.pixelsPerUnitMultiplier = 2.2f;
-
-            var glyph = Img(go.transform, "Icon", A.Icon(icon), UITheme.Bone);
-            Place(glyph.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(24f, 0f), Vector2.one * size.y * 0.5f);
-            var text = Txt(go.transform, "Label", label, A.Bold, 32, UITheme.Bone, TextAnchor.MiddleCenter);
-            Stretch(text.gameObject, size.y * 0.5f + 20f, 0f, 10f, 0f);
-            Shadowed(text);
+            Place(go, anchor, new Vector2(0.5f, 0.5f), pos, size);
+            var plate = Img(go.transform, "Plate", A.BtnSquare, Color.white);
+            Stretch(plate.gameObject);
+            plate.raycastTarget = true;
+            var glow = Img(go.transform, "Glow", A.BtnSquareGlow, Color.white.WithAlpha(0f));
+            Stretch(glow.gameObject);
+            iconImage = Img(go.transform, "Icon", icon, Color.white);
+            Place(iconImage.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.one * size.y * 0.66f);
 
             var btn = go.AddComponent<Button>();
-            btn.targetGraphic = bg;
-            btn.colors = Tint(Color.white);
-
+            btn.transition = Selectable.Transition.None;
+            btn.targetGraphic = plate;
             var fx = go.AddComponent<UIButtonFX>();
-            fx.highlight = frame;
-            fx.label = text;
+            fx.highlight = glow;
             fx.shift = 0f;
-            fx.labelNormal = UITheme.Bone;
-            fx.labelActive = Color.white;
             return btn;
+        }
+
+        /// Carbon HUD plate with a red accent edge, used as a backing for HUD groups.
+        static Transform Plate(Transform parent, string name, Vector2 anchor, Vector2 pivot, Vector2 pos, Vector2 size)
+        {
+            var img = Img(parent, name, A.HudPlate, Color.white, Image.Type.Sliced);
+            img.pixelsPerUnitMultiplier = A.HudPlate != null ? A.HudPlate.rect.height / size.y : 1f;
+            Place(img.gameObject, anchor, pivot, pos, size);
+            return img.transform;
         }
 
         static void IconInRow(Transform row, string name, Sprite sprite, Color color, float size)
@@ -1090,6 +1241,14 @@ namespace ZombieRush.EditorTools
             var img = Img(parent, name, A.White, color);
             Place(img.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), pos, size);
             return img;
+        }
+
+        static void Outlined(Graphic g)
+        {
+            var o = g.gameObject.AddComponent<Outline>();
+            o.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            o.effectDistance = new Vector2(2f, -2f);
+            Shadowed(g, 0.6f, new Vector2(3f, -4f));
         }
 
         static GameObject Node(string name, Transform parent)

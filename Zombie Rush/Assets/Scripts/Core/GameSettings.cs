@@ -5,6 +5,9 @@ namespace ZombieRush.Core
 {
     public enum ControlScheme { Auto, Touch, KeyboardMouse }
 
+    /// Picked on the "Select the mode" screen; EnvironmentApplier loads the matching profile.
+    public enum TimeOfDay { Night, Day }
+
     /// Player options, persisted in PlayerPrefs. Values are cached in memory so
     /// gameplay code can read them every frame for free.
     public static class GameSettings
@@ -19,6 +22,8 @@ namespace ZombieRush.Core
         const string KeyMusic = "zr.vol.music";
         const string KeyVibration = "zr.vibration";
         const string KeyBestWave = "zr.bestWave";
+        const string KeyMuted = "zr.muted";
+        const string KeyTimeOfDay = "zr.timeOfDay";
 
         public const float MinSensitivity = 0.1f;
         public const float MaxSensitivity = 5f;
@@ -31,7 +36,8 @@ namespace ZombieRush.Core
         static bool loaded;
         static int quality, fps, bestWave;
         static float sensitivity, master, sfx, music;
-        static bool invertY, vibration;
+        static bool invertY, vibration, muted;
+        static TimeOfDay timeOfDay;
         static ControlScheme controls;
 
         static void EnsureLoaded()
@@ -48,6 +54,8 @@ namespace ZombieRush.Core
             music = PlayerPrefs.GetFloat(KeyMusic, 0.7f);
             vibration = PlayerPrefs.GetInt(KeyVibration, 1) == 1;
             bestWave = PlayerPrefs.GetInt(KeyBestWave, 0);
+            muted = PlayerPrefs.GetInt(KeyMuted, 0) == 1;
+            timeOfDay = (TimeOfDay)PlayerPrefs.GetInt(KeyTimeOfDay, (int)TimeOfDay.Night);
         }
 
         public static int Quality
@@ -83,7 +91,7 @@ namespace ZombieRush.Core
         public static float MasterVolume
         {
             get { EnsureLoaded(); return master; }
-            set { EnsureLoaded(); master = Mathf.Clamp01(value); PlayerPrefs.SetFloat(KeyMaster, master); AudioListener.volume = master; Notify(); }
+            set { EnsureLoaded(); master = Mathf.Clamp01(value); PlayerPrefs.SetFloat(KeyMaster, master); ApplyVolume(); Notify(); }
         }
 
         /// Stored for the upcoming audio manager (SFX mixer group).
@@ -106,6 +114,21 @@ namespace ZombieRush.Core
             set { EnsureLoaded(); vibration = value; PlayerPrefs.SetInt(KeyVibration, value ? 1 : 0); Notify(); }
         }
 
+        /// Quick sound on/off from the main menu; keeps the Master Volume slider value.
+        public static bool Muted
+        {
+            get { EnsureLoaded(); return muted; }
+            set { EnsureLoaded(); muted = value; PlayerPrefs.SetInt(KeyMuted, value ? 1 : 0); ApplyVolume(); Notify(); }
+        }
+
+        public static TimeOfDay TimeOfDay
+        {
+            get { EnsureLoaded(); return timeOfDay; }
+            set { EnsureLoaded(); timeOfDay = value; PlayerPrefs.SetInt(KeyTimeOfDay, (int)value); Notify(); }
+        }
+
+        static void ApplyVolume() => AudioListener.volume = muted ? 0f : master;
+
         public static int BestWave
         {
             get { EnsureLoaded(); return bestWave; }
@@ -126,7 +149,7 @@ namespace ZombieRush.Core
         {
             EnsureLoaded();
             ApplyGraphics();
-            AudioListener.volume = master;
+            ApplyVolume();
         }
 
         static void ApplyGraphics()

@@ -1,7 +1,9 @@
 using UnityEngine;
+using UnityEngine.AI;
 using ZombieRush.Core;
 using ZombieRush.Data;
 using ZombieRush.Player;
+using ZombieRush.World;
 
 namespace ZombieRush.Zombie
 {
@@ -43,6 +45,11 @@ namespace ZombieRush.Zombie
         ZombieConfigData cfg;
         Transform player;
         PlayerHealth playerHealth;
+        bool guarding;          // every player is in the safe base: wait at its edge
+        Vector3 guardPoint;
+        Vector3 targetPosition;
+        float retargetTimer;
+        const float RetargetInterval = 0.4f;
 
         float attackTimer;
         float gravityVelocity;
@@ -50,6 +57,13 @@ namespace ZombieRush.Zombie
         Vector3 avoidTangent;
         float avoidHoldTimer;
         float nextProbeTime;
+
+        const float RepathInterval = 0.5f;
+        const float DirectChaseDistance = 3f;
+        NavMeshPath path; // created in Awake: Unity forbids NavMeshPath in field initializers
+        Vector3[] corners = System.Array.Empty<Vector3>();
+        int pathCorner = -1;
+        float repathTimer;
 
         float stuckCheckTimer;
         Vector3 positionAtLastCheck;
@@ -61,43 +75,77 @@ namespace ZombieRush.Zombie
             controller = GetComponent<CharacterController>();
             health = GetComponent<ZombieHealth>();
             cfg = config != null ? config : health.Config;
+            path = new NavMeshPath();
         }
 
         // Also runs when a pooled zombie is reused, so all steering state starts fresh.
         void OnEnable()
         {
-            ResolvePlayer();
+            player = null;
+            playerHealth = null;
+            guarding = false;
+            retargetTimer = 0f;
             attackTimer = 0f;
             gravityVelocity = 0f;
             avoidHoldTimer = 0f;
             escapeTimer = 0f;
             stuckCheckTimer = 0f;
             nextProbeTime = 0f;
+            repathTimer = Random.value * RepathInterval;
+            pathCorner = -1;
             positionAtLastCheck = transform.position;
         }
 
-        void ResolvePlayer()
+        /// Hunts the nearest living player who is OUT of the safe base. If every player
+        /// is inside, the zombie walks to the base edge nearest them and waits there.
+        void ChooseTarget()
         {
-            if (player != null) return;
-            playerHealth = PlayerHealth.Instance;
-            if (playerHealth == null)
+            var safeBase = SafeBase.Instance;
+            PlayerHealth best = null, nearestAny = null;
+            float bestSqr = float.MaxValue, anySqr = float.MaxValue;
+            var pos = transform.position;
+
+            foreach (var p in PlayerHealth.All)
             {
-                var go = GameObject.FindGameObjectWithTag(GameTags.Player);
-                if (go != null) playerHealth = go.GetComponent<PlayerHealth>();
+                if (p == null || p.IsDead) continue;
+                var d = p.transform.position - pos;
+                d.y = 0f;
+                float sqr = d.sqrMagnitude;
+                if (sqr < anySqr) { anySqr = sqr; nearestAny = p; }
+                if (safeBase != null && safeBase.Contains(p.transform.position)) continue;
+                if (sqr < bestSqr) { bestSqr = sqr; best = p; }
             }
-            if (playerHealth != null) player = playerHealth.transform;
+
+            playerHealth = best;
+            player = best != null ? best.transform : null;
+            guarding = best == null && nearestAny != null && safeBase != null;
+            if (guarding) guardPoint = safeBase.EdgePoint(nearestAny.transform.position, 1.2f + Random.value);
         }
 
         void Update()
         {
-            if (health.IsDead || player == null) return;
+            if (health.IsDead) return;
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
 
-            Vector3 toPlayer = player.position - transform.position;
+            retargetTimer -= Time.deltaTime;
+            if (retargetTimer <= 0f || (player == null && !guarding) || (playerHealth != null && playerHealth.IsDead))
+            {
+                retargetTimer = RetargetInterval + Random.value * 0.2f;
+                ChooseTarget();
+            }
+            if (player == null && !guarding)
+            {
+                health.Anim.SetSpeed(0f);
+                ApplyGravityOnly();
+                return;
+            }
+
+            targetPosition = guarding ? guardPoint : player.position;
+            Vector3 toPlayer = targetPosition - transform.position;
             toPlayer.y = 0f;
             float sqrDistance = toPlayer.sqrMagnitude;
 
-            if (!alwaysHunt && sqrDistance > cfg.sightRange * cfg.sightRange)
+            if (!alwaysHunt && !guarding && sqrDistance > cfg.sightRange * cfg.sightRange)
             {
                 health.Anim.SetSpeed(0f);
                 ApplyGravityOnly();
@@ -106,7 +154,16 @@ namespace ZombieRush.Zombie
 
             attackTimer -= Time.deltaTime;
 
-            if (sqrDistance <= cfg.attackRange * cfg.attackRange)
+            // Waiting at the base edge: face the players inside and growl, never go in.
+            if (guarding && sqrDistance <= 1f)
+            {
+                if (SafeBase.Instance != null) FaceDirection(SafeBase.Instance.Center - transform.position);
+                health.Anim.SetSpeed(0f);
+                ApplyGravityOnly();
+                return;
+            }
+
+            if (!guarding && sqrDistance <= cfg.attackRange * cfg.attackRange)
             {
                 FaceDirection(toPlayer);
                 ApplyGravityOnly();
@@ -127,7 +184,7 @@ namespace ZombieRush.Zombie
             float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * Mathf.Min(difficultyMultiplier, MaxSpeedMultiplier);
             health.Anim.SetSpeed(running ? 1f : 0.5f);
 
-            Vector3 desired = toPlayer / distance;
+            Vector3 desired = PathDirection(toPlayer / distance, distance);
             Vector3 moveDir = ComputeMoveDirection(desired);
             FaceDirection(moveDir);
 
@@ -141,6 +198,17 @@ namespace ZombieRush.Zombie
             Vector3 move = moveDir * speed;
             move.y = UpdateGravity();
             controller.Move(move * Time.deltaTime);
+            KeepOutOfSafeBase();
+        }
+
+        /// The safe base is off-limits: anything that slides inside is pushed back to the edge.
+        void KeepOutOfSafeBase()
+        {
+            var safeBase = SafeBase.Instance;
+            if (safeBase == null || !safeBase.Contains(transform.position, controller.radius)) return;
+            var push = safeBase.EdgePoint(transform.position, controller.radius + 0.05f) - transform.position;
+            push.y = 0f;
+            controller.Move(push);
         }
 
         /// Sphere-casts along the desired direction; if something's in the way,
@@ -173,6 +241,36 @@ namespace ZombieRush.Zombie
             return desired;
         }
 
+        /// Direction along the walk-map route to the player (around buildings), re-planned
+        /// a couple of times a second. Straight at the player when close or with no walk map.
+        Vector3 PathDirection(Vector3 straight, float distance)
+        {
+            if (!ArenaNavMesh.Ready || distance < DirectChaseDistance) return straight;
+
+            repathTimer -= Time.deltaTime;
+            if (repathTimer <= 0f)
+            {
+                repathTimer = RepathInterval + Random.value * 0.2f;
+                pathCorner = -1;
+                if (ArenaNavMesh.TrySnap(transform.position, out var from) && ArenaNavMesh.TrySnap(targetPosition, out var to, 3f)
+                    && NavMesh.CalculatePath(from, to, NavMesh.AllAreas, path) && path.status != NavMeshPathStatus.PathInvalid
+                    && path.corners.Length > 1)
+                {
+                    corners = path.corners;
+                    pathCorner = 1;
+                }
+            }
+            if (pathCorner < 0) return straight;
+
+            // Skip corners already reached.
+            while (pathCorner < corners.Length - 1 && FlatDistance(transform.position, corners[pathCorner]) < 0.8f) pathCorner++;
+            Vector3 toCorner = corners[pathCorner] - transform.position;
+            toCorner.y = 0f;
+            return toCorner.sqrMagnitude > 0.01f ? toCorner.normalized : straight;
+        }
+
+        static float FlatDistance(Vector3 a, Vector3 b) => new Vector2(a.x - b.x, a.z - b.z).magnitude;
+
         bool IsRealObstacle(Collider col)
         {
             if (col.CompareTag(GameTags.Player)) return false;
@@ -196,6 +294,7 @@ namespace ZombieRush.Zombie
 
             if (movedSqr < stuckDistanceThreshold * stuckDistanceThreshold)
             {
+                repathTimer = 0f; // re-plan the route once the escape ends
                 escapeTimer = escapeDuration;
                 escapeDir = (Quaternion.Euler(0f, Random.Range(60f, 300f), 0f) * currentMoveDir).normalized;
             }

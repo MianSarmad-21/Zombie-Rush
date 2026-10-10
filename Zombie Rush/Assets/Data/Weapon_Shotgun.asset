@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Weapon_Shotgun
   m_EditorClassIdentifier: 
   weaponName: Shotgun
-  icon: {fileID: 21300000, guid: 83ddcd7afc8133048b42e83ac69126b8, type: 3}
+  icon: {fileID: 21300000, guid: 15fb97d16ab0e3b42bc56f2a07f71577, type: 3}
   damage: 9
   fireRate: 1.1
   range: 18

@@ -13,6 +13,7 @@ namespace ZombieRush.EditorTools
     {
         public const string ArtFolder = "Assets/UI/Art";
         public const string IconFolder = "Assets/UI/Icons";
+        public const string ProIconFolder = "Assets/UI/IconsPro";
         public const string GeneratedFolder = "Assets/UI/Generated";
         public const string FontFolder = "Assets/UI/Fonts";
         const string BloodMaterialFolder = "Assets/Resources/ZombieRush";
@@ -23,8 +24,22 @@ namespace ZombieRush.EditorTools
             public Sprite White, Circle, GradientH;
             public Sprite Panel, Frame, ButtonPlate, Brush, BrushThin, Blood, Grain, Hazard;
             public Sprite RoundButton, RingTicks, StickBase, StickKnob, BarFrame, BarFill, Glow, Vignette, Divider, Chevron;
+            // Blood & carbon kit (v2): slanted carbon buttons, torn red panels, styled icons.
+            public Sprite BtnSlant, BtnSlantGlow, BtnSquare, BtnSquareGlow, PanelGrunge, BloodFrame, HudPlate;
+            public Sprite BarSlantFrame, BarSlantFill, TouchDisc, StarFull, StarEmpty, LogoImage, ModeDay, ModeNight, ModeSolo, ModeSquad, ModeGlow;
             public Font Bold, Medium, Logo;
             readonly Dictionary<string, Sprite> icons = new Dictionary<string, Sprite>();
+            readonly Dictionary<string, Sprite> proIcons = new Dictionary<string, Sprite>();
+
+            /// Pre-coloured styled icon from Assets/UI/IconsPro (use with Image colour white).
+            public Sprite IconX(string name)
+            {
+                if (proIcons.TryGetValue(name, out var s)) return s;
+                s = LoadSprite($"{ProIconFolder}/iconx_{name}.png", Vector4.zero, TextureWrapMode.Clamp, 256);
+                if (s == null) { Debug.LogWarning($"Zombie Rush UI: icon '{name}' not found in {ProIconFolder}."); }
+                proIcons[name] = s;
+                return s;
+            }
 
             public Sprite Icon(string name)
             {
@@ -63,6 +78,25 @@ namespace ZombieRush.EditorTools
                 Vignette = Art("vignette_soft", Vector4.zero),
                 Divider = Art("divider", Vector4.zero),
                 Chevron = Art("chevron", Vector4.zero),
+
+                BtnSlant = Art("btn_slant", new Vector4(116, 0, 116, 0)),
+                BtnSlantGlow = Art("btn_slant_glow", new Vector4(116, 0, 116, 0)),
+                BtnSquare = Art("btn_slant_sq", Vector4.zero),
+                BtnSquareGlow = Art("btn_slant_sq_glow", Vector4.zero),
+                PanelGrunge = Art("panel_grunge", new Vector4(180, 180, 180, 180)),
+                BloodFrame = Art("screen_blood_frame", Vector4.zero),
+                HudPlate = Art("hud_plate", new Vector4(60, 0, 40, 0)),
+                BarSlantFrame = Art("bar_slant_frame", new Vector4(24, 0, 24, 0)),
+                BarSlantFill = Art("bar_slant_fill", new Vector4(20, 0, 20, 0)),
+                TouchDisc = Art("touch_disc", Vector4.zero),
+                StarFull = Art("star_full", Vector4.zero),
+                StarEmpty = Art("star_empty", Vector4.zero),
+                LogoImage = Art("logo_zombie_rush", Vector4.zero),
+                ModeDay = Art("mode_day", Vector4.zero),
+                ModeNight = Art("mode_night", Vector4.zero),
+                ModeSolo = Art("mode_solo", Vector4.zero),
+                ModeSquad = Art("mode_squad", Vector4.zero),
+                ModeGlow = Art("mode_card_glow", Vector4.zero),
             };
 
             set.Bold = LoadFont("Oswald-Bold.ttf");

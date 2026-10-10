@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Weapon_Pistol
   m_EditorClassIdentifier: 
   weaponName: Pistol
-  icon: {fileID: 21300000, guid: de3b03b6fce00c745b57f1c4f915632d, type: 3}
+  icon: {fileID: 21300000, guid: e6c453c3e0f85a04382f23e8014c15bc, type: 3}
   damage: 25
   fireRate: 6
   range: 100

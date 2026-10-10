@@ -13,6 +13,8 @@ namespace ZombieRush.World
 
         [Header("Zone")]
         public Vector3 center = new Vector3(500f, 0f, 500f);
+        [Tooltip("Optional: the player's base. Drag it anywhere on the map - the safe zone starts there and grows outward from it.")]
+        public Transform playerBase;
         public float startRadius = 30f;
         public float maxRadius = 90f;
         public float expandStep = 15f;
@@ -21,7 +23,7 @@ namespace ZombieRush.World
         public int expandCost = 20;
 
         [Header("Visual")]
-        public Transform boundaryVisual; // a large translucent cylinder scaled to match the current radius
+        public Transform boundaryVisual; // ZoneBoundaryFX wall, or a plain cylinder scaled to match the current radius
 
         [Header("Deploy")]
         [Tooltip("Place the player on clear ground at the zone centre when the level starts.")]
@@ -38,6 +40,7 @@ namespace ZombieRush.World
             if (Instance != null && Instance != this) { Destroy(gameObject); return; }
             Instance = this;
             CurrentRadius = startRadius;
+            if (playerBase != null) center = playerBase.position;
         }
 
         void OnDestroy()
@@ -107,15 +110,20 @@ namespace ZombieRush.World
             }
 
             CurrentRadius = Mathf.Min(maxRadius, CurrentRadius + expandStep);
-            ApplyVisual();
+            ApplyVisual(animate: true);
             RaiseChanged();
         }
 
         void RaiseChanged() => GameEvents.RaiseZoneChanged(CurrentRadius, maxRadius, expandCost);
 
-        void ApplyVisual()
+        void ApplyVisual(bool animate = false)
         {
             if (boundaryVisual == null) return;
+            if (boundaryVisual.TryGetComponent<ZoneBoundaryFX>(out var fx))
+            {
+                fx.SetZone(center, CurrentRadius, animate);
+                return;
+            }
             boundaryVisual.position = new Vector3(center.x, boundaryVisual.position.y, center.z);
             float diameter = CurrentRadius * 2f;
             var scale = boundaryVisual.localScale;
