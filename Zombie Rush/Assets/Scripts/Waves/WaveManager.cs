@@ -84,7 +84,7 @@ namespace ZombieRush.Waves
             {
                 CurrentWave++;
                 var zone = ZoneManager.Instance;
-                if (spawnAtZoneEdge && zone != null) ArrangeSpawnPoints(zone.center, zone.CurrentRadius * edgeRadiusFactor);
+                if (spawnAtZoneEdge && zone != null) ArrangeSpawnPoints(zone.center, zone.CurrentRadius * edgeRadiusFactor, zone.Forward);
                 GameEvents.RaiseWaveAnnounced(CurrentWave);
                 yield return new WaitForSeconds(announceDuration);
 
@@ -168,7 +168,7 @@ namespace ZombieRush.Waves
             // on one point and nobody surfaces inside a building or a walled-off pocket.
             var spawnPos = point.position;
             var zone = ZoneManager.Instance;
-            if (zone != null && ArenaSpawn.TryNear(point.position, zone.center, zone.CurrentRadius, PlayerPosition(zone.center), out var spot))
+            if (zone != null && ArenaSpawn.TryNear(point.position, zone.Shape, PlayerPosition(zone.center), out var spot))
                 spawnPos = spot;
 
             var zombie = pool.Get(prefab, spawnPos, Quaternion.identity);
@@ -195,11 +195,13 @@ namespace ZombieRush.Waves
         /// nudging each one inward until it lands on a good spawn spot (open sky, clear,
         /// walkable route to the player - see ArenaSpawn); if its slice of the ring has
         /// none, it searches the rest of the zone. Also used by the editor level tools.
-        public void ArrangeSpawnPoints(Vector3 center, float radius)
+        /// `halfForward` (non-zero) keeps them on the half circle that opens that way.
+        public void ArrangeSpawnPoints(Vector3 center, float radius, Vector3 halfForward = default)
         {
             if (spawnPoints == null || spawnPoints.Length == 0) return;
-            float offset = Random.value * Mathf.PI * 2f;
-            float slice = Mathf.PI * 2f / spawnPoints.Length;
+            var shape = new ZoneShape(center, radius, halfForward);
+            float offset = shape.Half ? 0f : Random.value;
+            float slice = 1f / spawnPoints.Length;
             var player = PlayerPosition(center);
 
             for (int i = 0; i < spawnPoints.Length; i++)
@@ -209,18 +211,20 @@ namespace ZombieRush.Waves
 
                 for (int attempt = 0; attempt < 36; attempt++)
                 {
-                    float angle, r;
+                    // t runs round the circle (0..1), or side to side across the half circle.
+                    float t, r;
                     if (attempt < 12)
                     {
-                        angle = offset + i * slice + (attempt % 3 - 1) * slice * 0.25f;
+                        t = offset + (i + 0.5f) * slice + (attempt % 3 - 1) * slice * 0.25f;
                         r = Mathf.Max(3f, radius - (attempt / 3) * 3f);
                     }
                     else
                     {
-                        angle = Random.value * Mathf.PI * 2f;
+                        t = Random.value;
                         r = radius * Random.Range(0.45f, 1f);
                     }
-                    var probe = center + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * r;
+                    t = shape.Half ? Mathf.Clamp(t, 0.06f, 0.94f) : Mathf.Repeat(t, 1f);
+                    var probe = center + shape.Direction(t) * r;
                     if (!ArenaSpawn.IsGoodSpawn(probe, center, player, out var ground)) continue;
 
                     pad.position = ground + Vector3.up * padHeightOffset;
