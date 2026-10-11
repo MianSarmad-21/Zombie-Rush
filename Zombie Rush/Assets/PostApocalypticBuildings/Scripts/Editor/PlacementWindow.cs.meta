@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 1ec9b91786395114fab4e984249e497c
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 223947
+  packageName: Destroyed Buildings and Debris Pack
+  packageVersion: 2.0
+  assetPath: Assets/PostApocalypticBuildings/Scripts/Editor/PlacementWindow.cs
+  uploadId: 967118

@@ -1,0 +1,689 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfbbef5b4bede8e4d9e439648ba989f0, type: 3}
+  m_Name: Catalog
+  m_EditorClassIdentifier: 
+  sourceFolder: Assets/PostApocalypticBuildings/URP/Prefabs
+  includeSubfolders: 1
+  mediumHeight: 6
+  largeHeight: 14
+  skyscraperHeight: 30
+  smallDebrisMaxSize: 3
+  pieces:
+  - id: f3c252addc8c20d43ab57d2a69c5498a
+    displayName: Broken-metal-structure
+    prefab: {fileID: 4362971979767752381, guid: f3c252addc8c20d43ab57d2a69c5498a,
+      type: 3}
+    kind: 2
+    sizeClass: 2
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 19.68752, y: 3.3674393, z: 24.38798}
+    localCenter: {x: 1.3052025, y: 1.3001413, z: -0.5242605}
+    measured: 1
+    family: broken-metal-structure
+  - id: 4c69f11858a554de294f6c56a04e5396
+    displayName: Broken-roof
+    prefab: {fileID: 2903155441698974475, guid: 4c69f11858a554de294f6c56a04e5396,
+      type: 3}
+    kind: 3
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 5.2663593, y: 1.422727, z: 5.48462}
+    localCenter: {x: 0.06484127, y: 0.26114935, z: 0.077994585}
+    measured: 1
+    family: broken-roof
+  - id: a8699155fbcff345687bbb3111fea62a
+    displayName: Broken-wall 11
+    prefab: {fileID: 4191548563583981935, guid: a8699155fbcff345687bbb3111fea62a,
+      type: 3}
+    kind: 3
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 3.3606205, y: 0.5366054, z: 2.718874}
+    localCenter: {x: -0.07968831, y: 0.15235862, z: -0.15156496}
+    measured: 1
+    family: broken-wall11
+  - id: 0006c50cdbed222fe9eff654c709009b
+    displayName: Broken-wall 12
+    prefab: {fileID: 762467887591450993, guid: 0006c50cdbed222fe9eff654c709009b, type: 3}
+    kind: 3
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 2.299927, y: 2.1564136, z: 2.7525074}
+    localCenter: {x: 0.03669989, y: 0.58948433, z: -0.10635269}
+    measured: 1
+    family: broken-wall12
+  - id: 187b3421de1b659458d17b49db2151a2
+    displayName: Broken-wall 3
+    prefab: {fileID: 5260784078819650918, guid: 187b3421de1b659458d17b49db2151a2,
+      type: 3}
+    kind: 4
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 2.1319668, y: 0.3694572, z: 3.1725082}
+    localCenter: {x: 0.04183972, y: 0.016106397, z: 0.2692523}
+    measured: 1
+    family: broken-wall3
+  - id: 44279c12453d2ed459177fb1ff748204
+    displayName: Broken-wall 4
+    prefab: {fileID: 7778690033623183098, guid: 44279c12453d2ed459177fb1ff748204,
+      type: 3}
+    kind: 4
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 3.3193192, y: 0.47459877, z: 7.8385253}
+    localCenter: {x: 0.07222843, y: 0.013798833, z: -0.67993236}
+    measured: 1
+    family: broken-wall4
+  - id: 84734286d6b1282a38f44d2faa977e3d
+    displayName: Broken-wall 5
+    prefab: {fileID: 5207823039268601383, guid: 84734286d6b1282a38f44d2faa977e3d,
+      type: 3}
+    kind: 3
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 4.772724, y: 0.77687985, z: 8.407464}
+    localCenter: {x: -0.13236809, y: 0.00372985, z: -0.28277588}
+    measured: 1
+    family: broken-wall5
+  - id: 778821e4f4746fb49ba9b8d28d3236bf
+    displayName: Cloth 2
+    prefab: {fileID: 2496298561164803556, guid: 778821e4f4746fb49ba9b8d28d3236bf,
+      type: 3}
+    kind: 4
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 2.8041217, y: 0.30461487, z: 2.9768229}
+    localCenter: {x: 0.18810558, y: 0.15345956, z: -0.007713318}
+    measured: 1
+    family: cloth2
+  - id: c5bee89c4adef5b1da70591549641024
+    displayName: Building 1
+    prefab: {fileID: 1371274234453324907, guid: c5bee89c4adef5b1da70591549641024,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 30.18111, y: 6.9834375, z: 7.0382824}
+    localCenter: {x: 0.042276382, y: 3.4905457, z: 0.47053432}
+    measured: 1
+    family: building1
+  - id: ab554735822581a72a45d482611cd9ea
+    displayName: Building 1-variant 1
+    prefab: {fileID: 8947639467061937230, guid: ab554735822581a72a45d482611cd9ea,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 17.31672, y: 6.760372, z: 10.607049}
+    localCenter: {x: 0.13308144, y: 2.945571, z: -0.81759024}
+    measured: 1
+    family: building1
+  - id: 5070c1c73468b48ce9abfdde35b9c777
+    displayName: Building 1-variant 2
+    prefab: {fileID: 1801546552650924767, guid: 5070c1c73468b48ce9abfdde35b9c777,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 34.587936, y: 7.2393246, z: 15.560989}
+    localCenter: {x: -0.054031372, y: 2.6706705, z: -1.4008665}
+    measured: 1
+    family: building1
+  - id: 1e707f687da6000ce91969db0c21b3b3
+    displayName: Building 1-variant 3
+    prefab: {fileID: 4277366758891764159, guid: 1e707f687da6000ce91969db0c21b3b3,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 30.096558, y: 8.006755, z: 15.690897}
+    localCenter: {x: 0, y: 3.064971, z: 0.39190102}
+    measured: 1
+    family: building1
+  - id: 2c41428c5a3f0de6f92e930b60fd37eb
+    displayName: Building 10
+    prefab: {fileID: 2013892691759587468, guid: 2c41428c5a3f0de6f92e930b60fd37eb,
+      type: 3}
+    kind: 1
+    sizeClass: 3
+    allowTilt: 1
+    weight: 1
+    enabled: 1
+    size: {x: 42.497265, y: 88.776855, z: 58.10327}
+    localCenter: {x: 1.896822, y: 42.731262, z: -0.48455048}
+    measured: 1
+    family: building10
+  - id: 708e39e8647708e34b7182fe52af8a89
+    displayName: Building 10-variant 1
+    prefab: {fileID: 561362885979856781, guid: 708e39e8647708e34b7182fe52af8a89, type: 3}
+    kind: 1
+    sizeClass: 3
+    allowTilt: 1
+    weight: 1
+    enabled: 1
+    size: {x: 40.243706, y: 53.902283, z: 55.82773}
+    localCenter: {x: 1.8134079, y: 25.166416, z: -2.462471}
+    measured: 1
+    family: building10
+  - id: c41c90cf558dc008fbf86e2b6e2e959e
+    displayName: Building 2
+    prefab: {fileID: 7488448004972081187, guid: c41c90cf558dc008fbf86e2b6e2e959e,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 30.759724, y: 10.924383, z: 20.29774}
+    localCenter: {x: 0, y: 5.454277, z: 0}
+    measured: 1
+    family: building2
+  - id: dfbce14dca996d7bdb68190dac586b9b
+    displayName: Building 2-variant 1
+    prefab: {fileID: 9008336253233195496, guid: dfbce14dca996d7bdb68190dac586b9b,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 33.95067, y: 11.769599, z: 29.419437}
+    localCenter: {x: 1.8264637, y: 4.116859, z: -1.7829914}
+    measured: 1
+    family: building2
+  - id: 7b458f40a287db7cebe4a18034ab4f47
+    displayName: Building 2-variant 2
+    prefab: {fileID: 9086645277794986537, guid: 7b458f40a287db7cebe4a18034ab4f47,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 29.73797, y: 11.24065, z: 19.988676}
+    localCenter: {x: 1.9727755, y: 3.5323238, z: 2.2583437}
+    measured: 1
+    family: building2
+  - id: af82f53410050fb17a0cea7162969499
+    displayName: Building 3
+    prefab: {fileID: 1260079060790334101, guid: af82f53410050fb17a0cea7162969499,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 11.1898985, y: 4.0071516, z: 10.864483}
+    localCenter: {x: 0.12882376, y: 1.9964241, z: 0.43224144}
+    measured: 1
+    family: building3
+  - id: 3e32f65cf77b536e0ac08f4233e4b323
+    displayName: Building 3-variant 1
+    prefab: {fileID: 7461622039880217326, guid: 3e32f65cf77b536e0ac08f4233e4b323,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 18.710695, y: 5.6726227, z: 14.768802}
+    localCenter: {x: 0.42327595, y: 1.32084, z: -1.3274121}
+    measured: 1
+    family: building3
+  - id: a5e80c3dabd1d86bcb83101bdea03d1a
+    displayName: Building 4
+    prefab: {fileID: 9085959954803971263, guid: a5e80c3dabd1d86bcb83101bdea03d1a,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 7.461769, y: 4, z: 5.5652614}
+    localCenter: {x: 0.16885185, y: 2, z: 0.22059798}
+    measured: 1
+    family: building4
+  - id: 9dbcb00bc7bd3646a823767374d77c46
+    displayName: Building 4-variant 1
+    prefab: {fileID: 7937013353370627099, guid: 9dbcb00bc7bd3646a823767374d77c46,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 9.511944, y: 5.1408787, z: 9.407715}
+    localCenter: {x: -0.7306104, y: 1.8563672, z: 0.14179993}
+    measured: 1
+    family: building4
+  - id: 20a170553f0ed2df6881551328c83274
+    displayName: Building 4-variant 2
+    prefab: {fileID: 7595440277441275968, guid: 20a170553f0ed2df6881551328c83274,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 12.906439, y: 5.284695, z: 12.952177}
+    localCenter: {x: 0.13734388, y: 1.6988103, z: -0.3474207}
+    measured: 1
+    family: building4
+  - id: c01d3362cc2ed0ed8b02bb617985b123
+    displayName: Building 4-variant 3
+    prefab: {fileID: 1005286725378732351, guid: c01d3362cc2ed0ed8b02bb617985b123,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 16.028698, y: 5.3510585, z: 12.797133}
+    localCenter: {x: 0.35249138, y: 1.8423321, z: 0.17977047}
+    measured: 1
+    family: building4
+  - id: e5a4f0f35d38952638822e7bb70c8416
+    displayName: Building 5
+    prefab: {fileID: 1162708892193249200, guid: e5a4f0f35d38952638822e7bb70c8416,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 15.521163, y: 5.526333, z: 15.068285}
+    localCenter: {x: -0.22554302, y: 2.7489338, z: -0.012108803}
+    measured: 1
+    family: building5
+  - id: 57dd5a184d84c12ba8a79e25aa901cf7
+    displayName: Building 5-variant 1
+    prefab: {fileID: 6801640508401672940, guid: 57dd5a184d84c12ba8a79e25aa901cf7,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 18.616287, y: 5.5230904, z: 18.107643}
+    localCenter: {x: -0.9207058, y: 1.3920919, z: -0.31540012}
+    measured: 1
+    family: building5
+  - id: 19ed44f86b068844b8e622f924298a74
+    displayName: Building 5-variant 2
+    prefab: {fileID: 74771175183921087, guid: 19ed44f86b068844b8e622f924298a74, type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 22.624891, y: 5.129095, z: 19.527256}
+    localCenter: {x: 2.1500607, y: 1.446157, z: 1.4365082}
+    measured: 1
+    family: building5
+  - id: 2a835586fc4bf528095efb2578d8bd2d
+    displayName: Building 6
+    prefab: {fileID: 329918689841992163, guid: 2a835586fc4bf528095efb2578d8bd2d, type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 8.07961, y: 4.0587225, z: 5.238452}
+    localCenter: {x: 0, y: 2.027016, z: 0.08750081}
+    measured: 1
+    family: building6
+  - id: a86bddb8008cdb43f875c42b851b8380
+    displayName: Building 6-varian 1
+    prefab: {fileID: 1496774586750335071, guid: a86bddb8008cdb43f875c42b851b8380,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 12.759303, y: 4.7329974, z: 8.979066}
+    localCenter: {x: -0.13011885, y: 1.954366, z: 1.5044966}
+    measured: 1
+    family: building6-varian1
+  - id: d1b34ba210d10dba09074184ff27eed9
+    displayName: Building 6-variant 2
+    prefab: {fileID: 5766370091284239109, guid: d1b34ba210d10dba09074184ff27eed9,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 19.850079, y: 4.9253654, z: 11.227045}
+    localCenter: {x: 1.4758892, y: 1.4211001, z: -0.0050177574}
+    measured: 1
+    family: building6
+  - id: 46d14b3a4ec73daeb944139986127f49
+    displayName: Building 6-variant 3
+    prefab: {fileID: 3349441725951968962, guid: 46d14b3a4ec73daeb944139986127f49,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 8.07961, y: 4.056377, z: 5.0634503}
+    localCenter: {x: 0, y: 2.0281885, z: 0}
+    measured: 1
+    family: building6
+  - id: bf07ccc47bba0e097a5b0472b0331be3
+    displayName: Building 7
+    prefab: {fileID: 7370862526240394893, guid: bf07ccc47bba0e097a5b0472b0331be3,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 8.177245, y: 3.1294672, z: 5.5110235}
+    localCenter: {x: 0, y: 1.5585016, z: 0.2001226}
+    measured: 1
+    family: building7
+  - id: cc5421e0d85b86810910b0d073dfe353
+    displayName: Building 7-variant 1
+    prefab: {fileID: 3093188552096449738, guid: cc5421e0d85b86810910b0d073dfe353,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 16.780632, y: 4.6319876, z: 13.912651}
+    localCenter: {x: -1.607563, y: 1.3617754, z: -0.08753967}
+    measured: 1
+    family: building7
+  - id: 3c41c50eb38936351947580aee9772c6
+    displayName: Building 7-variant 2
+    prefab: {fileID: 2739093842859083622, guid: 3c41c50eb38936351947580aee9772c6,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 8.177245, y: 3.1261945, z: 5.5110235}
+    localCenter: {x: 0, y: 1.560138, z: 0.2001226}
+    measured: 1
+    family: building7
+  - id: 9ffdb31300903ee16bf6ccc2a4b8839e
+    displayName: Building 8
+    prefab: {fileID: 1959101766225543978, guid: 9ffdb31300903ee16bf6ccc2a4b8839e,
+      type: 3}
+    kind: 1
+    sizeClass: 3
+    allowTilt: 1
+    weight: 1
+    enabled: 1
+    size: {x: 58.036797, y: 76.29517, z: 50.88647}
+    localCenter: {x: -3.3113594, y: 31.23663, z: 0.016366959}
+    measured: 1
+    family: building8
+  - id: 9f7972dd26bb21fb3bfb615beeebfb30
+    displayName: Building 8-variation 1
+    prefab: {fileID: 6902236144303218524, guid: 9f7972dd26bb21fb3bfb615beeebfb30,
+      type: 3}
+    kind: 1
+    sizeClass: 3
+    allowTilt: 1
+    weight: 1
+    enabled: 1
+    size: {x: 47.105675, y: 58.12459, z: 53.984093}
+    localCenter: {x: -1.9460869, y: 21.386766, z: -2.6753387}
+    measured: 1
+    family: building8
+  - id: 021f70166348eb22cb6fe53a824e2cf3
+    displayName: Building 8-variation 2
+    prefab: {fileID: 8553601183325662444, guid: 021f70166348eb22cb6fe53a824e2cf3,
+      type: 3}
+    kind: 1
+    sizeClass: 3
+    allowTilt: 1
+    weight: 1
+    enabled: 1
+    size: {x: 58.036797, y: 120.539314, z: 50.88647}
+    localCenter: {x: -3.3113594, y: 53.3587, z: 0.016366959}
+    measured: 1
+    family: building8
+  - id: 5e4bf7707285063ddb18b0ece61d8084
+    displayName: Building 9
+    prefab: {fileID: 5424890257054374676, guid: 5e4bf7707285063ddb18b0ece61d8084,
+      type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 1
+    weight: 1
+    enabled: 1
+    size: {x: 35.840347, y: 21.753897, z: 35.247948}
+    localCenter: {x: 0.12724495, y: 8.722516, z: -1.6749477}
+    measured: 1
+    family: building9
+  - id: c8c230399c2dde570846d774c950462f
+    displayName: Building 9-variation 1
+    prefab: {fileID: 311934831392146072, guid: c8c230399c2dde570846d774c950462f, type: 3}
+    kind: 1
+    sizeClass: 1
+    allowTilt: 1
+    weight: 1
+    enabled: 1
+    size: {x: 35.855137, y: 22.087328, z: 35.247948}
+    localCenter: {x: 0.11984825, y: 8.889232, z: -1.6749477}
+    measured: 1
+    family: building9
+  - id: 211e4ac9015991b4a81677b3d4f1293b
+    displayName: Slum 1
+    prefab: {fileID: 786491218490713802, guid: 211e4ac9015991b4a81677b3d4f1293b, type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 8.257301, y: 2.900479, z: 4.528597}
+    localCenter: {x: 0.03563118, y: 1.3535331, z: -0.015822172}
+    measured: 1
+    family: slum1
+  - id: 4484e294c729eb3468b41e83a0afb604
+    displayName: Slum 2
+    prefab: {fileID: 5128433947792690665, guid: 4484e294c729eb3468b41e83a0afb604,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 5.4301147, y: 3.1946912, z: 5.7859855}
+    localCenter: {x: 0.14131975, y: 1.5555418, z: 0.20203304}
+    measured: 1
+    family: slum2
+  - id: 1ebf4e8455d4b6f49a0a89cc4146ac10
+    displayName: Slum 3
+    prefab: {fileID: 2053782311062366259, guid: 1ebf4e8455d4b6f49a0a89cc4146ac10,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 4.9308696, y: 2.948901, z: 6.4064837}
+    localCenter: {x: 0.039487123, y: 1.335123, z: -0.40774393}
+    measured: 1
+    family: slum3
+  - id: b0dd275adbe143b4fb766d092b1b4bfe
+    displayName: Slum 4
+    prefab: {fileID: 6472732465995573508, guid: b0dd275adbe143b4fb766d092b1b4bfe,
+      type: 3}
+    kind: 1
+    sizeClass: 0
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 9.81399, y: 2.922576, z: 9.655914}
+    localCenter: {x: -0.09405804, y: 1.2905762, z: 0.017828465}
+    measured: 1
+    family: slum4
+  - id: 3293f2c4e0d31e4bfbe71c89d3d5835b
+    displayName: Building 8-rubble
+    prefab: {fileID: 8728594859331258619, guid: 3293f2c4e0d31e4bfbe71c89d3d5835b,
+      type: 3}
+    kind: 2
+    sizeClass: 2
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 60.3837, y: 55.175133, z: 51.97552}
+    localCenter: {x: -0.95430946, y: 22.4651, z: -0.47459602}
+    measured: 1
+    family: building8-rubble
+  - id: c771f604e8bdf2dd0ad538d16ab0f881
+    displayName: Building 8-rubble 2
+    prefab: {fileID: 8659288205025555658, guid: c771f604e8bdf2dd0ad538d16ab0f881,
+      type: 3}
+    kind: 2
+    sizeClass: 2
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 63.157104, y: 28.574568, z: 56.06196}
+    localCenter: {x: -5.0244827, y: 9.770465, z: -2.5713768}
+    measured: 1
+    family: building8-rubble2
+  - id: 7d007f550aca849c4a4a4a2e2c019a40
+    displayName: Rubble 1
+    prefab: {fileID: 7676978071251287720, guid: 7d007f550aca849c4a4a4a2e2c019a40,
+      type: 3}
+    kind: 3
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 6.699972, y: 2.7749896, z: 6.3388653}
+    localCenter: {x: 0.21236897, y: 0.9231146, z: 0.3456154}
+    measured: 1
+    family: rubble1
+  - id: aeea2400370455a449c373f43c640272
+    displayName: Rubble 2
+    prefab: {fileID: 9172637025406049874, guid: aeea2400370455a449c373f43c640272,
+      type: 3}
+    kind: 3
+    sizeClass: 2
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 10.865497, y: 3.0603554, z: 10.456642}
+    localCenter: {x: 0.89837885, y: 0.4671229, z: 0.6642513}
+    measured: 1
+    family: rubble2
+  - id: 3093ef22ab7d85117a28dfa6d610e625
+    displayName: Rubble 3
+    prefab: {fileID: 7719410488003394687, guid: 3093ef22ab7d85117a28dfa6d610e625,
+      type: 3}
+    kind: 3
+    sizeClass: 1
+    allowTilt: 0
+    weight: 1
+    enabled: 1
+    size: {x: 8.255023, y: 4.7514324, z: 7.431164}
+    localCenter: {x: -0.033399105, y: 1.4296782, z: -0.046164513}
+    measured: 1
+    family: rubble3
+  settings:
+    seed: 216376459
+    rootObjectName: Placed City
+    citySize: {x: 500, y: 500}
+    organicShape: 1
+    organicEdge: 0.28
+    organicLobes: 2.5
+    blockSize: {x: 30, y: 55}
+    sideStreetWidth: 7
+    mainStreetWidth: 14
+    mainStreetEvery: 4
+    blockSetback: 1.5
+    buildingGap: 1.5
+    blockMergeChance: 0.3
+    avenueCount: 3
+    avenueWidth: 12
+    avenueCurve: 14
+    avenueEndChance: 0.02
+    downtownCenter01: {x: 0.5, y: 0.5}
+    downtownRadius01: 0.219
+    midtownRadius01: 0.62
+    zoneNoiseScale: 0.03
+    zoneNoiseAmount: 0.35
+    downtownDensity: 0.9
+    outskirtsTallChance: 0.1
+    density: 1
+    alignToGrid: 1
+    tiltMaxDegrees: 6
+    buildingScaleJitter: 0.08
+    tiltSinkPerDegree: 0.25
+    groundEmbed: 0.05
+    clusterBuildings: 1
+    clusterZoneSize: 45
+    clusterStrength: 0.65
+    rubblePerBigBuilding: 4
+    rubbleSpread: 6
+    smallDebrisPerBuilding: 8
+    smallDebrisSpread: 1.3
+    smallDebrisPerArea: 1.5
+    streetDebrisPerArea: 2
+    debrisScaleMin: 0.85
+    debrisScaleMax: 1.05
+    rubbleScaleMin: 0.8
+    rubbleScaleMax: 1.2
+    groundY: 0
+    conformToGround: 0
+    groundMask:
+      serializedVersion: 2
+      m_Bits: 64
+    backgroundEnabled: 1
+    backgroundDepth: 200
+    backgroundDensity: 0.7
+    backgroundGap: 6
+    backgroundRubbleShare: 0.35
+    paintTerrainStreets: 1
+    streetLayer: {fileID: 8574412962073106934, guid: 066079260e02da44b95483b3b9636c28,
+      type: 2}
+    terrainStreetsSwapXZ: 0
+    streetEdgeWobble: 5
+    streetNoiseScale: 0.08
+    streetStrengthMin: 0.45
+    markStatic: 0
+    objectsPerFrame: 300
