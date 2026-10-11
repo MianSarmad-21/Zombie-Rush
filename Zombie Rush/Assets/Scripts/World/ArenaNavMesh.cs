@@ -70,6 +70,7 @@ namespace ZombieRush.World
             if (ArenaNavMesh.Ready && !ArenaNavMesh.TrySnap(ground, out ground, 1f)) return false;
             if (Flat(ground - player).sqrMagnitude < MinPlayerDistance * MinPlayerDistance) return false;
             if (SafeBase.Instance != null && SafeBase.Instance.Contains(ground, BaseMargin)) return false;
+            if (ZoneManager.Instance != null && !ZoneManager.Instance.Shape.Contains(ground, -0.5f)) return false;
             foreach (var p in ZombieRush.Player.PlayerHealth.All)
                 if (p != null && Flat(ground - p.transform.position).sqrMagnitude < MinPlayerDistance * MinPlayerDistance) return false;
             if (Physics.Raycast(ground + Vector3.up * 2.2f, Vector3.up, SkyCheck, ~0, QueryTriggerInteraction.Ignore)) return false;
@@ -80,15 +81,13 @@ namespace ZombieRush.World
         }
 
         /// A good spot near `anchor` (the anchor itself first), kept inside the zone.
-        public static bool TryNear(Vector3 anchor, Vector3 zoneCenter, float zoneRadius, Vector3 player, out Vector3 spot, float scatter = 4f, int tries = 10)
+        public static bool TryNear(Vector3 anchor, ZoneShape zone, Vector3 player, out Vector3 spot, float scatter = 4f, int tries = 10)
         {
             for (int i = 0; i <= tries; i++)
             {
                 var offset = i == 0 ? Vector2.zero : Random.insideUnitCircle * scatter;
-                var p = anchor + new Vector3(offset.x, 0f, offset.y);
-                var fromCenter = Flat(p - zoneCenter);
-                if (fromCenter.magnitude > zoneRadius - 1f) p = zoneCenter + fromCenter.normalized * (zoneRadius - 1f);
-                if (IsGoodSpawn(p, zoneCenter, player, out spot)) return true;
+                var p = zone.ClampInside(anchor + new Vector3(offset.x, 0f, offset.y), 1f);
+                if (IsGoodSpawn(p, zone.center, player, out spot)) return true;
             }
             spot = anchor;
             return false;

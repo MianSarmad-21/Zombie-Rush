@@ -7,6 +7,8 @@ namespace ZombieRush.World
     /// The playable area starts small and grows as the player expands it by
     /// spending coins. The boundary is a hard wall - you physically cannot walk
     /// past it until it's expanded.
+    /// Half circle mode: the base backs onto a straight edge just behind it and the zone
+    /// opens toward the PlayerBase marker's forward (blue arrow) - rotate the marker to aim it.
     public class ZoneManager : MonoBehaviour
     {
         public static ZoneManager Instance { get; private set; }
@@ -19,6 +21,12 @@ namespace ZombieRush.World
         public float maxRadius = 90f;
         public float expandStep = 15f;
 
+        [Header("Half circle")]
+        [Tooltip("Zone is a half circle opening toward the PlayerBase's forward, with its straight edge behind the base.")]
+        public bool halfCircle;
+        [Tooltip("Metres from the PlayerBase back to the straight edge.")]
+        public float backOffset = 10f;
+
         [Header("Cost")]
         public int expandCost = 20;
 
@@ -26,11 +34,29 @@ namespace ZombieRush.World
         public Transform boundaryVisual; // ZoneBoundaryFX wall, or a plain cylinder scaled to match the current radius
 
         [Header("Deploy")]
-        [Tooltip("Place the player on clear ground at the zone centre when the level starts.")]
+        [Tooltip("Place the player on clear ground at the base (or zone centre) when the level starts.")]
         public bool deployPlayerAtCenter = true;
 
         public float CurrentRadius { get; private set; }
         public bool CanExpand => CurrentRadius < maxRadius;
+
+        /// Flat direction the half circle opens toward (zero for a full circle).
+        public Vector3 Forward
+        {
+            get
+            {
+                if (!halfCircle || playerBase == null) return Vector3.zero;
+                var f = playerBase.forward;
+                f.y = 0f;
+                return f.sqrMagnitude > 0.0001f ? f.normalized : Vector3.zero;
+            }
+        }
+
+        /// Centre of the round edge: on the straight edge behind the base in half circle mode.
+        public Vector3 ArcCenter => playerBase == null ? center : playerBase.position - Forward * backOffset;
+
+        public ZoneShape Shape => new ZoneShape(center, CurrentRadius, Forward);
+        public ZoneShape ShapeAt(float radius) => new ZoneShape(ArcCenter, radius, Forward);
 
         CharacterController playerController;
         Transform player;
@@ -40,7 +66,7 @@ namespace ZombieRush.World
             if (Instance != null && Instance != this) { Destroy(gameObject); return; }
             Instance = this;
             CurrentRadius = startRadius;
-            if (playerBase != null) center = playerBase.position;
+            if (playerBase != null) center = ArcCenter;
         }
 
         void OnDestroy()
@@ -65,7 +91,8 @@ namespace ZombieRush.World
         void DeployPlayer()
         {
             if (player == null) return;
-            if (!ArenaGround.TryFindClearSpot(center, center.y, startRadius * 0.8f, out var spot))
+            var at = playerBase != null ? playerBase.position : center;
+            if (!ArenaGround.TryFindClearSpot(at, at.y, startRadius * 0.8f, out var spot))
             {
                 Debug.LogWarning("ZoneManager: no clear ground near the zone centre; leaving the player where it is.", this);
                 return;
@@ -87,12 +114,10 @@ namespace ZombieRush.World
         {
             if (player == null) return;
 
-            Vector3 flat = player.position - center;
-            flat.y = 0f;
-            if (flat.sqrMagnitude <= CurrentRadius * CurrentRadius) return;
+            var shape = Shape;
+            if (shape.Contains(player.position)) return;
 
-            Vector3 clamped = center + flat.normalized * CurrentRadius;
-            clamped.y = player.position.y;
+            Vector3 clamped = shape.ClampInside(player.position);
 
             if (playerController != null) playerController.enabled = false;
             player.position = clamped;
@@ -121,6 +146,7 @@ namespace ZombieRush.World
             if (boundaryVisual == null) return;
             if (boundaryVisual.TryGetComponent<ZoneBoundaryFX>(out var fx))
             {
+                fx.SetShape(Forward, straightEdge: true);
                 fx.SetZone(center, CurrentRadius, animate);
                 return;
             }

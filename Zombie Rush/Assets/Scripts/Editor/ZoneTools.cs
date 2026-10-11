@@ -116,7 +116,8 @@ namespace ZombieRush.EditorTools
 
             // 2. Zone wall.
             var fx = SetUpWall(zone, scene);
-            fx.SetZone(basePos, zone.startRadius, false);
+            fx.SetShape(zone.Forward, true);
+            fx.SetZone(zone.ArcCenter, zone.startRadius, false);
 
             // 3. Zombie walk map, covering everything the zone can ever reach.
             var nav = BakeNavMesh(map, basePos, zone.maxRadius + 15f, out string navNote);
@@ -140,7 +141,7 @@ namespace ZombieRush.EditorTools
             if (waves != null && waves.spawnPoints != null)
             {
                 foreach (var pad in waves.spawnPoints) if (pad != null) Undo.RecordObject(pad, "Set up zone");
-                waves.ArrangeSpawnPoints(basePos, zone.startRadius * waves.edgeRadiusFactor);
+                waves.ArrangeSpawnPoints(zone.ArcCenter, zone.startRadius * waves.edgeRadiusFactor, zone.Forward);
             }
 
             Undo.CollapseUndoOperations(undoGroup);
@@ -190,6 +191,7 @@ namespace ZombieRush.EditorTools
             Undo.RecordObject(fx, "Set up zone");
             fx.wallMaterial = LoadOrCreateMaterial("Zone_Wall", ground: false);
             fx.groundMaterial = LoadOrCreateMaterial("Zone_Ground", ground: true);
+            fx.fogMaterial = null;
             EditorUtility.SetDirty(fx);
 
             // Re-create the parts with the new materials.
@@ -300,7 +302,26 @@ namespace ZombieRush.EditorTools
             }
 
             gearCount = items.Count;
+            BaseBuildingTools.ArrangeGearInside(baseT, gear.transform);   // inside the base building, if there is one
             return safeBase;
+        }
+
+        /// The fog curtain material (Assets/Environment/Zone/Zone_Fog.mat) that hides everything outside the zone.
+        internal static Material FogMaterial()
+        {
+            string path = $"{ZoneFolder}/Zone_Fog.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat != null) return mat;
+            var shader = Shader.Find("ZombieRush/ZoneFogWall");
+            if (shader == null)
+            {
+                Debug.LogError("Zombie Rush: shader 'ZombieRush/ZoneFogWall' not found (Assets/Environment/Zone/ZoneFogWall.shader).");
+                return null;
+            }
+            if (!AssetDatabase.IsValidFolder(ZoneFolder)) AssetDatabase.CreateFolder("Assets/Environment", "Zone");
+            mat = new Material(shader) { name = "Zone_Fog" };
+            AssetDatabase.CreateAsset(mat, path);
+            return mat;
         }
 
         static Material LoadOrCreateMaterial(string name, bool ground, Color? color = null, float? intensity = null)
@@ -327,7 +348,7 @@ namespace ZombieRush.EditorTools
 
         /// Bakes the walk map from the map's colliders (terrain + buildings) inside a square
         /// around the base, and saves it as an asset the ArenaNavMesh component loads.
-        static NavMeshData BakeNavMesh(GameObject map, Vector3 center, float radius, out string note)
+        internal static NavMeshData BakeNavMesh(GameObject map, Vector3 center, float radius, out string note)
         {
             var sources = new List<NavMeshBuildSource>();
             UnityEngine.AI.NavMeshBuilder.CollectSources(map.transform, ~0, NavMeshCollectGeometry.PhysicsColliders, 0,
