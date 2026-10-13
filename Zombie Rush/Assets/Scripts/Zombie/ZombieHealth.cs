@@ -110,7 +110,9 @@ namespace ZombieRush.Zombie
 
         IEnumerator DeathRoutine(bool collapse)
         {
-            if (collapse) yield return CollapseRoutine();
+            float groundY = GroundHeightBelow();
+            if (collapse) yield return CollapseRoutine(groundY);
+            else yield return FallToGround(groundY);
             yield return new WaitForSeconds(corpseDuration);
             deathRoutine = null;
 
@@ -118,9 +120,44 @@ namespace ZombieRush.Zombie
             else Destroy(gameObject);
         }
 
-        /// No ragdoll - just tips the zombie over and sinks it slightly, so a kill
-        /// reads as a real death rather than the model simply vanishing.
-        IEnumerator CollapseRoutine()
+        static readonly RaycastHit[] groundHits = new RaycastHit[16];
+
+        /// Height of the ground under the corpse, ignoring zombies (this one's colliders are
+        /// already off). A zombie killed in mid-air - off a ledge, on a slope step - must not
+        /// stay floating once its AI (and with it, gravity) stops.
+        float GroundHeightBelow()
+        {
+            Vector3 origin = transform.position + Vector3.up * 1.5f;
+            int count = Physics.RaycastNonAlloc(origin, Vector3.down, groundHits, 30f, ~0, QueryTriggerInteraction.Ignore);
+            float best = float.NegativeInfinity;
+            for (int i = 0; i < count; i++)
+            {
+                var hit = groundHits[i];
+                if (hit.collider.GetComponentInParent<ZombieHealth>() != null) continue;
+                if (hit.point.y > best) best = hit.point.y;
+            }
+            // No ground found, or the zombie is already at/below it (e.g. shot while still rising): stay put.
+            return float.IsNegativeInfinity(best) || best > transform.position.y ? transform.position.y : best;
+        }
+
+        /// The death animation plays on the spot; if the zombie died above the ground, drop it there.
+        IEnumerator FallToGround(float groundY)
+        {
+            float speed = 0f;
+            while (transform.position.y > groundY + 0.01f)
+            {
+                speed += 20f * Time.deltaTime;
+                var p = transform.position;
+                p.y = Mathf.Max(groundY, p.y - speed * Time.deltaTime);
+                transform.position = p;
+                yield return null;
+            }
+        }
+
+        /// No ragdoll - just tips the zombie over onto the ground, so a kill reads as a
+        /// real death rather than the model simply vanishing. Used only when the zombie's
+        /// Animator Controller has no Die animation.
+        IEnumerator CollapseRoutine(float groundY)
         {
             var animator = Anim.Animator;
             if (animator != null) animator.enabled = false;
@@ -137,7 +174,7 @@ namespace ZombieRush.Zombie
             Quaternion endRot = Quaternion.AngleAxis(85f, fallAxis) * startRot;
 
             Vector3 startPos = transform.position;
-            Vector3 endPos = startPos - Vector3.up * 0.5f;
+            Vector3 endPos = new Vector3(startPos.x, groundY - 0.15f, startPos.z);
 
             const float duration = 0.5f;
             float t = 0f;

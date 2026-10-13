@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "dgSpecHash": "l05wzVsqC9o=",
+  "success": true,
+  "projectFilePath": "D:\\Unity\\Games\\Zombie-Rush\\Zombie Rush\\Docs\\Branding\\Generator\\gen\\Gen.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Sarma\\.nuget\\packages\\excss\\4.3.0\\excss.4.3.0.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\harfbuzzsharp\\8.3.0.1\\harfbuzzsharp.8.3.0.1.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\harfbuzzsharp.nativeassets.macos\\8.3.0.1\\harfbuzzsharp.nativeassets.macos.8.3.0.1.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\harfbuzzsharp.nativeassets.win32\\8.3.0.1\\harfbuzzsharp.nativeassets.win32.8.3.0.1.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\shimskiasharp\\3.0.3\\shimskiasharp.3.0.3.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\skiasharp\\3.119.0\\skiasharp.3.119.0.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\skiasharp.harfbuzz\\3.116.1\\skiasharp.harfbuzz.3.116.1.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\skiasharp.nativeassets.macos\\3.119.0\\skiasharp.nativeassets.macos.3.119.0.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\skiasharp.nativeassets.win32\\3.119.0\\skiasharp.nativeassets.win32.3.119.0.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\svg.custom\\3.0.3\\svg.custom.3.0.3.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\svg.model\\3.0.3\\svg.model.3.0.3.nupkg.sha512",
+    "C:\\Users\\Sarma\\.nuget\\packages\\svg.skia\\3.0.3\\svg.skia.3.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}

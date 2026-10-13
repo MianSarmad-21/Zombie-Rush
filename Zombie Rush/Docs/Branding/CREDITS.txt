@@ -1,0 +1,5 @@
+Zombie Rush - thumbnail & icon (generated 2026-10-11)
+- Logo, fonts and night sky: from the game's own UI kit (Assets/UI, Assets/Environment/Sky).
+- Rifle silhouette: "AK47" by Skoll, game-icons.net, CC BY 3.0 (https://game-icons.net).
+- Thumbnail zombies, city, moon, effects: drawn procedurally for this project.
+- Icon zombie: original painted artwork made for this project (no third-party assets).

@@ -26,12 +26,13 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 100000001}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 100000104}
+  - {fileID: 543450653641967246}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!143 &100000003
@@ -69,9 +70,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5580e20b94fbfbe2879c9d99a8b104e7, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   config: {fileID: 11400000, guid: b8057fadd7a47c3fb48fb175723ede93, type: 2}
+  difficultyMultiplier: 1
+  coinDropChance: 1
+  minCoins: 5
+  maxCoins: 15
+  ammoDropChance: 0.25
+  minAmmo: 4
+  maxAmmo: 10
+  corpseDuration: 4
 --- !u!114 &100000005
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -82,9 +91,20 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 42df0d6dd2234f940399d114af74b3e4, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   config: {fileID: 11400000, guid: b8057fadd7a47c3fb48fb175723ede93, type: 2}
+  difficultyMultiplier: 1
+  alwaysHunt: 0
+  probeDistance: 1.6
+  probeRadius: 0.45
+  avoidCommitTime: 0.35
+  obstacleMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  stuckCheckInterval: 0.5
+  stuckDistanceThreshold: 0.15
+  escapeDuration: 1.2
 --- !u!1001 &100000101
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -157,14 +177,14 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 100000103}
   m_SourcePrefab: {fileID: 100100000, guid: 0c073803e808b234caee52191fcd98b8, type: 3}
---- !u!1 &100000102 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 0c073803e808b234caee52191fcd98b8, type: 3}
-  m_PrefabInstance: {fileID: 100000101}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &100000104 stripped
+--- !u!4 &543450653641967246 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 0c073803e808b234caee52191fcd98b8, type: 3}
+  m_PrefabInstance: {fileID: 100000101}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &919132149120556084 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 0c073803e808b234caee52191fcd98b8, type: 3}
   m_PrefabInstance: {fileID: 100000101}
   m_PrefabAsset: {fileID: 0}
 --- !u!95 &100000103
@@ -174,17 +194,17 @@ Animator:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 100000102}
+  m_GameObject: {fileID: 919132149120556084}
   m_Enabled: 1
-  m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: 277e8c1cf46903147b1d2880f1c71b3e, type: 2}
+  m_Avatar: {fileID: 9000000, guid: 0c073803e808b234caee52191fcd98b8, type: 3}
+  m_Controller: {fileID: 9100000, guid: 42cf5dcc452f6e1b682dfe4c52bbd928, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
   m_AnimatePhysics: 0
-  m_WarningMessage:
+  m_WarningMessage: 
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
