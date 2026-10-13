@@ -34,6 +34,10 @@ namespace ZombieRush.Waves
         [Range(0.4f, 1f)] public float edgeRadiusFactor = 0.85f;
         [Tooltip("Pad height above the ground surface.")]
         public float padHeightOffset = 0.05f;
+        [Tooltip("Surface each zombie at runtime on a ring around a player who is out fighting, instead of only at the zone edge. Falls back to the edge pads when no good spot is found (e.g. the player is in the safe base).")]
+        public bool spawnNearPlayer = true;
+        [Min(7f)] public float nearPlayerMinDistance = 10f;
+        [Min(8f)] public float nearPlayerMaxDistance = 22f;
 
         [Header("Pacing")]
         public float announceDuration = 3f;
@@ -122,6 +126,8 @@ namespace ZombieRush.Waves
                     if (spawned < count) yield return new WaitForSeconds(timeBetweenSpawns * Difficulty.SpawnIntervalMultiplier(players));
                 }
 
+                LogSpawnSummary();
+
                 // Only zombies that actually spawned are counted, so this can't hang.
                 while (AliveCount > 0) yield return null;
 
@@ -168,8 +174,18 @@ namespace ZombieRush.Waves
             // on one point and nobody surfaces inside a building or a walled-off pocket.
             var spawnPos = point.position;
             var zone = ZoneManager.Instance;
-            if (zone != null && ArenaSpawn.TryNear(point.position, zone.Shape, PlayerPosition(zone.center), out var spot))
-                spawnPos = spot;
+            if (spawnNearPlayer && zone != null && TryNearPlayer(zone, out var near))
+            {
+                spawnPos = near;
+                point.position = near + Vector3.up * padHeightOffset; // the pad's glow marks where it surfaces
+                nearSpawns++;
+            }
+            else
+            {
+                padSpawns++;
+                if (zone != null && ArenaSpawn.TryNear(point.position, zone.Shape, PlayerPosition(zone.center), out var spot))
+                    spawnPos = spot;
+            }
 
             var zombie = pool.Get(prefab, spawnPos, Quaternion.identity);
             if (zombie == null) return false;
@@ -231,6 +247,49 @@ namespace ZombieRush.Waves
                     break;
                 }
             }
+        }
+
+        /// A good spot (open sky, clear, inside the zone, away from the base, walkable route -
+        /// see ArenaSpawn) on a ring around a random living player who is outside the safe base.
+        bool TryNearPlayer(ZoneManager zone, out Vector3 spot)
+        {
+            spot = default;
+            var targets = ZombieRush.Player.PlayerHealth.All;
+            int start = targets.Count > 0 ? Random.Range(0, targets.Count) : 0;
+            for (int n = 0; n < targets.Count; n++)
+            {
+                var player = targets[(start + n) % targets.Count];
+                if (player == null || player.IsDead || player.InSafeBase) continue;
+
+                Vector3 p = player.transform.position;
+                float min = nearPlayerMinDistance, max = Mathf.Max(min + 1f, nearPlayerMaxDistance);
+                for (int attempt = 0; attempt < 24; attempt++)
+                {
+                    Vector2 dir = Random.insideUnitCircle.normalized;
+                    if (dir == Vector2.zero) dir = Vector2.up;
+                    var probe = p + new Vector3(dir.x, 0f, dir.y) * Random.Range(min, max);
+                    // Ground height is judged against the player's own height (the arena is hilly),
+                    // with room for slopes over the ring's distance.
+                    if (ArenaSpawn.IsGoodSpawn(probe, p, p, out spot, 6f)) return true;
+                    NoteReject(ArenaSpawn.LastReject);
+                }
+            }
+            return false;
+        }
+
+        // Why near-player spawns fell back to the pads this wave - logged once per wave.
+        readonly System.Collections.Generic.Dictionary<string, int> rejects = new System.Collections.Generic.Dictionary<string, int>();
+        int nearSpawns, padSpawns;
+        void NoteReject(string why) { if (!string.IsNullOrEmpty(why)) rejects[why] = rejects.TryGetValue(why, out var n) ? n + 1 : 1; }
+
+        void LogSpawnSummary()
+        {
+            if (spawnNearPlayer && padSpawns > 0)
+            {
+                var reasons = string.Join(", ", System.Linq.Enumerable.Select(rejects, r => $"{r.Key} x{r.Value}"));
+                Debug.Log($"[Zombie Rush] Wave {CurrentWave}: {nearSpawns} zombies spawned near the player, {padSpawns} at the zone-edge pads. Near-player spots rejected because: {(reasons.Length > 0 ? reasons : "player was in the safe base / no living player")}", this);
+            }
+            rejects.Clear(); nearSpawns = 0; padSpawns = 0;
         }
 
         /// Players in the match (alive or not) - drives squad difficulty. Never less than 1.

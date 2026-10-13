@@ -69,6 +69,14 @@ namespace ZombieRush.Zombie
         Vector3 positionAtLastCheck;
         float escapeTimer;
         Vector3 escapeDir;
+        int stuckStrikes;
+
+        // Hysteresis: a zombie on the edge of a threshold (attack range, run distance) would
+        // otherwise flip between two states every frame and visibly jerk back and forth.
+        bool inAttackRange;
+        bool isRunning;
+        const float AttackRangeMargin = 0.6f;
+        const float RunDistanceMargin = 1.5f;
 
         void Awake()
         {
@@ -90,6 +98,9 @@ namespace ZombieRush.Zombie
             avoidHoldTimer = 0f;
             escapeTimer = 0f;
             stuckCheckTimer = 0f;
+            stuckStrikes = 0;
+            inAttackRange = false;
+            isRunning = false;
             nextProbeTime = 0f;
             repathTimer = Random.value * RepathInterval;
             pathCorner = -1;
@@ -163,7 +174,9 @@ namespace ZombieRush.Zombie
                 return;
             }
 
-            if (!guarding && sqrDistance <= cfg.attackRange * cfg.attackRange)
+            float attackReach = cfg.attackRange + (inAttackRange ? AttackRangeMargin : 0f);
+            inAttackRange = !guarding && sqrDistance <= attackReach * attackReach;
+            if (inAttackRange)
             {
                 FaceDirection(toPlayer);
                 ApplyGravityOnly();
@@ -180,7 +193,8 @@ namespace ZombieRush.Zombie
 
             // Chase, steering around anything in the way.
             float distance = Mathf.Sqrt(sqrDistance);
-            bool running = cfg.runDistance <= 0f || distance <= cfg.runDistance;
+            isRunning = cfg.runDistance <= 0f || distance <= cfg.runDistance + (isRunning ? RunDistanceMargin : 0f);
+            bool running = isRunning;
             float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * Mathf.Min(difficultyMultiplier, MaxSpeedMultiplier);
             health.Anim.SetSpeed(running ? 1f : 0.5f);
 
@@ -188,7 +202,7 @@ namespace ZombieRush.Zombie
             Vector3 moveDir = ComputeMoveDirection(desired);
             FaceDirection(moveDir);
 
-            UpdateLastResortUnstuck(moveDir);
+            UpdateLastResortUnstuck(moveDir, distance);
             if (escapeTimer > 0f)
             {
                 escapeTimer -= Time.deltaTime;
@@ -262,8 +276,18 @@ namespace ZombieRush.Zombie
             }
             if (pathCorner < 0) return straight;
 
-            // Skip corners already reached.
-            while (pathCorner < corners.Length - 1 && FlatDistance(transform.position, corners[pathCorner]) < 0.8f) pathCorner++;
+            // Skip corners already reached - or already run past: a fast zombie can overshoot a
+            // corner by more than the reach radius, and turning back for it looks like a glitch.
+            while (pathCorner < corners.Length - 1)
+            {
+                Vector3 c = corners[pathCorner];
+                Vector3 segment = corners[pathCorner + 1] - c; segment.y = 0f;
+                Vector3 fromCorner = transform.position - c; fromCorner.y = 0f;
+                float d = FlatDistance(transform.position, c);
+                bool passed = d < 3f && Vector3.Dot(fromCorner, segment) > 0f; // close, and already beyond it along the next leg
+                if (d < 1.2f || passed) pathCorner++;
+                else break;
+            }
             Vector3 toCorner = corners[pathCorner] - transform.position;
             toCorner.y = 0f;
             return toCorner.sqrMagnitude > 0.01f ? toCorner.normalized : straight;
@@ -281,7 +305,10 @@ namespace ZombieRush.Zombie
         /// If, despite avoidance, it's genuinely still not making progress (a
         /// concave corner the tangent-follow can bounce around in, say), pick a
         /// random escape direction for a bit rather than getting permanently wedged.
-        void UpdateLastResortUnstuck(Vector3 currentMoveDir)
+        /// Only after two slow checks in a row, never in the scrum around the player (where being
+        /// blocked by other zombies is normal), and sideways rather than backwards - a zombie
+        /// that keeps reversing for a second at a time looks like it is glitching to and fro.
+        void UpdateLastResortUnstuck(Vector3 currentMoveDir, float distanceToTarget)
         {
             if (escapeTimer > 0f) return;
 
@@ -292,12 +319,16 @@ namespace ZombieRush.Zombie
             stuckCheckTimer = 0f;
             positionAtLastCheck = transform.position;
 
-            if (movedSqr < stuckDistanceThreshold * stuckDistanceThreshold)
-            {
-                repathTimer = 0f; // re-plan the route once the escape ends
-                escapeTimer = escapeDuration;
-                escapeDir = (Quaternion.Euler(0f, Random.Range(60f, 300f), 0f) * currentMoveDir).normalized;
-            }
+            bool slow = movedSqr < stuckDistanceThreshold * stuckDistanceThreshold;
+            bool nearTarget = distanceToTarget < cfg.attackRange + 4f;
+            stuckStrikes = slow && !nearTarget ? stuckStrikes + 1 : 0;
+            if (stuckStrikes < 2) return;
+
+            stuckStrikes = 0;
+            repathTimer = 0f; // re-plan the route once the escape ends
+            escapeTimer = escapeDuration * 0.6f;
+            float side = Random.value < 0.5f ? -1f : 1f;
+            escapeDir = (Quaternion.Euler(0f, side * Random.Range(70f, 110f), 0f) * currentMoveDir).normalized;
         }
 
         void FaceDirection(Vector3 dir)

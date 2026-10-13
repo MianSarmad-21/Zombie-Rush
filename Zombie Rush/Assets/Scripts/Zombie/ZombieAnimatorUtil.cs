@@ -58,7 +58,24 @@ namespace ZombieRush.Zombie
 
         public bool TriggerAttack() => Trigger(HasAttack, ZombieAnimatorUtil.AttackParam);
         public bool TriggerHit() => Trigger(HasHit, ZombieAnimatorUtil.HitParam);
-        public bool TriggerDie() => Trigger(HasDie, ZombieAnimatorUtil.DieParam);
+
+        static readonly int DieState = Animator.StringToHash("Die");
+
+        /// Plays the death. Pending Hit/Attack triggers are cleared first: the controller's
+        /// Any State transitions would otherwise pull the zombie straight back out of Die
+        /// (several pellets landing in the same frame each set Hit before the killing one).
+        public bool TriggerDie()
+        {
+            if (!Resolve()) return false;
+            if (HasHit) Animator.ResetTrigger(ZombieAnimatorUtil.HitParam);
+            if (HasAttack) Animator.ResetTrigger(ZombieAnimatorUtil.AttackParam);
+            if (Animator.HasState(0, DieState))
+            {
+                Animator.CrossFadeInFixedTime(DieState, 0.1f, 0);
+                return true;
+            }
+            return Trigger(HasDie, ZombieAnimatorUtil.DieParam);
+        }
 
         bool Trigger(bool has, int hash)
         {

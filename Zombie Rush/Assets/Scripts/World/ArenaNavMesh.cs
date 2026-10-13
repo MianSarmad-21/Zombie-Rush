@@ -62,23 +62,29 @@ namespace ZombieRush.World
 
         static NavMeshPath path;
 
-        public static bool IsGoodSpawn(Vector3 candidate, Vector3 groundCenter, Vector3 player, out Vector3 spot)
+        /// Why the last IsGoodSpawn call said no (for diagnostics).
+        public static string LastReject { get; private set; } = "";
+
+        public static bool IsGoodSpawn(Vector3 candidate, Vector3 groundCenter, Vector3 player, out Vector3 spot, float groundTolerance = 2.5f)
         {
             path ??= new NavMeshPath();
             spot = candidate;
-            if (!ArenaGround.TryGround(candidate, groundCenter.y, out var ground, 2.5f)) return false;
-            if (ArenaNavMesh.Ready && !ArenaNavMesh.TrySnap(ground, out ground, 1f)) return false;
-            if (Flat(ground - player).sqrMagnitude < MinPlayerDistance * MinPlayerDistance) return false;
-            if (SafeBase.Instance != null && SafeBase.Instance.Contains(ground, BaseMargin)) return false;
-            if (ZoneManager.Instance != null && !ZoneManager.Instance.Shape.Contains(ground, -0.5f)) return false;
+            if (!ArenaGround.TryGround(candidate, groundCenter.y, out var ground, groundTolerance)) return Reject("no flat ground / roof");
+            if (ArenaNavMesh.Ready && !ArenaNavMesh.TrySnap(ground, out ground, 1f)) return Reject("off the NavMesh");
+            if (Flat(ground - player).sqrMagnitude < MinPlayerDistance * MinPlayerDistance) return Reject("too close to the player");
+            if (SafeBase.Instance != null && SafeBase.Instance.Contains(ground, BaseMargin)) return Reject("too close to the safe base");
+            if (ZoneManager.Instance != null && !ZoneManager.Instance.Shape.Contains(ground, -0.5f)) return Reject("outside the fight zone");
             foreach (var p in ZombieRush.Player.PlayerHealth.All)
-                if (p != null && Flat(ground - p.transform.position).sqrMagnitude < MinPlayerDistance * MinPlayerDistance) return false;
-            if (Physics.Raycast(ground + Vector3.up * 2.2f, Vector3.up, SkyCheck, ~0, QueryTriggerInteraction.Ignore)) return false;
-            if (!ArenaGround.IsClear(ground, 0.6f)) return false;
-            if (!ArenaNavMesh.HasCompletePath(ground, player, path)) return false;
+                if (p != null && Flat(ground - p.transform.position).sqrMagnitude < MinPlayerDistance * MinPlayerDistance) return Reject("too close to a player");
+            if (Physics.Raycast(ground + Vector3.up * 2.2f, Vector3.up, SkyCheck, ~0, QueryTriggerInteraction.Ignore)) return Reject("under a roof");
+            if (!ArenaGround.IsClear(ground, 0.6f)) return Reject("blocked by a prop");
+            if (!ArenaNavMesh.HasCompletePath(ground, player, path)) return Reject("no walkable path to the player");
             spot = ground;
+            LastReject = "";
             return true;
         }
+
+        static bool Reject(string why) { LastReject = why; return false; }
 
         /// A good spot near `anchor` (the anchor itself first), kept inside the zone.
         public static bool TryNear(Vector3 anchor, ZoneShape zone, Vector3 player, out Vector3 spot, float scatter = 4f, int tries = 10)
