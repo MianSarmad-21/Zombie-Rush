@@ -68201,7 +68201,7 @@ MonoBehaviour:
     minWave: 1
     weight: 1
   - prefab: {fileID: 9103985727576815677, guid: c30c6b59c0565344cafa2ca1ab6ba590, type: 3}
-    minWave: 2
+    minWave: 5
     weight: 0.5
   spawnPoints:
   - {fileID: 995000032}
