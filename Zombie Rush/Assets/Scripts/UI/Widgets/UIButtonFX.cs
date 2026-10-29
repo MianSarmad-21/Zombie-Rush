@@ -50,7 +50,12 @@ namespace ZombieRush.UI
 
         public void OnSelect(BaseEventData e) { if (Interactable) Wake(ref targetHot, 1f); }
         public void OnDeselect(BaseEventData e) => Wake(ref targetHot, 0f);
-        public void OnPointerDown(PointerEventData e) { if (Interactable) Wake(ref targetPress, 1f); }
+        public void OnPointerDown(PointerEventData e)
+        {
+            if (!Interactable) return;
+            Wake(ref targetPress, 1f);
+            Audio.SoundManager.Click();
+        }
         public void OnPointerUp(PointerEventData e) => Wake(ref targetPress, 0f);
 
         void Wake(ref float field, float value)

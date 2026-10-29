@@ -17,5 +17,10 @@ namespace ZombieRush.Data
         public int magazineSize = 12;
         public int maxReserveAmmo = 60;
         public float reloadTime = 1.4f;
+
+        [Header("Audio (empty = the Sound Library defaults)")]
+        public AudioClip[] fireSounds;
+        public AudioClip reloadSound;
+        [Range(0f, 1f)] public float fireVolume = 0.8f;
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using ZombieRush.Audio;
 using ZombieRush.Core;
 using ZombieRush.Data;
 using ZombieRush.Effects;
@@ -35,6 +36,13 @@ namespace ZombieRush.Zombie
 
         public event System.Action<ZombieHealth> Died;
 
+        /// Every zombie that is currently active in the scene (dead ones included until their
+        /// corpse is cleared - check IsDead). Lets turrets find targets without physics queries.
+        public static readonly System.Collections.Generic.List<ZombieHealth> Active = new System.Collections.Generic.List<ZombieHealth>();
+
+        void OnEnable() => Active.Add(this);
+        void OnDisable() => Active.Remove(this);
+
         /// Assigned by a pool. When set, the corpse is handed back to the pool
         /// instead of being destroyed.
         public System.Action<ZombieHealth> ReleaseToPool;
@@ -53,6 +61,15 @@ namespace ZombieRush.Zombie
             ai = GetComponent<ZombieAI>();
             colliders = GetComponents<Collider>();
             CurrentHealth = MaxHealth;
+        }
+
+        // After ZombieVisual has set up the Animator: keep the feet on uneven ground.
+        void Start()
+        {
+            if (!Anim.Resolve() || !Anim.Animator.isHuman) return;
+            var ik = Anim.Animator.GetComponent<ZombieFootIK>();
+            if (ik == null) ik = Anim.Animator.gameObject.AddComponent<ZombieFootIK>();
+            ik.Init(this);
         }
 
         /// Called by the spawner after Instantiate or when reusing a pooled zombie:
@@ -76,12 +93,21 @@ namespace ZombieRush.Zombie
             }
         }
 
-        public void TakeDamage(float amount)
+        public void TakeDamage(float amount) => TakeDamage(amount, true);
+
+        /// byPlayer = false for turret hits: no crosshair hit marker for shots the player didn't fire.
+        public void TakeDamage(float amount, bool byPlayer)
         {
             if (IsDead) return;
 
             CurrentHealth -= amount;
-            GameEvents.RaiseEnemyHit();
+            if (byPlayer) GameEvents.RaiseEnemyHit();
+            var lib = SoundManager.Library;
+            if (lib != null)
+            {
+                SoundManager.PlayAt(lib.bulletImpact, transform.position + Vector3.up, 0.5f, 25f, 3);
+                if (CurrentHealth > 0f) SoundManager.PlayAt(lib.zombieHurt, transform.position + Vector3.up * 1.6f, 0.8f, 30f, 2);
+            }
             BloodEffect.Spawn(transform.position + Vector3.up);
 
             if (CurrentHealth <= 0f) Die();
@@ -97,6 +123,8 @@ namespace ZombieRush.Zombie
             foreach (var col in colliders) col.enabled = false;
 
             BloodEffect.Spawn(transform.position + Vector3.up * 0.8f);
+            var lib = SoundManager.Library;
+            if (lib != null) SoundManager.PlayAt(lib.zombieDeath, transform.position + Vector3.up * 1.4f, 1f, 35f, 3);
 
             GameEvents.RaiseZombieKilled(new ZombieKilledInfo
             {

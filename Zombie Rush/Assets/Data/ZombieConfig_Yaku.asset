@@ -11,7 +11,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 90f361599a130c1aafc5820c61b6af36, type: 3}
   m_Name: ZombieConfig_Yaku
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   zombieName: Yaku
   maxHealth: 110
   moveSpeed: 2
@@ -19,5 +19,6 @@ MonoBehaviour:
   runDistance: 12
   attackRange: 1.7
   attackDamage: 18
-  attackCooldown: 1.4
+  attackCooldown: 1.4000001
+  attackHitDelay: 0.65
   sightRange: 40

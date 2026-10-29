@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90f361599a130c1aafc5820c61b6af36, type: 3}
+  m_Name: ZombieConfig_Miner
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Data.ZombieConfigData
+  zombieName: Miner Juggernaut
+  maxHealth: 320
+  moveSpeed: 1.5
+  chaseSpeed: 2.5
+  runDistance: 10
+  attackRange: 2.8
+  attackDamage: 30
+  attackCooldown: 2.7
+  attackHitDelay: 1.05
+  sightRange: 40

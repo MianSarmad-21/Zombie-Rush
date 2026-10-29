@@ -1,0 +1,17 @@
+Respected Sir,
+With due respect It is Stated that I am a 7th Semester Student and our FYP has been Started. During the first pitch the teacher told me to change the idea. I have changed it to a new idea which has been Accepted but in our LMS portal the Title and Description is still of the old project so for that purpose I request you to change it so It doesnt cause any problems later on.
+Thank you
+
+Old Title: 
+Game Development Project
+
+Old Description: 
+A survival-horror game built in Unity, set in a sealed pharmaceutical factory where a failed experiment has blinded the workers and turned them violent, converting them into zombies. The player, a trapped maintenance technician, must restore power, override the lockdown and escape the building. The enemies cannot see — they hunt entirely by sound. The core system models every player action as a noise event with intensity, radius and frequency, propagated through the level’s geometry rather than a simple distance check. Low sounds travel far but locate the player vaguely; high sounds carry less but pinpoint him exactly. Enemies run a state machine that drives them toward the last known sound position, not the player himself. Combat is possible but expensive. Each weapon — knife, silenced pistol, pistol, shotgun — carries a different acoustic cost, and scarce ammunition forces the player to escalate from silence to noise. Thrown objects let him misdirect enemies deliberately, turning sound into a tool as well as a threat. The game runs about an hour across five acts and ends with a boss that can only be killed to escape the factory.
+
+New Title:
+Zombie Rush
+
+New Description:
+Zombie Rush is a first-person wave-survival shooter set in a ruined, post-apocalyptic city at night, playable on PC and Android. Each match starts inside a lit safe base building, where zombies can never enter and players take no damage. Inside, players pick up their starting gear from weapon racks: guns, armor, ammo and medkits. The zombie waves begin the moment a player steps outside the base into the fight zone, a half-circle arena marked by a glowing wall. Zombies come out of the ground near the players and use pathfinding to hunt down the nearest player outside the base. Each wave brings more zombies, and they get faster and tougher, so players have to manage their ammo, reload at the right moment and switch weapons. Every kill earns coins, which players spend to push the fight-zone wall outward and open up more of the city to explore and fight in. Armor absorbs damage, medkits restore health, and players can fall back to the safe base to regroup between fights. In Solo mode the player survives alone, while in Squad mode up to four players team up in co-op, and zombie numbers, health and spawn speed scale up to match. When the player dies, a results screen shows the wave reached, kills, coins earned, a star rating and their best score, and the aim is always to survive one more wave.
+
+To: FYP Coordinator Sir Faraz Ali Shah
