@@ -16,6 +16,8 @@ namespace ZombieRush.Data
         public float attackRange = 1.6f;
         public float attackDamage = 12f;
         public float attackCooldown = 1.1f;
+        [Tooltip("Seconds from the start of the swing until the damage lands (0 = at once). The player can still step out of reach meanwhile. A JuggernautMotion on the zombie lands it earlier, at the moment the swing connects.")]
+        public float attackHitDelay = 0f;
 
         [Header("Detection")]
         public float sightRange = 25f; // effectively "always sees the player" until real vision/sound checks are added

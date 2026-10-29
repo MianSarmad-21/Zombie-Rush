@@ -148,14 +148,14 @@ namespace ZombieRush.EditorTools
             return profile;
         }
 
-        static Vector3 MoonDirection()
+        internal static Vector3 MoonDirection()
         {
             float lon = (0.5f - MoonU) * 2f * Mathf.PI;
             float el = MoonElevation * Mathf.Deg2Rad;
             return new Vector3(Mathf.Cos(el) * Mathf.Cos(lon), Mathf.Sin(el), Mathf.Cos(el) * Mathf.Sin(lon)).normalized;
         }
 
-        static Texture2D SetupSkyTexture()
+        internal static Texture2D SetupSkyTexture()
         {
             var importer = AssetImporter.GetAtPath(SkyTexturePath) as TextureImporter;
             if (importer == null) return null;
@@ -189,7 +189,7 @@ namespace ZombieRush.EditorTools
             return AssetDatabase.LoadAssetAtPath<Texture2D>(SkyTexturePath);
         }
 
-        static Material SetupSkyMaterial(Texture2D sky)
+        internal static Material SetupSkyMaterial(Texture2D sky)
         {
             var mat = AssetDatabase.LoadAssetAtPath<Material>(SkyMaterialPath);
             if (mat == null)

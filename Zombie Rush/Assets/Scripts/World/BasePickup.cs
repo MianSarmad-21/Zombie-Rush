@@ -78,7 +78,10 @@ namespace ZombieRush.World
             if (gained == null) return;
 
             if (rechargeTime > 0f) readyAt = Time.time + rechargeTime;
-            if (player == PlayerHealth.Instance) GameEvents.RaiseNotice(label, gained);
+            if (player != PlayerHealth.Instance) return;
+            GameEvents.RaiseNotice(label, gained);
+            var lib = Audio.SoundManager.Library;
+            if (lib != null) Audio.SoundManager.Play(lib.pickup, 0.8f);
         }
 
         /// What the player got (for the on-screen notice), or null if they didn't need it.

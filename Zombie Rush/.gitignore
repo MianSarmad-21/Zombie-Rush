@@ -104,3 +104,6 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Local backups (GDD copies etc.) - kept on disk, not in the repo
+/[Bb]ackups/

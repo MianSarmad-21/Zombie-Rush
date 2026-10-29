@@ -91,7 +91,7 @@ namespace ZombieRush.EditorTools
                 bool replaceable = data.icon == null || AssetDatabase.GetAssetPath(data.icon).StartsWith(UIAssetGenerator.IconFolder + "/");
                 if (!replaceable) continue;
                 string n = (data.weaponName + data.name).ToLowerInvariant();
-                var icon = n.Contains("shotgun") ? A.IconX("shotgun") : n.Contains("pistol") ? A.IconX("pistol") : null;
+                var icon = n.Contains("shotgun") ? A.IconX("shotgun") : n.Contains("pistol") ? A.IconX("pistol") : n.Contains("rifle") ? A.IconX("rifle") : null;
                 if (icon == null || icon == data.icon) continue;
                 Undo.RecordObject(data, "Assign weapon icon");
                 data.icon = icon;
@@ -364,6 +364,7 @@ namespace ZombieRush.EditorTools
             touchOnly.Add(swapArea);
             Responsive(weapon.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-180f, -24f));
 
+            TurretButtonPC(hudGo.transform);
             BuildCrosshair(hudGo.transform);
 
             layout.targets = targets.ToArray();
@@ -432,6 +433,78 @@ namespace ZombieRush.EditorTools
             prompt.showOn = SchemeFilter.TouchOnly;
             prompt.format = "EXPAND\n{0} COINS";
             content.SetActive(false); // editor preview shows the PC layout
+        }
+
+        /// Turret (paid item) key hint above the weapon plate: [T] icon TURRET / price / cooldown.
+        static void TurretButtonPC(Transform parent)
+        {
+            var holder = Node("TurretButton_PC", parent);
+            Place(holder, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-32f, 204f), new Vector2(300f, 84f));
+            var content = Node("Content", holder.transform);
+            Stretch(content);
+            var bg = SlicedSlant(content.transform, "Bg", A.BtnSlant, Vector2.zero, new Vector2(300f, 84f));
+            Stretch(bg.gameObject);
+            var frame = SlicedSlant(content.transform, "Frame", A.BtnSlantGlow, Vector2.zero, new Vector2(300f, 84f));
+            frame.color = UITheme.Gold;
+            Stretch(frame.gameObject);
+
+            var key = Img(content.transform, "KeyCap", A.BtnSquare, Color.white);
+            Place(key.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(40f, 0f), new Vector2(54f, 46f));
+            var keyText = Txt(key.transform, "Key", "T", A.Bold, 24, UITheme.Gold, TextAnchor.MiddleCenter);
+            Stretch(keyText.gameObject);
+
+            var ui = holder.AddComponent<TurretButtonUI>();
+            TurretIcon(content.transform, new Vector2(132f, 0f), 72f, ui);
+            ui.label = Txt(content.transform, "Label", "TURRET", A.Bold, 26, UITheme.Gold, TextAnchor.MiddleLeft);
+            Place(ui.label.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(178f, 1f), new Vector2(116f, 40f));
+            Shadowed(ui.label);
+            ui.content = content;
+            ui.frame = frame;
+            ui.showOn = SchemeFilter.KeyboardMouseOnly;
+        }
+
+        /// Touch turret button at the top of the thumb arc; tap = buy (if locked) or deploy.
+        static void TurretButtonTouch(Transform controls)
+        {
+            var holder = Node("TurretButton_Touch", controls);
+            Stretch(holder);
+            var btn = RoundButton(holder.transform, "Turret", "TURRET", "turret", 132f, new Vector2(-92f, 478f), UITheme.Gold, TouchAction.Turret);
+            var ui = holder.AddComponent<TurretButtonUI>();
+            TurretIcon(btn.transform, Vector2.zero, 0f, ui);
+            ui.label = btn.transform.Find("Caption").GetComponent<Text>();
+            ui.content = btn.gameObject;
+            ui.showOn = SchemeFilter.TouchOnly;
+        }
+
+        /// Turret icon + radial cooldown sweep + padlock badge. size 0 = reuse the round button's own icon.
+        static void TurretIcon(Transform parent, Vector2 pos, float size, TurretButtonUI ui)
+        {
+            Image icon;
+            if (size > 0f)
+            {
+                icon = Img(parent, "Icon", A.IconX("turret"), Color.white);
+                Place(icon.gameObject, new Vector2(0f, 0.5f), new Vector2(0.5f, 0.5f), pos, new Vector2(size, size));
+            }
+            else
+            {
+                icon = parent.Find("Icon").GetComponent<Image>();
+                size = icon.rectTransform.sizeDelta.x;
+            }
+            icon.preserveAspect = true;
+            ui.icon = icon;
+
+            var sweep = Img(icon.transform, "Cooldown", A.Circle, new Color(0f, 0f, 0f, 0.62f));
+            Stretch(sweep.gameObject, -size * 0.12f, -size * 0.12f, -size * 0.12f, -size * 0.12f);
+            sweep.type = Image.Type.Filled;
+            sweep.fillMethod = Image.FillMethod.Radial360;
+            sweep.fillOrigin = (int)Image.Origin360.Top;
+            sweep.fillClockwise = false;
+            sweep.fillAmount = 0f;
+            ui.cooldownFill = sweep;
+
+            var badge = Img(icon.transform, "Lock", A.IconX("lock"), Color.white);
+            Place(badge.gameObject, new Vector2(1f, 1f), new Vector2(0.5f, 0.5f), new Vector2(-size * 0.05f, -size * 0.05f), Vector2.one * size * 0.55f);
+            ui.lockBadge = badge.gameObject;
         }
 
         static void BuildCrosshair(Transform parent)
@@ -524,6 +597,7 @@ namespace ZombieRush.EditorTools
             RoundButton(controls.transform, "Reload", "RELOAD", "reload", 138f, new Vector2(-470f, 110f), UITheme.Gold, TouchAction.Reload);
             RoundButton(controls.transform, "Jump", "JUMP", "jump", 138f, new Vector2(-462f, 330f), UITheme.Bone, TouchAction.Jump);
             RoundButton(controls.transform, "Crouch", "CROUCH", "crouch", 126f, new Vector2(-270f, 485f), UITheme.Cyan, TouchAction.Crouch);
+            TurretButtonTouch(controls.transform);
 
             // Pause, top-right.
             var pause = Node("Pause", controls.transform);

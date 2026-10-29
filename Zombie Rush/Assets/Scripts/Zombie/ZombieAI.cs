@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.AI;
+using ZombieRush.Audio;
 using ZombieRush.Core;
 using ZombieRush.Data;
 using ZombieRush.Player;
@@ -52,7 +53,10 @@ namespace ZombieRush.Zombie
         const float RetargetInterval = 0.4f;
 
         float attackTimer;
+        bool hitPending;        // swing started, damage not landed yet (config.attackHitDelay > 0)
+        float hitPendingTimer;
         float gravityVelocity;
+        float groanTimer;
 
         Vector3 avoidTangent;
         float avoidHoldTimer;
@@ -94,7 +98,9 @@ namespace ZombieRush.Zombie
             guarding = false;
             retargetTimer = 0f;
             attackTimer = 0f;
+            hitPending = false;
             gravityVelocity = 0f;
+            groanTimer = Random.Range(1f, 8f); // spread out so a fresh wave doesn't groan in unison
             avoidHoldTimer = 0f;
             escapeTimer = 0f;
             stuckCheckTimer = 0f;
@@ -138,6 +144,12 @@ namespace ZombieRush.Zombie
             if (health.IsDead) return;
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
 
+            if (hitPending)
+            {
+                hitPendingTimer -= Time.deltaTime;
+                if (hitPendingTimer <= 0f) LandPendingHit();
+            }
+
             retargetTimer -= Time.deltaTime;
             if (retargetTimer <= 0f || (player == null && !guarding) || (playerHealth != null && playerHealth.IsDead))
             {
@@ -164,6 +176,7 @@ namespace ZombieRush.Zombie
             }
 
             attackTimer -= Time.deltaTime;
+            Groan();
 
             // Waiting at the base edge: face the players inside and growl, never go in.
             if (guarding && sqrDistance <= 1f)
@@ -185,8 +198,11 @@ namespace ZombieRush.Zombie
                 if (attackTimer <= 0f)
                 {
                     health.Anim.TriggerAttack();
+                    var lib = SoundManager.Library;
+                    if (lib != null) SoundManager.PlayAt(lib.zombieAttack, transform.position + Vector3.up * 1.5f, 0.9f, 20f, 3);
                     attackTimer = cfg.attackCooldown;
-                    if (playerHealth != null) playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
+                    if (cfg.attackHitDelay > 0f) { hitPending = true; hitPendingTimer = cfg.attackHitDelay; }
+                    else if (playerHealth != null) playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
                 }
                 return;
             }
@@ -213,6 +229,32 @@ namespace ZombieRush.Zombie
             move.y = UpdateGravity();
             controller.Move(move * Time.deltaTime);
             KeepOutOfSafeBase();
+        }
+
+        /// Lands a delayed swing (attackHitDelay): hurts the player only if they are still
+        /// within reach. Returns true if it hit. Called on the timer, or earlier by
+        /// JuggernautMotion at the moment the swing visibly connects.
+        public bool LandPendingHit()
+        {
+            if (!hitPending || health.IsDead) return false;
+            hitPending = false;
+            if (playerHealth == null || playerHealth.IsDead || guarding) return false;
+            Vector3 d = playerHealth.transform.position - transform.position;
+            d.y = 0f;
+            float reach = cfg.attackRange + AttackRangeMargin + 0.4f;
+            if (d.sqrMagnitude > reach * reach) return false;
+            playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
+            return true;
+        }
+
+        /// Occasional growl while hunting. SoundManager caps how many play at once.
+        void Groan()
+        {
+            groanTimer -= Time.deltaTime;
+            if (groanTimer > 0f) return;
+            groanTimer = Random.Range(5f, 11f);
+            var lib = SoundManager.Library;
+            if (lib != null) SoundManager.PlayAt(lib.zombieGroan, transform.position + Vector3.up * 1.6f, 0.85f, 30f, 4);
         }
 
         /// The safe base is off-limits: anything that slides inside is pushed back to the edge.

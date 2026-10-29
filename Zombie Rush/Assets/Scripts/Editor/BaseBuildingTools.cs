@@ -23,7 +23,10 @@ namespace ZombieRush.EditorTools
         const string BuildingName = "BaseBuilding";
         const string DefaultSource = "building2";
         const string BaseFolder = "Assets/Environment/Base";
-        static readonly Color LampColor = new Color(1f, 0.85f, 0.62f);
+        // Cool white: the base is the "safe" (cyan) place; warm yellow clashed with the night look.
+        static readonly Color LampColor = new Color(0.86f, 0.94f, 1f);
+        const float LampHang = 3.3f;     // lamp height above the floor (hangs on a rod in tall rooms)
+        const float LampIntensity = 6f;
 
         [MenuItem("Zombie Rush/Level/Make Base Building (copy selected building)", priority = 13)]
         public static void MakeBaseBuilding()
@@ -136,6 +139,39 @@ namespace ZombieRush.EditorTools
 
             Debug.Log("Zombie Rush: " + fit);
             EditorUtility.DisplayDialog("Half-circle zones ready", $"Base building: '{building.name}'.\n" + fit + Footer, "OK");
+        }
+
+        /// The first lamps hung just under the roof (9+ m up in a tall shell) and were too weak to
+        /// light the ground floor. This replaces them with brighter cool-white lamps hanging at
+        /// ~3.3 m on rods, so the walls inside are clearly visible.
+        [MenuItem("Zombie Rush/Level/Relight Base Building (brighter, lower lamps)", priority = 15)]
+        public static void RelightBase()
+        {
+            var zone = Object.FindAnyObjectByType<ZoneManager>(FindObjectsInactive.Include);
+            var map = zone != null ? zone.gameObject.scene.GetRootGameObjects().FirstOrDefault(g => g.name == "Map") : null;
+            var safe = zone != null && zone.playerBase != null ? zone.playerBase.GetComponent<SafeBase>() : null;
+            Transform building = safe != null && safe.building != null ? safe.building : map != null ? map.transform.Find(BuildingName) : null;
+            if (building == null)
+            {
+                EditorUtility.DisplayDialog("Relight base", "No base building found (Map/BaseBuilding). Open MainLevel first.", "OK");
+                return;
+            }
+
+            Undo.SetCurrentGroupName("Relight base");
+            int undoGroup = Undo.GetCurrentGroup();
+            var old = building.Find("BaseLights");
+            if (old != null) Undo.DestroyObjectImmediate(old.gameObject);
+
+            Physics.SyncTransforms();
+            var local = LocalBounds(building);
+            var room = MeasureRoom(building, local);
+            int lamps = AddLights(building, local, room);
+            Undo.CollapseUndoOperations(undoGroup);
+            EditorSceneManager.MarkSceneDirty(building.gameObject.scene);
+
+            string msg = $"{lamps} lamps in '{building.name}': floor {room.floor:0.0} m, lamps at {Mathf.Min(room.ceiling - 0.45f, room.floor + LampHang):0.0} m.";
+            Debug.Log("Zombie Rush: " + msg);
+            EditorUtility.DisplayDialog("Base relit", msg + "\n\nSave the scene (Ctrl+S) and press Play.", "OK");
         }
 
         const string Footer =
@@ -555,9 +591,9 @@ namespace ZombieRush.EditorTools
             root.transform.SetParent(building, false);
 
             var tubeMat = LampMaterial();
-            float height = room.ceiling - 0.45f;
+            float height = Mathf.Min(room.ceiling - 0.45f, room.floor + LampHang);
             Vector3 size = Vector3.Scale(local.size, building.lossyScale);
-            float range = Mathf.Clamp(0.55f * Mathf.Max(size.x, size.z) + 2f, 8f, 18f);
+            float range = Mathf.Clamp(0.55f * Mathf.Max(size.x, size.z) + 3f, 10f, 20f);
 
             int count = 0;
             for (int i = 0; i < 4; i++)   // 2 x 2 grid - URP Forward (mobile) lights at most 4 per object
@@ -574,7 +610,7 @@ namespace ZombieRush.EditorTools
                 var light = lamp.AddComponent<Light>();
                 light.type = LightType.Point;
                 light.color = LampColor;
-                light.intensity = 2.6f;
+                light.intensity = LampIntensity;
                 light.range = range;
                 light.shadows = i == 0 ? LightShadows.Soft : LightShadows.None;   // one shadow caster keeps it cheap
                 light.renderMode = LightRenderMode.ForcePixel;
@@ -589,16 +625,51 @@ namespace ZombieRush.EditorTools
                 var mr = tube.GetComponent<MeshRenderer>();
                 mr.sharedMaterial = tubeMat;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+                // Rod up to the ceiling when the lamp hangs well below it.
+                float drop = room.ceiling - height;
+                if (drop > 0.6f)
+                {
+                    var rod = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    rod.name = "Rod";
+                    Object.DestroyImmediate(rod.GetComponent<Collider>());
+                    rod.transform.SetParent(lamp.transform, false);
+                    rod.transform.localPosition = Vector3.up * (0.1f + drop * 0.5f);
+                    rod.transform.localScale = new Vector3(0.03f, drop, 0.03f);
+                    var rr = rod.GetComponent<MeshRenderer>();
+                    rr.sharedMaterial = RodMaterial();
+                    rr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                }
                 count++;
             }
             return count;
+        }
+
+        static Material RodMaterial()
+        {
+            string path = $"{BaseFolder}/Base_LampRod.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat != null) return mat;
+            mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard")) { name = "Base_LampRod" };
+            mat.SetColor("_BaseColor", new Color(0.12f, 0.12f, 0.13f));
+            mat.SetFloat("_Metallic", 0.6f);
+            mat.SetFloat("_Smoothness", 0.4f);
+            AssetDatabase.CreateAsset(mat, path);
+            return mat;
         }
 
         static Material LampMaterial()
         {
             string path = $"{BaseFolder}/Base_LampTube.mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (mat != null) return mat;
+            if (mat != null)
+            {
+                // Older installs made the tubes warm yellow; keep them in step with the lamp colour.
+                mat.SetColor("_BaseColor", LampColor);
+                mat.SetColor("_EmissionColor", LampColor * 4f);
+                EditorUtility.SetDirty(mat);
+                return mat;
+            }
 
             if (!AssetDatabase.IsValidFolder("Assets/Environment")) AssetDatabase.CreateFolder("Assets", "Environment");
             if (!AssetDatabase.IsValidFolder(BaseFolder)) AssetDatabase.CreateFolder("Assets/Environment", "Base");

@@ -21,3 +21,8 @@ MonoBehaviour:
   magazineSize: 12
   maxReserveAmmo: 60
   reloadTime: 1.4
+  fireSounds:
+  - {fileID: 8300000, guid: ac60c97e875146c4e983f0658057f30f, type: 3}
+  - {fileID: 8300000, guid: 410fe04779748884888e98538f37a8b8, type: 3}
+  reloadSound: {fileID: 0}
+  fireVolume: 0.8

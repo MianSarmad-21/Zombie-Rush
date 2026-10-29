@@ -1,0 +1,7 @@
+# Unity cache/log folders of the stray project opened at the repo root.
+# The real Unity project is "Zombie Rush/" (it has its own .gitignore).
+/[Ll]ibrary/
+/[Tt]emp/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Oo]bj/

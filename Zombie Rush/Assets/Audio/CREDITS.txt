@@ -1,0 +1,22 @@
+Zombie Rush - audio credits
+===========================
+
+All sounds below are public domain (CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/).
+No credit is required; listed here for the record. Files were trimmed, faded, normalised
+and converted to 44.1 kHz for the game.
+
+Guns (SFX/Weapons/*_shot_*) - "The Free Firearm Sound Library" (Prepared SFX Library),
+  https://opengameart.org/content/the-free-firearm-sound-library
+  pistol = Colt 1911, rifle = AR-15, shotgun = Winchester Model 12 / Benelli Nova.
+
+Zombies (SFX/Zombies/zombie_*) - "Zombies Sound Pack" by artisticdude,
+  https://opengameart.org/content/zombies-sound-pack
+  and "Zombie noises and moans" by ianzazz,
+  https://opengameart.org/content/zombie-noises-and-moans
+
+Impacts, UI, turret, jingles, coin, reload (all other SFX) - Kenney (www.kenney.nl):
+  Impact Sounds, Interface Sounds, Sci-Fi Sounds, Music Jingles, Casino Audio.
+
+Music:
+  Music/menu_music.ogg  - "Chill Main Menu music", https://opengameart.org/node/3976
+  Music/game_music.ogg  - "Dark Cavern Ambient" (track 002), https://opengameart.org/node/131394

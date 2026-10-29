@@ -1,4 +1,5 @@
 using UnityEngine;
+using ZombieRush.Audio;
 using ZombieRush.Core;
 using ZombieRush.Data;
 using ZombieRush.Player;
@@ -15,8 +16,14 @@ namespace ZombieRush.Weapons
         protected Camera playerCamera;
         protected PlayerInventory inventory;
 
+        /// Raised after every shot (muzzle flash, recoil - see WeaponViewModel).
+        public event System.Action Fired;
+        /// Raised when a reload starts.
+        public event System.Action ReloadStarted;
+
         int magazine;
         float nextFireTime;
+        float nextEmptyClick;
         bool reloading;
         float reloadEndTime;
 
@@ -39,6 +46,12 @@ namespace ZombieRush.Weapons
             if (!data.unlimitedUses && magazine <= 0)
             {
                 TryReload();
+                if (!reloading && Time.time >= nextEmptyClick)
+                {
+                    // Out of ammo completely: dry click, but not every frame while the trigger is held.
+                    nextEmptyClick = Time.time + 0.35f;
+                    SoundManager.Play(SoundManager.Library != null ? SoundManager.Library.emptyClick : null, 0.7f);
+                }
                 return false;
             }
 
@@ -46,6 +59,10 @@ namespace ZombieRush.Weapons
             if (!data.unlimitedUses) magazine--;
 
             Fire();
+            var lib = SoundManager.Library;
+            var shot = data.fireSounds != null && data.fireSounds.Length > 0 ? data.fireSounds : lib != null ? lib.gunshot : null;
+            SoundManager.Play(shot, data.fireVolume, 0.05f);
+            Fired?.Invoke();
             return true;
         }
 
@@ -59,6 +76,9 @@ namespace ZombieRush.Weapons
 
             reloading = true;
             reloadEndTime = Time.time + data.reloadTime;
+            var lib = SoundManager.Library;
+            SoundManager.Play(data.reloadSound != null ? data.reloadSound : lib != null ? lib.reload : null, 0.8f, 0f);
+            ReloadStarted?.Invoke();
         }
 
         // Timer-based instead of a coroutine: no allocation, and it pauses with timeScale.

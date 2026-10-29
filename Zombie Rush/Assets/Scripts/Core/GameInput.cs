@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace ZombieRush.Core
 {
-    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause }
+    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause, Turret } // append only: stored as ints in the scene
 
     /// The one place gameplay reads input from. Keyboard/mouse comes from the
     /// legacy Input Manager; the on-screen touch widgets write into this class.
@@ -19,7 +19,7 @@ namespace ZombieRush.Core
         static Vector2 touchLookPixels;
         static bool touchFireHeld;
         static bool touchCrouchToggled;
-        static bool reloadQueued, jumpQueued, swapQueued, expandQueued, pauseQueued;
+        static bool reloadQueued, jumpQueued, swapQueued, expandQueued, pauseQueued, turretQueued;
 
         static bool MouseActive => !GameSettings.UseTouchControls;
 
@@ -39,6 +39,7 @@ namespace ZombieRush.Core
                 case TouchAction.SwapWeapon: swapQueued = true; break;
                 case TouchAction.ExpandZone: expandQueued = true; break;
                 case TouchAction.Pause: pauseQueued = true; break;
+                case TouchAction.Turret: turretQueued = true; break;
             }
         }
 
@@ -61,7 +62,7 @@ namespace ZombieRush.Core
 
         public static void ClearQueued()
         {
-            reloadQueued = jumpQueued = swapQueued = expandQueued = pauseQueued = false;
+            reloadQueued = jumpQueued = swapQueued = expandQueued = pauseQueued = turretQueued = false;
         }
 
         // ---- Read by gameplay ---------------------------------------------------------
@@ -106,6 +107,7 @@ namespace ZombieRush.Core
         public static bool ConsumeReload() => Consume(ref reloadQueued) | Input.GetKeyDown(KeyCode.R);
         public static bool ConsumeSwapWeapon() => Consume(ref swapQueued) | (MouseActive && Input.mouseScrollDelta.y != 0f);
         public static bool ConsumeExpandZone() => Consume(ref expandQueued) | Input.GetKeyDown(KeyCode.P);
+        public static bool ConsumeTurret() => Consume(ref turretQueued) | Input.GetKeyDown(KeyCode.T);
 
         /// Escape on PC, the Back button on Android, or the on-screen pause button.
         public static bool ConsumePause() => Consume(ref pauseQueued) | Input.GetKeyDown(KeyCode.Escape);

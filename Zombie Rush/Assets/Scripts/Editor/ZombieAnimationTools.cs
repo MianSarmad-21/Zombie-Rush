@@ -105,6 +105,33 @@ namespace ZombieRush.EditorTools
                 (sceneAnimators > 0 ? "\n\nSave the scene with Ctrl+S." : ""), "OK");
         }
 
+        /// Zombie Rush > Zombies > Keep Zombie Feet On The Ground (foot IK)
+        ///
+        /// ZombieFootIK (added to every zombie at runtime) plants the feet on uneven ground, but Unity
+        /// only calls it when the controller's base layer has "IK Pass" on. The Miner's controller is
+        /// an override of this one, so it inherits the setting.
+        [MenuItem("Zombie Rush/Zombies/Keep Zombie Feet On The Ground (foot IK)")]
+        static void EnableFootIK()
+        {
+            bool changed = EnableIKPass(FullController);
+            EditorUtility.DisplayDialog("Zombie feet", changed
+                ? "Done: IK Pass is on for Zombie_Yaku.controller (and the Miner, which uses it).\nZombies now keep their feet on kerbs, ramps and rubble."
+                : "IK Pass was already on - nothing to change.", "OK");
+        }
+
+        internal static bool EnableIKPass(string controllerPath)
+        {
+            var controller = AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(controllerPath);
+            if (controller == null || controller.layers.Length == 0) return false;
+            var layers = controller.layers;
+            if (layers[0].iKPass) return false;
+            layers[0].iKPass = true;
+            controller.layers = layers;
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
+            return true;
+        }
+
         const string ClipFolder = "Assets/Models/2026-09-25_Yaku/Animations";
 
         /// Zombie Rush > Zombies > Fix Death Animation Height (bake root motion)
@@ -159,19 +186,25 @@ namespace ZombieRush.EditorTools
             ("RightUpperLeg", "RightUpLeg", true), ("RightLowerLeg", "RightLeg", true), ("RightFoot", "RightFoot", true), ("RightToes", "RightToeBase", false),
         };
 
-        static bool TryBuildDescription(Transform root, HumanDescription template, out HumanDescription description, out string missing)
+        internal static bool TryBuildDescription(Transform root, HumanDescription template, out HumanDescription description, out string missing,
+                                                 (string human, string bone, bool required)[] boneMap = null)
         {
             description = template;
+            var map = boneMap ?? BoneMap;
+            // Keyed by the name without any "prefix:" (Mixamo rigs use "mixamorig:Hips").
             var byName = new System.Collections.Generic.Dictionary<string, Transform>();
             foreach (var t in root.GetComponentsInChildren<Transform>(true))
-                if (!byName.ContainsKey(t.name)) byName.Add(t.name, t);
+            {
+                string key = t.name.Substring(t.name.LastIndexOf(':') + 1);
+                if (!byName.ContainsKey(key)) byName.Add(key, t);
+            }
 
             var human = new System.Collections.Generic.List<HumanBone>();
             var lacking = new System.Collections.Generic.List<string>();
-            foreach (var (humanName, bone, required) in BoneMap)
+            foreach (var (humanName, bone, required) in map)
             {
-                if (!byName.ContainsKey(bone)) { if (required) lacking.Add(bone); continue; }
-                var hb = new HumanBone { humanName = humanName, boneName = bone };
+                if (!byName.TryGetValue(bone, out var found)) { if (required) lacking.Add(bone); continue; }
+                var hb = new HumanBone { humanName = humanName, boneName = found.name };
                 hb.limit.useDefaultValues = true;
                 human.Add(hb);
             }
