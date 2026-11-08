@@ -44,6 +44,15 @@ namespace ZombieRush.Zombie
         CharacterController controller;
         ZombieHealth health;
         ZombieConfigData cfg;
+        IZombieAbility ability;
+        bool ownsAnimatorSpeed; // false when JuggernautMotion drives playback speed itself
+
+        // Frenzy (a Screamer's shriek): faster movement and attacks for a while.
+        float frenzyMultiplier = 1f;
+        float frenzyTimer;
+
+        /// Current frenzy speed factor (1 = calm).
+        public float FrenzyMultiplier => frenzyTimer > 0f ? frenzyMultiplier : 1f;
         Transform player;
         PlayerHealth playerHealth;
         bool guarding;          // every player is in the safe base: wait at its edge
@@ -88,6 +97,24 @@ namespace ZombieRush.Zombie
             health = GetComponent<ZombieHealth>();
             cfg = config != null ? config : health.Config;
             path = new NavMeshPath();
+            ability = GetComponent<IZombieAbility>();
+            ownsAnimatorSpeed = GetComponent<JuggernautMotion>() == null;
+        }
+
+        /// Speeds this zombie up for a while (a Screamer's shriek). Stronger frenzies win.
+        public void Frenzy(float multiplier, float duration)
+        {
+            if (health.IsDead) return;
+            if (frenzyTimer <= 0f || multiplier >= frenzyMultiplier) frenzyMultiplier = multiplier;
+            frenzyTimer = Mathf.Max(frenzyTimer, duration);
+            if (ownsAnimatorSpeed && health.Anim.Resolve()) health.Anim.Animator.speed = frenzyMultiplier;
+        }
+
+        void UpdateFrenzy()
+        {
+            if (frenzyTimer <= 0f) return;
+            frenzyTimer -= Time.deltaTime;
+            if (frenzyTimer <= 0f && ownsAnimatorSpeed && health.Anim.Resolve()) health.Anim.Animator.speed = 1f;
         }
 
         // Also runs when a pooled zombie is reused, so all steering state starts fresh.
@@ -111,6 +138,9 @@ namespace ZombieRush.Zombie
             repathTimer = Random.value * RepathInterval;
             pathCorner = -1;
             positionAtLastCheck = transform.position;
+            frenzyTimer = 0f;
+            frenzyMultiplier = 1f;
+            if (ownsAnimatorSpeed && health != null && health.Anim.Resolve()) health.Anim.Animator.speed = 1f;
         }
 
         /// Hunts the nearest living player who is OUT of the safe base. If every player
@@ -143,6 +173,7 @@ namespace ZombieRush.Zombie
         {
             if (health.IsDead) return;
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
+            UpdateFrenzy();
 
             if (hitPending)
             {
@@ -175,7 +206,7 @@ namespace ZombieRush.Zombie
                 return;
             }
 
-            attackTimer -= Time.deltaTime;
+            attackTimer -= Time.deltaTime * FrenzyMultiplier;
             Groan();
 
             // Waiting at the base edge: face the players inside and growl, never go in.
@@ -187,8 +218,19 @@ namespace ZombieRush.Zombie
                 return;
             }
 
+            // A special zombie's own move (spit, shriek, fuse) gets the first say.
+            if (ability != null && !guarding && playerHealth != null
+                && ability.Tick(playerHealth, toPlayer, Mathf.Sqrt(sqrDistance)))
+            {
+                inAttackRange = false;
+                FaceDirection(toPlayer);
+                ApplyGravityOnly();
+                health.Anim.SetSpeed(0f);
+                return;
+            }
+
             float attackReach = cfg.attackRange + (inAttackRange ? AttackRangeMargin : 0f);
-            inAttackRange = !guarding && sqrDistance <= attackReach * attackReach;
+            inAttackRange = !guarding && (ability == null || !ability.BlocksMelee) && sqrDistance <= attackReach * attackReach;
             if (inAttackRange)
             {
                 FaceDirection(toPlayer);
@@ -211,7 +253,8 @@ namespace ZombieRush.Zombie
             float distance = Mathf.Sqrt(sqrDistance);
             isRunning = cfg.runDistance <= 0f || distance <= cfg.runDistance + (isRunning ? RunDistanceMargin : 0f);
             bool running = isRunning;
-            float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * Mathf.Min(difficultyMultiplier, MaxSpeedMultiplier);
+            float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * Mathf.Min(difficultyMultiplier, MaxSpeedMultiplier)
+                          * FrenzyMultiplier * (ability != null ? ability.SpeedMultiplier : 1f);
             health.Anim.SetSpeed(running ? 1f : 0.5f);
 
             Vector3 desired = PathDirection(toPlayer / distance, distance);

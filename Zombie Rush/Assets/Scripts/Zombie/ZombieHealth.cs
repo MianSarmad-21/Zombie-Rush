@@ -110,11 +110,20 @@ namespace ZombieRush.Zombie
             }
             BloodEffect.Spawn(transform.position + Vector3.up);
 
-            if (CurrentHealth <= 0f) Die();
+            if (CurrentHealth <= 0f) Die(true);
             else Anim.TriggerHit();
         }
 
-        void Die()
+        /// Kills the zombie outright. reward = false drops no coins or ammo (a Bomber that
+        /// blew itself up on the player earns nothing).
+        public void Kill(bool reward)
+        {
+            if (IsDead) return;
+            CurrentHealth = 0f;
+            Die(reward);
+        }
+
+        void Die(bool reward)
         {
             IsDead = true;
             Died?.Invoke(this);
@@ -129,8 +138,8 @@ namespace ZombieRush.Zombie
             GameEvents.RaiseZombieKilled(new ZombieKilledInfo
             {
                 Position = transform.position,
-                Coins = Random.value <= coinDropChance ? Random.Range(minCoins, maxCoins + 1) : 0,
-                Ammo = Random.value <= ammoDropChance ? Random.Range(minAmmo, maxAmmo + 1) : 0,
+                Coins = reward && Random.value <= coinDropChance ? Random.Range(minCoins, maxCoins + 1) : 0,
+                Ammo = reward && Random.value <= ammoDropChance ? Random.Range(minAmmo, maxAmmo + 1) : 0,
             });
 
             deathRoutine = StartCoroutine(DeathRoutine(!Anim.TriggerDie()));

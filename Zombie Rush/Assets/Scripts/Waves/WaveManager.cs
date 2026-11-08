@@ -34,10 +34,12 @@ namespace ZombieRush.Waves
         [Range(0.4f, 1f)] public float edgeRadiusFactor = 0.85f;
         [Tooltip("Pad height above the ground surface.")]
         public float padHeightOffset = 0.05f;
-        [Tooltip("Surface each zombie at runtime on a ring around a player who is out fighting, instead of only at the zone edge. Falls back to the edge pads when no good spot is found (e.g. the player is in the safe base).")]
+        [Tooltip("Surface each zombie at runtime close to a player (or just outside the safe base while they are inside it), instead of only at the zone edge. Falls back to the edge pads when no good spot is found.")]
         public bool spawnNearPlayer = true;
-        [Min(7f)] public float nearPlayerMinDistance = 10f;
-        [Min(8f)] public float nearPlayerMaxDistance = 22f;
+        [Min(7f)] public float nearPlayerMinDistance = 8f;
+        [Min(8f)] public float nearPlayerMaxDistance = 15f;
+        [Tooltip("A player still inside the safe base: zombies surface in a band this wide just outside it, waiting at the door.")]
+        [Min(2f)] public float nearBaseSpread = 8f;
 
         [Header("Pacing")]
         public float announceDuration = 3f;
@@ -259,18 +261,30 @@ namespace ZombieRush.Waves
             for (int n = 0; n < targets.Count; n++)
             {
                 var player = targets[(start + n) % targets.Count];
-                if (player == null || player.IsDead || player.InSafeBase) continue;
+                if (player == null || player.IsDead) continue;
 
                 Vector3 p = player.transform.position;
+                Vector3 around = p;
                 float min = nearPlayerMinDistance, max = Mathf.Max(min + 1f, nearPlayerMaxDistance);
+                var safe = SafeBase.Instance;
+                if (player.InSafeBase)
+                {
+                    // Can't surface next to someone in the base: ring the base edge instead.
+                    if (safe == null) continue;
+                    around = safe.Center;
+                    min = safe.radius + ArenaSpawn.BaseMargin + 1f;
+                    max = min + nearBaseSpread;
+                }
                 for (int attempt = 0; attempt < 24; attempt++)
                 {
                     Vector2 dir = Random.insideUnitCircle.normalized;
                     if (dir == Vector2.zero) dir = Vector2.up;
-                    var probe = p + new Vector3(dir.x, 0f, dir.y) * Random.Range(min, max);
+                    var probe = around + new Vector3(dir.x, 0f, dir.y) * Random.Range(min, max);
                     // Ground height is judged against the player's own height (the arena is hilly),
                     // with room for slopes over the ring's distance.
-                    if (ArenaSpawn.IsGoodSpawn(probe, p, p, out spot, 6f)) return true;
+                    // In the base, the route is checked to the base edge (zombies wait there, never inside).
+                    var target = player.InSafeBase ? around + new Vector3(dir.x, 0f, dir.y) * (safe.radius + 1f) : p;
+                    if (ArenaSpawn.IsGoodSpawn(probe, p, target, out spot, 6f)) return true;
                     NoteReject(ArenaSpawn.LastReject);
                 }
             }

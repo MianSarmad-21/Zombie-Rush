@@ -33,6 +33,13 @@ namespace ZombieRush.Audio
         public AudioClip[] zombieDeath;
         public AudioClip[] bulletImpact;
 
+        [Header("Special zombies")]
+        public AudioClip bombBeep;
+        public AudioClip[] explosion;
+        public AudioClip gooSpit;
+        public AudioClip gooSplat;
+        public AudioClip shriek;
+
         [Header("Player")]
         public AudioClip[] playerHurt;
         public AudioClip playerDeath;
