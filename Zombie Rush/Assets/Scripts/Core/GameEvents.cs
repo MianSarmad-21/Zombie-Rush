@@ -36,6 +36,7 @@ namespace ZombieRush.Core
         public static event Action<AmmoInfo> OnAmmoChanged;
         public static event Action<int> OnCoinsChanged; // total coins
         public static event Action<float, float> OnPlayerArmorChanged; // current, max
+        public static event Action<float, float> OnPlayerSlowed; // strength 0-1, seconds
 
         // Combat
         public static event Action OnEnemyHit;
@@ -64,6 +65,7 @@ namespace ZombieRush.Core
         public static void RaiseAmmoChanged(AmmoInfo info) => OnAmmoChanged?.Invoke(info);
         public static void RaiseCoinsChanged(int total) => OnCoinsChanged?.Invoke(total);
         public static void RaisePlayerArmorChanged(float current, float max) => OnPlayerArmorChanged?.Invoke(current, max);
+        public static void RaisePlayerSlowed(float strength, float seconds) => OnPlayerSlowed?.Invoke(strength, seconds);
 
         public static void RaiseEnemyHit() => OnEnemyHit?.Invoke();
         public static void RaiseZombieKilled(ZombieKilledInfo info) => OnZombieKilled?.Invoke(info);

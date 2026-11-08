@@ -15,21 +15,40 @@ namespace ZombieRush.UI
         public float fadeSpeed = 2f;
         [Range(0f, 1f)] public float lowHealthThreshold = 0.3f;
         public float pulseSpeed = 4f;
+        [Tooltip("Tint of the flash while the player is covered in Spitter goo.")]
+        public Color gooColor = new Color(0.35f, 0.9f, 0.1f, 1f);
+        public float gooMaxAlpha = 0.3f;
 
         float lastHealth = -1f;
         float flashAlpha;
         float lowHealthAmount; // 0 = healthy, 1 = nearly dead
         float pulseTime;
+        float gooAlpha;
+        float gooHold;
+        Color flashColor = Color.red;
 
         void Awake()
         {
             // Subscribed for the object's whole life: this component disables itself when idle.
             GameEvents.OnPlayerHealthChanged += HandleHealthChanged;
+            GameEvents.OnPlayerSlowed += HandleSlowed;
+            if (flashImage != null) flashColor = flashImage.color;
             UITheme.SetAlpha(flashImage, 0f);
             UITheme.SetAlpha(lowHealthVignette, 0f);
         }
 
-        void OnDestroy() => GameEvents.OnPlayerHealthChanged -= HandleHealthChanged;
+        void OnDestroy()
+        {
+            GameEvents.OnPlayerHealthChanged -= HandleHealthChanged;
+            GameEvents.OnPlayerSlowed -= HandleSlowed;
+        }
+
+        void HandleSlowed(float strength, float seconds)
+        {
+            gooAlpha = Mathf.Max(gooAlpha, gooMaxAlpha * Mathf.Clamp01(strength * 2f));
+            gooHold = Mathf.Max(gooHold, seconds * 0.5f);
+            enabled = true;
+        }
 
         void HandleHealthChanged(float current, float max)
         {
@@ -44,7 +63,14 @@ namespace ZombieRush.UI
         void Update()
         {
             flashAlpha = Mathf.MoveTowards(flashAlpha, 0f, fadeSpeed * Time.deltaTime);
-            UITheme.SetAlpha(flashImage, flashAlpha);
+            if (gooHold > 0f) gooHold -= Time.deltaTime;
+            else gooAlpha = Mathf.MoveTowards(gooAlpha, 0f, fadeSpeed * 0.5f * Time.deltaTime);
+            if (flashImage != null)
+            {
+                var c = gooAlpha > flashAlpha ? gooColor : flashColor;
+                flashImage.color = new Color(c.r, c.g, c.b, flashImage.color.a);
+            }
+            UITheme.SetAlpha(flashImage, Mathf.Max(flashAlpha, gooAlpha));
 
             float vignette = 0f;
             if (lowHealthAmount > 0f)
@@ -54,7 +80,7 @@ namespace ZombieRush.UI
             }
             UITheme.SetAlpha(lowHealthVignette, vignette);
 
-            if (flashAlpha <= 0f && lowHealthAmount <= 0f) enabled = false;
+            if (flashAlpha <= 0f && gooAlpha <= 0f && lowHealthAmount <= 0f) enabled = false;
         }
     }
 }

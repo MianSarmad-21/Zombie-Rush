@@ -30,6 +30,9 @@ namespace ZombieRush.Player
         public float crouchTransitionSpeed = 8f;
 
         CharacterController controller;
+        PlayerHealth health;
+        float slowMultiplier = 1f;
+        float slowTimer;
         float pitch;
         float verticalVelocity;
         bool isCrouching;
@@ -37,6 +40,23 @@ namespace ZombieRush.Player
         void Awake()
         {
             controller = GetComponent<CharacterController>();
+            health = GetComponent<PlayerHealth>();
+        }
+
+        /// True while crouched (drives the third-person body's crouch animation).
+        public bool IsCrouching => isCrouching;
+
+        /// Current speed factor from sticky goo and the like (1 = free).
+        public float SlowMultiplier => slowTimer > 0f ? slowMultiplier : 1f;
+
+        /// Slows this player for a while (Spitter goo). The strongest active slow wins.
+        /// Ignored inside the safe base, where nothing can touch the player.
+        public void ApplySlow(float multiplier, float duration)
+        {
+            if (health != null && (health.IsDead || health.InSafeBase)) return;
+            if (slowTimer <= 0f || multiplier <= slowMultiplier) slowMultiplier = multiplier;
+            slowTimer = Mathf.Max(slowTimer, duration);
+            if (health != null && health == PlayerHealth.Instance) GameEvents.RaisePlayerSlowed(1f - slowMultiplier, slowTimer);
         }
 
         void Update()
@@ -87,7 +107,8 @@ namespace ZombieRush.Player
             bool sprinting = GameInput.SprintHeld && !isCrouching && input.y > 0f;
             bool jumpPressed = GameInput.ConsumeJump(); // always consumed so a mid-air tap doesn't fire on landing
 
-            float speed = isCrouching ? crouchSpeed : (sprinting ? sprintSpeed : walkSpeed);
+            if (slowTimer > 0f) slowTimer -= Time.deltaTime;
+            float speed = (isCrouching ? crouchSpeed : (sprinting ? sprintSpeed : walkSpeed)) * SlowMultiplier;
             Vector3 move = transform.right * input.x + transform.forward * input.y;
 
             if (controller.isGrounded)

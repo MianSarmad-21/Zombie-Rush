@@ -1,0 +1,20 @@
+Ambient: mode Trilight, sky RGBA(0.480, 0.540, 0.680, 1.000), equator RGBA(0.270, 0.300, 0.370, 1.000), ground RGBA(0.130, 0.130, 0.150, 1.000), intensity 1
+Skybox: Sky_Night, reflection intensity 1
+Fog: True ExponentialSquared colour RGBA(0.180, 0.210, 0.270, 1.000) density 0.006 start 0 end 300
+Light 'Map/building2/BaseLights/Lamp_1': Point intensity 6 colour RGBA(0.860, 0.940, 1.000, 1.000) enabled True
+Light 'Map/building2/BaseLights/Lamp_3': Point intensity 6 colour RGBA(0.860, 0.940, 1.000, 1.000) enabled True
+Light 'Map/building2/BaseLights/Lamp_2': Point intensity 6 colour RGBA(0.860, 0.940, 1.000, 1.000) enabled True
+Light 'Map/Directional Light': Directional intensity 2 colour RGBA(0.740, 0.830, 1.000, 1.000) enabled True
+Light 'Map/building2/BaseLights/Lamp_4': Point intensity 6 colour RGBA(0.860, 0.940, 1.000, 1.000) enabled True
+Volume 'Night_PostFX': active False, global True, priority 10, weight 1, profile Assets/Environment/Night_PostFX.asset
+    Tonemapping (active True): mode=ACES neutralHDRRangeReductionMode=BT2390 acesPreset=ACES1000Nits hueShiftAmount=0 detectPaperWhite=False paperWhite=300 detectBrightnessLimits=True minNits=0.005 maxNits=1000
+    ColorAdjustments (active True): postExposure=0.35 contrast=18 colorFilter=RGBA(0.950, 0.970, 1.000, 1.000) hueShift=0 saturation=-15
+    Vignette (active True): color=RGBA(0.000, 0.000, 0.000, 1.000) center=(0.50, 0.50) intensity=0.36 smoothness=0.45 rounded=False
+    Bloom (active True): skipIterations=1 threshold=0.95 intensity=0.7 scatter=0.65 clamp=65472 tint=RGBA(0.850, 0.900, 1.000, 1.000) highQualityFiltering=False filter=Gaussian downscale=Half maxIterations=6 dirtTexture=null dirtIntensity=0
+Volume 'Map/Global Volume': active True, global True, priority 0, weight 1, profile Assets/Environment/MainLevel_DarkGrade.asset
+    Tonemapping (active True): mode=ACES
+    Bloom (active True): intensity=1
+    ShadowsMidtonesHighlights (active True): shadows=(0.94, 0.98, 1.06, 0.12) midtones=(1.00, 1.00, 1.00, 0.00) highlights=(1.00, 1.00, 1.00, 0.00)
+    ColorAdjustments (active True): postExposure=1.4 contrast=6 colorFilter=RGBA(0.900, 0.950, 1.000, 1.000) saturation=-12
+    WhiteBalance (active True): temperature=-15 tint=0
+    Vignette (active True): color=RGBA(0.000, 0.000, 0.000, 1.000) intensity=0.14 smoothness=0.45

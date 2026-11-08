@@ -305,6 +305,174 @@ namespace ZombieRush.EditorTools
                    (lamps > 0 ? $"{lamps} ceiling lamps added. " : "") + $"{gearCount} gear pickups inside, player starts inside.\n" + navNote;
         }
 
+        // ---------------------------------------------------------------- base at the city centre
+
+        const string CityCentreSource = "building2";
+
+        /// Zombie Rush > Level > Base At City Centre (full circle)
+        ///
+        /// Uses the city building standing at the centre ("building2") as the
+        /// players' base, where it stands, and makes both zones full circles around it, so every
+        /// expansion opens new streets in all directions and the whole city becomes the arena:
+        ///   - the old copied base building (Map/BaseBuilding) on the city's edge is removed;
+        ///   - safe base: a circle just around the building; fight zone: starts outside it and
+        ///     grows to cover the city (sized from where the buildings actually stand);
+        ///   - lamps, gear and player inside, spawn pads around the ring, zombie paths re-baked.
+        /// Undoable with Ctrl+Z (the baked walk-map asset stays on disk).
+        [MenuItem("Zombie Rush/Level/Base At City Centre (full circle)", priority = 16)]
+        static void CityCentreBaseFromMenu()
+        {
+            string msg = MakeCityCentreBase();
+            EditorUtility.DisplayDialog("Base at city centre", msg + "\n\nSave the scene (Ctrl+S) and press Play.", "OK");
+        }
+
+        public static string MakeCityCentreBase()
+        {
+            var zone = Object.FindAnyObjectByType<ZoneManager>(FindObjectsInactive.Include);
+            if (zone == null || zone.playerBase == null) return "Open MainLevel first (needs ZoneManager with a PlayerBase).";
+            var map = zone.gameObject.scene.GetRootGameObjects().FirstOrDefault(g => g.name == "Map");
+            if (map == null) return "No 'Map' in the scene.";
+
+            var building = map.GetComponentsInChildren<Transform>(true)
+                .FirstOrDefault(t => t.name == CityCentreSource && t.GetComponentInChildren<Renderer>(true) != null);
+            if (building == null) return $"Couldn't find '{CityCentreSource}' under Map.";
+
+            Undo.SetCurrentGroupName("Base at city centre");
+            int undoGroup = Undo.GetCurrentGroup();
+            var scene = zone.gameObject.scene;
+            var baseT = zone.playerBase;
+
+            // The old copy on the city's edge goes; its lamps and gear move with the base.
+            var oldCopy = map.transform.Find(BuildingName);
+            if (oldCopy != null && oldCopy != building) Undo.DestroyObjectImmediate(oldCopy.gameObject);
+            if (!building.gameObject.activeSelf) { Undo.RecordObject(building.gameObject, "Base at city centre"); building.gameObject.SetActive(true); }
+            Physics.SyncTransforms();
+
+            var local = LocalBounds(building);
+            var terrain = map.GetComponentInChildren<Terrain>();
+            int hidden = HidePropsInside(map, building, local, terrain);
+            Physics.SyncTransforms();
+            var room = MeasureRoom(building, local);
+            Vector3 centre = building.TransformPoint(local.center);
+
+            // Door side faces out; without a door, the side with the most open street in front.
+            var axes = new[] { building.right, -building.right, building.forward, -building.forward }
+                .Select(a => new Vector3(a.x, 0f, a.z).normalized).ToArray();
+            Vector3 forward;
+            if (room.hasDoor)
+                forward = axes.OrderByDescending(a => Vector3.Dot(a, Flat(room.doorLocal.x * building.right + room.doorLocal.z * building.forward))).First();
+            else
+                forward = axes.OrderByDescending(a => OpenDistance(centre + Vector3.up * 1.5f, a, 60f)).First();
+
+            Undo.RecordObject(baseT, "Base at city centre");
+            baseT.SetPositionAndRotation(new Vector3(centre.x, room.floor, centre.z), Quaternion.LookRotation(forward));
+
+            // Safe base: a circle around the building with a few metres of yard.
+            Vector3 size = Vector3.Scale(local.size, building.lossyScale);
+            float safeRadius = new Vector2(size.x, size.z).magnitude * 0.5f + 6f;
+            var safeBase = baseT.GetComponent<SafeBase>();
+            if (safeBase == null) safeBase = Undo.AddComponent<SafeBase>(baseT.gameObject);
+            Undo.RecordObject(safeBase, "Base at city centre");
+            safeBase.halfCircle = false;
+            safeBase.radius = safeRadius;
+            safeBase.building = building;
+            EditorUtility.SetDirty(safeBase);
+            if (safeBase.ring != null)
+            {
+                Undo.RecordObject(safeBase.ring, "Base at city centre");
+                safeBase.ring.fixedRadius = safeRadius;
+                safeBase.ring.SetShape(Vector3.zero, false);
+                safeBase.ring.SetZone(baseT.position, safeRadius, false);
+                EditorUtility.SetDirty(safeBase.ring);
+            }
+
+            // Fight zone: a full circle, from just outside the base out to the edge of the city.
+            Undo.RecordObject(zone, "Base at city centre");
+            zone.halfCircle = false;
+            zone.center = baseT.position;
+            zone.startRadius = Mathf.Max(safeRadius + ArenaSpawn.BaseMargin + 12f, 45f);
+            float needed = CityReach(map, baseT.position);
+            int steps = Mathf.Clamp(Mathf.CeilToInt((needed - zone.startRadius) / Mathf.Max(1f, zone.expandStep)), 1, 20);
+            zone.maxRadius = zone.startRadius + steps * zone.expandStep;
+            zone.deployPlayerAtCenter = true;
+            EditorUtility.SetDirty(zone);
+
+            if (zone.boundaryVisual != null && zone.boundaryVisual.TryGetComponent<ZoneBoundaryFX>(out var fx))
+            {
+                Undo.RecordObject(fx, "Base at city centre");
+                fx.fogMaterial = null;
+                fx.enabled = false;
+                fx.enabled = true;
+                fx.SetShape(Vector3.zero, true);
+                fx.SetZone(baseT.position, zone.startRadius, false);
+                EditorUtility.SetDirty(fx);
+            }
+
+            // Lamps, gear and player inside.
+            var oldLights = building.Find("BaseLights");
+            int lamps = oldLights != null ? 0 : AddLights(building, local, room);
+            var gear = baseT.Find("BaseGear");
+            int gearCount = gear != null ? ArrangeGearInside(baseT, gear) : 0;
+            var player = Object.FindAnyObjectByType<PlayerHealth>(FindObjectsInactive.Include);
+            if (player != null)
+            {
+                Undo.RecordObject(player.transform, "Base at city centre");
+                Vector3 spot = RoomPoint(building, local, room, 0f, -0.15f);
+                player.transform.SetPositionAndRotation(spot + Vector3.up * 0.05f, Quaternion.LookRotation(forward));
+            }
+
+            var waves = Object.FindAnyObjectByType<WaveManager>(FindObjectsInactive.Include);
+            if (waves != null && waves.spawnPoints != null)
+            {
+                foreach (var pad in waves.spawnPoints) if (pad != null) Undo.RecordObject(pad, "Base at city centre");
+                waves.ArrangeSpawnPoints(baseT.position, zone.startRadius * waves.edgeRadiusFactor, Vector3.zero);
+            }
+
+            var nav = ZoneTools.BakeNavMesh(map, baseT.position, zone.maxRadius + 15f, out string navNote);
+            if (nav != null)
+            {
+                var loader = zone.GetComponent<ArenaNavMesh>();
+                if (loader == null) loader = Undo.AddComponent<ArenaNavMesh>(zone.gameObject);
+                Undo.RecordObject(loader, "Base at city centre");
+                loader.data = nav;
+                EditorUtility.SetDirty(loader);
+            }
+
+            Undo.CollapseUndoOperations(undoGroup);
+            EditorSceneManager.MarkSceneDirty(scene);
+            Selection.activeGameObject = building.gameObject;
+
+            string msg = $"Base: '{building.name}' at the city centre ({centre.x:0}, {centre.z:0}), {size.x:0} x {size.z:0} m" +
+                         $"{(hidden > 0 ? $", {hidden} props inside it hidden" : "")}{(oldCopy != null ? ", old edge base removed" : "")}.\n" +
+                         $"Safe base: circle {safeRadius:0} m. Fight zone: full circle, starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion " +
+                         $"({zone.expandCost} coins), {steps} expansions to {zone.maxRadius:0} m (city reach {needed:0} m).\n" +
+                         (lamps > 0 ? $"{lamps} lamps added. " : "") + $"{gearCount} gear pickups inside, player starts inside.\n" + navNote;
+            Debug.Log("Zombie Rush: " + msg);
+            return msg;
+        }
+
+        /// How far the zone must grow from `centre` to take in nine in ten of the city's buildings
+        /// (the far skyscrapers on the map edge stay outside as a backdrop).
+        static float CityReach(GameObject map, Vector3 centre)
+        {
+            var d = map.GetComponentsInChildren<Renderer>(true)
+                .Where(r => r.enabled && !(r is ParticleSystemRenderer) && r.GetComponentInParent<Terrain>() == null
+                            && r.bounds.size.y > 4f && r.bounds.size.x < 150f && r.bounds.size.z < 150f)
+                .Select(r => Flat(r.bounds.center - centre).magnitude)
+                .OrderBy(x => x).ToList();
+            if (d.Count == 0) return 200f;
+            float p90 = d[Mathf.Clamp(Mathf.RoundToInt(d.Count * 0.9f), 0, d.Count - 1)];
+            return Mathf.Clamp(p90 + 25f, 150f, 340f);
+        }
+
+        static float OpenDistance(Vector3 from, Vector3 dir, float max)
+        {
+            var hits = Physics.RaycastAll(from, dir, max, ~0, QueryTriggerInteraction.Ignore);
+            float best = max;
+            foreach (var h in hits) if (h.distance > 0.5f && h.distance < best) best = h.distance;
+            return best;
+        }
+
         /// Called by Set Up Base too, so re-running it keeps the gear inside the building.
         internal static int ArrangeGearInside(Transform baseT, Transform gear)
         {
