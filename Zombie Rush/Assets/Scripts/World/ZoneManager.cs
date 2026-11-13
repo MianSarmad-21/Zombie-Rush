@@ -134,7 +134,29 @@ namespace ZombieRush.World
                 return;
             }
 
+            // a joined player: the host grows the zone for everyone
+            if (ZombieRush.Net.NetSession.IsRunning && !ZombieRush.Net.NetSession.IsServer)
+            {
+                if (ZombieRush.Net.MatchNet.Instance != null) ZombieRush.Net.MatchNet.Instance.RequestExpand();
+                return;
+            }
+            ExpandPaid();
+        }
+
+        /// Grows the zone one step (already paid for).
+        public void ExpandPaid()
+        {
+            if (!CanExpand) return;
             CurrentRadius = Mathf.Min(maxRadius, CurrentRadius + expandStep);
+            ApplyVisual(animate: true);
+            RaiseChanged();
+        }
+
+        /// A joined player's machine: the zone size the host has.
+        public void SetNetRadius(float radius)
+        {
+            if (Mathf.Approximately(radius, CurrentRadius)) return;
+            CurrentRadius = Mathf.Clamp(radius, startRadius, maxRadius);
             ApplyVisual(animate: true);
             RaiseChanged();
         }

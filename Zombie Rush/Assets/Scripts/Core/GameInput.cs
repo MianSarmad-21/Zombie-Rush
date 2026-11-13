@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace ZombieRush.Core
 {
-    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause, Turret } // append only: stored as ints in the scene
+    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause, Turret, ToggleView, Aim, ShoulderSwap } // append only: stored as ints in the scene
 
     /// The one place gameplay reads input from. Keyboard/mouse comes from the
     /// legacy Input Manager; the on-screen touch widgets write into this class.
@@ -17,9 +17,14 @@ namespace ZombieRush.Core
 
         static Vector2 touchMove;
         static Vector2 touchLookPixels;
-        static bool touchFireHeld;
+        static bool touchFireHeld, touchAimHeld;
         static bool touchCrouchToggled;
-        static bool reloadQueued, jumpQueued, swapQueued, expandQueued, pauseQueued, turretQueued;
+        static bool reloadQueued, jumpQueued, swapQueued, expandQueued, pauseQueued, turretQueued, viewQueued, shoulderQueued;
+
+        /// Key that switches first person / third person.
+        public const KeyCode ToggleViewKey = KeyCode.V;
+        /// Key that moves the third-person camera to the other shoulder.
+        public const KeyCode ShoulderSwapKey = KeyCode.Q;
 
         static bool MouseActive => !GameSettings.UseTouchControls;
 
@@ -40,6 +45,9 @@ namespace ZombieRush.Core
                 case TouchAction.ExpandZone: expandQueued = true; break;
                 case TouchAction.Pause: pauseQueued = true; break;
                 case TouchAction.Turret: turretQueued = true; break;
+                case TouchAction.ToggleView: viewQueued = true; break;
+                case TouchAction.Aim: touchAimHeld = !touchAimHeld; break;   // a toggle on touch: the fire thumb stays free
+                case TouchAction.ShoulderSwap: shoulderQueued = true; break;
             }
         }
 
@@ -49,6 +57,7 @@ namespace ZombieRush.Core
         }
 
         public static bool TouchCrouchActive => touchCrouchToggled;
+        public static bool TouchAimActive => touchAimHeld;
 
         /// Drops held/queued touch state, e.g. when the controls are hidden or the game pauses,
         /// so nothing stays "stuck down" after a finger was lifted off-screen.
@@ -57,12 +66,13 @@ namespace ZombieRush.Core
             touchMove = Vector2.zero;
             touchLookPixels = Vector2.zero;
             touchFireHeld = false;
+            touchAimHeld = false;
             ClearQueued();
         }
 
         public static void ClearQueued()
         {
-            reloadQueued = jumpQueued = swapQueued = expandQueued = pauseQueued = turretQueued = false;
+            reloadQueued = jumpQueued = swapQueued = expandQueued = pauseQueued = turretQueued = viewQueued = shoulderQueued = false;
         }
 
         // ---- Read by gameplay ---------------------------------------------------------
@@ -98,6 +108,9 @@ namespace ZombieRush.Core
 
         public static bool FireHeld => touchFireHeld || (MouseActive && Input.GetMouseButton(0));
 
+        /// Aiming: the camera moves in and narrows its view (hold the right mouse button, or tap the touch aim button on/off).
+        public static bool AimHeld => touchAimHeld || (MouseActive && Input.GetMouseButton(1));
+
         /// Keyboard sprint, or on touch: stick pushed (almost) fully forward.
         public static bool SprintHeld => Input.GetKey(KeyCode.LeftShift) || (touchMove.y > 0.8f && touchMove.sqrMagnitude > 0.9f);
 
@@ -108,6 +121,8 @@ namespace ZombieRush.Core
         public static bool ConsumeSwapWeapon() => Consume(ref swapQueued) | (MouseActive && Input.mouseScrollDelta.y != 0f);
         public static bool ConsumeExpandZone() => Consume(ref expandQueued) | Input.GetKeyDown(KeyCode.P);
         public static bool ConsumeTurret() => Consume(ref turretQueued) | Input.GetKeyDown(KeyCode.T);
+        public static bool ConsumeToggleView() => Consume(ref viewQueued) | Input.GetKeyDown(ToggleViewKey);
+        public static bool ConsumeShoulderSwap() => Consume(ref shoulderQueued) | Input.GetKeyDown(ShoulderSwapKey);
 
         /// Escape on PC, the Back button on Android, or the on-screen pause button.
         public static bool ConsumePause() => Consume(ref pauseQueued) | Input.GetKeyDown(KeyCode.Escape);

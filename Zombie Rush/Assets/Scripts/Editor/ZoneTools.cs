@@ -189,8 +189,8 @@ namespace ZombieRush.EditorTools
             var fx = visual.GetComponent<ZoneBoundaryFX>();
             if (fx == null) fx = Undo.AddComponent<ZoneBoundaryFX>(visual);
             Undo.RecordObject(fx, "Set up zone");
-            fx.wallMaterial = LoadOrCreateMaterial("Zone_Wall", ground: false);
-            fx.groundMaterial = LoadOrCreateMaterial("Zone_Ground", ground: true);
+            fx.wallMaterial = LoadOrCreateMaterial("Zone_Wall", false, ZoneColor, dangerColor: ZoneDangerColor);
+            fx.groundMaterial = LoadOrCreateMaterial("Zone_Ground", true, ZoneColor, dangerColor: ZoneDangerColor);
             fx.fogMaterial = null;
             EditorUtility.SetDirty(fx);
 
@@ -200,7 +200,9 @@ namespace ZombieRush.EditorTools
             return fx;
         }
 
-        static readonly Color SafeColor = new Color(0.25f, 0.85f, 1f);   // GDD: cyan = safety
+        static readonly Color SafeColor = new Color(0.2f, 1f, 0.35f);    // green = safe base
+        static readonly Color ZoneColor = new Color(0.95f, 0.1f, 0.08f); // red = the expanding fight zone
+        static readonly Color ZoneDangerColor = new Color(1f, 0.6f, 0.5f); // lighter red the zone wall flares to as the player nears it
         static readonly Color GearColor = new Color(1f, 0.78f, 0.25f);   // GDD: gold = reward
 
         /// SafeBase on the PlayerBase marker, a cyan ring at its edge, and the starting
@@ -324,7 +326,7 @@ namespace ZombieRush.EditorTools
             return mat;
         }
 
-        static Material LoadOrCreateMaterial(string name, bool ground, Color? color = null, float? intensity = null)
+        static Material LoadOrCreateMaterial(string name, bool ground, Color? color = null, float? intensity = null, Color? dangerColor = null)
         {
             string path = $"{ZoneFolder}/{name}.mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -342,6 +344,7 @@ namespace ZombieRush.EditorTools
             if (ground) mat.SetFloat("_Intensity", 2.6f);
             if (color.HasValue) mat.SetColor("_Color", color.Value);
             if (intensity.HasValue) mat.SetFloat("_Intensity", intensity.Value);
+            if (dangerColor.HasValue) mat.SetColor("_DangerColor", dangerColor.Value);
             AssetDatabase.CreateAsset(mat, path);
             return mat;
         }

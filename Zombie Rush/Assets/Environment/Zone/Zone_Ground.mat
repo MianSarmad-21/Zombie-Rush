@@ -34,8 +34,8 @@ Material:
     - _StripeHeight: 1.1
     - _WallHeight: 6
     m_Colors:
-    - _Color: {r: 1, g: 0.55, b: 0.12, a: 1}
-    - _DangerColor: {r: 1, g: 0.08, b: 0.04, a: 1}
+    - _Color: {r: 0.95, g: 0.1, b: 0.08, a: 1}
+    - _DangerColor: {r: 1, g: 0.6, b: 0.5, a: 1}
     - _FlashColor: {r: 1, g: 0.85, b: 0.35, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

@@ -57,7 +57,7 @@ namespace ZombieRush.UI
             transform.localScale = Vector3.one * (pressed ? pressedScale : 1f);
             if (visual == null) return;
 
-            bool toggledOn = action == TouchAction.Crouch && GameInput.TouchCrouchActive;
+            bool toggledOn = (action == TouchAction.Crouch && GameInput.TouchCrouchActive) || (action == TouchAction.Aim && GameInput.TouchAimActive);
             visual.color = pressed ? pressedColor : (toggledOn ? toggledColor : normalColor);
         }
     }

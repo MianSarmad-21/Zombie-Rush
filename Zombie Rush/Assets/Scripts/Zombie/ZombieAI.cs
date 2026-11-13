@@ -17,17 +17,25 @@ namespace ZombieRush.Zombie
     public class ZombieAI : MonoBehaviour
     {
         const float Gravity = 20f;
-        const float MaxSpeedMultiplier = 1.6f;
+        const float DefaultTargetRadius = 0.35f;
 
         [Tooltip("Optional override; normally the config on ZombieHealth is used.")]
         public ZombieConfigData config;
 
-        /// Set by whatever spawned this zombie (e.g. WaveManager) to scale attack
-        /// damage and move speed up on later, harder waves. 1 = config's base values.
+        /// Set by whatever spawned this zombie (e.g. WaveManager, from WaveBalanceConfig) to scale attack
+        /// damage on later, harder waves. 1 = config's base values.
         public float difficultyMultiplier = 1f;
+        /// Set by the spawner to scale walk and run speed on later waves. 1 = config's base values.
+        public float speedMultiplier = 1f;
 
         [Tooltip("Chase the player from any distance, ignoring sightRange (set for wave-spawned zombies).")]
         public bool alwaysHunt;
+
+        /// Ranged zombie (set by ZombieSpitter): never claws; stands still facing the target once within
+        /// holdRange while hasShot says it can see it.
+        [System.NonSerialized] public bool rangedOnly;
+        [System.NonSerialized] public float holdRange;
+        [System.NonSerialized] public System.Func<bool> hasShot;
 
         [Header("Obstacle avoidance")]
         public float probeDistance = 1.6f;
@@ -40,21 +48,16 @@ namespace ZombieRush.Zombie
         public float stuckCheckInterval = 0.5f;
         public float stuckDistanceThreshold = 0.15f;
         public float escapeDuration = 1.2f;
+        [Tooltip("Must get this much closer to its target every progressWindow seconds, or it counts as stuck.")]
+        public float progressMin = 0.6f;
+        public float progressWindow = 2f;
 
         CharacterController controller;
         ZombieHealth health;
         ZombieConfigData cfg;
-        IZombieAbility ability;
-        bool ownsAnimatorSpeed; // false when JuggernautMotion drives playback speed itself
-
-        // Frenzy (a Screamer's shriek): faster movement and attacks for a while.
-        float frenzyMultiplier = 1f;
-        float frenzyTimer;
-
-        /// Current frenzy speed factor (1 = calm).
-        public float FrenzyMultiplier => frenzyTimer > 0f ? frenzyMultiplier : 1f;
         Transform player;
         PlayerHealth playerHealth;
+        float targetRadius = DefaultTargetRadius;
         bool guarding;          // every player is in the safe base: wait at its edge
         Vector3 guardPoint;
         Vector3 targetPosition;
@@ -78,18 +81,36 @@ namespace ZombieRush.Zombie
         int pathCorner = -1;
         float repathTimer;
 
+        /// Result of the last route plan, for test logs ("complete path", "partial path", "no path", ...).
+        public string RouteNote { get; private set; } = "";
+        /// The player this zombie is after (null when none).
+        public Transform Target => player;
+        /// Every player is in the safe base and this zombie waits at its edge.
+        public bool IsGuarding => guarding;
+        float holdTimer;
+        /// Stand still facing the target for a while (a ranged attack, e.g. ZombieSpitter).
+        public void Hold(float seconds) => holdTimer = Mathf.Max(holdTimer, seconds);
+        /// The route corner it is heading for, or -1 when walking straight at the target.
+        public int RouteCorner => pathCorner;
+        public int RouteCornerCount => pathCorner < 0 ? 0 : corners.Length;
+        public Vector3 RouteCornerPoint => pathCorner < 0 ? targetPosition : corners[pathCorner];
+
         float stuckCheckTimer;
         Vector3 positionAtLastCheck;
         float escapeTimer;
         Vector3 escapeDir;
         int stuckStrikes;
+        float progressTimer, distanceAtWindow = float.MaxValue;
+        int failedEscapes;
 
         // Hysteresis: a zombie on the edge of a threshold (attack range, run distance) would
         // otherwise flip between two states every frame and visibly jerk back and forth.
         bool inAttackRange;
         bool isRunning;
-        const float AttackRangeMargin = 0.6f;
         const float RunDistanceMargin = 1.5f;
+
+        /// Centre-to-centre distance at which the bodies are `gap` apart (both capsules' radii added).
+        float CentreReach(float gap) => controller.radius + targetRadius + gap;
 
         void Awake()
         {
@@ -97,24 +118,6 @@ namespace ZombieRush.Zombie
             health = GetComponent<ZombieHealth>();
             cfg = config != null ? config : health.Config;
             path = new NavMeshPath();
-            ability = GetComponent<IZombieAbility>();
-            ownsAnimatorSpeed = GetComponent<JuggernautMotion>() == null;
-        }
-
-        /// Speeds this zombie up for a while (a Screamer's shriek). Stronger frenzies win.
-        public void Frenzy(float multiplier, float duration)
-        {
-            if (health.IsDead) return;
-            if (frenzyTimer <= 0f || multiplier >= frenzyMultiplier) frenzyMultiplier = multiplier;
-            frenzyTimer = Mathf.Max(frenzyTimer, duration);
-            if (ownsAnimatorSpeed && health.Anim.Resolve()) health.Anim.Animator.speed = frenzyMultiplier;
-        }
-
-        void UpdateFrenzy()
-        {
-            if (frenzyTimer <= 0f) return;
-            frenzyTimer -= Time.deltaTime;
-            if (frenzyTimer <= 0f && ownsAnimatorSpeed && health.Anim.Resolve()) health.Anim.Animator.speed = 1f;
         }
 
         // Also runs when a pooled zombie is reused, so all steering state starts fresh.
@@ -126,21 +129,24 @@ namespace ZombieRush.Zombie
             retargetTimer = 0f;
             attackTimer = 0f;
             hitPending = false;
+            holdTimer = 0f;
             gravityVelocity = 0f;
             groanTimer = Random.Range(1f, 8f); // spread out so a fresh wave doesn't groan in unison
             avoidHoldTimer = 0f;
             escapeTimer = 0f;
             stuckCheckTimer = 0f;
             stuckStrikes = 0;
+            progressTimer = 0f;
+            distanceAtWindow = float.MaxValue;
+            failedEscapes = 0;
             inAttackRange = false;
             isRunning = false;
+            targetRadius = DefaultTargetRadius;
             nextProbeTime = 0f;
             repathTimer = Random.value * RepathInterval;
             pathCorner = -1;
+            RouteNote = "";
             positionAtLastCheck = transform.position;
-            frenzyTimer = 0f;
-            frenzyMultiplier = 1f;
-            if (ownsAnimatorSpeed && health != null && health.Anim.Resolve()) health.Anim.Animator.speed = 1f;
         }
 
         /// Hunts the nearest living player who is OUT of the safe base. If every player
@@ -165,6 +171,8 @@ namespace ZombieRush.Zombie
 
             playerHealth = best;
             player = best != null ? best.transform : null;
+            var body = best != null ? best.GetComponent<CharacterController>() : null;
+            targetRadius = body != null ? body.radius * Mathf.Max(best.transform.lossyScale.x, best.transform.lossyScale.z) : DefaultTargetRadius;
             guarding = best == null && nearestAny != null && safeBase != null;
             if (guarding) guardPoint = safeBase.EdgePoint(nearestAny.transform.position, 1.2f + Random.value);
         }
@@ -173,12 +181,20 @@ namespace ZombieRush.Zombie
         {
             if (health.IsDead) return;
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
-            UpdateFrenzy();
 
             if (hitPending)
             {
                 hitPendingTimer -= Time.deltaTime;
                 if (hitPendingTimer <= 0f) LandPendingHit();
+            }
+
+            if (holdTimer > 0f)
+            {
+                holdTimer -= Time.deltaTime;
+                if (player != null) FaceDirection(player.position - transform.position);
+                health.Anim.SetSpeed(0f);
+                ApplyGravityOnly();
+                return;
             }
 
             retargetTimer -= Time.deltaTime;
@@ -206,7 +222,7 @@ namespace ZombieRush.Zombie
                 return;
             }
 
-            attackTimer -= Time.deltaTime * FrenzyMultiplier;
+            attackTimer -= Time.deltaTime;
             Groan();
 
             // Waiting at the base edge: face the players inside and growl, never go in.
@@ -218,19 +234,17 @@ namespace ZombieRush.Zombie
                 return;
             }
 
-            // A special zombie's own move (spit, shriek, fuse) gets the first say.
-            if (ability != null && !guarding && playerHealth != null
-                && ability.Tick(playerHealth, toPlayer, Mathf.Sqrt(sqrDistance)))
+            if (rangedOnly && !guarding && sqrDistance <= holdRange * holdRange && (hasShot == null || hasShot()))
             {
-                inAttackRange = false;
+                // in range with a clear shot: stand, face the target, let the spitter fire
                 FaceDirection(toPlayer);
                 ApplyGravityOnly();
                 health.Anim.SetSpeed(0f);
                 return;
             }
 
-            float attackReach = cfg.attackRange + (inAttackRange ? AttackRangeMargin : 0f);
-            inAttackRange = !guarding && (ability == null || !ability.BlocksMelee) && sqrDistance <= attackReach * attackReach;
+            float attackReach = CentreReach(cfg.attackReach + (inAttackRange ? cfg.attackHoldMargin : 0f));
+            inAttackRange = !rangedOnly && !guarding && sqrDistance <= attackReach * attackReach;
             if (inAttackRange)
             {
                 FaceDirection(toPlayer);
@@ -253,8 +267,7 @@ namespace ZombieRush.Zombie
             float distance = Mathf.Sqrt(sqrDistance);
             isRunning = cfg.runDistance <= 0f || distance <= cfg.runDistance + (isRunning ? RunDistanceMargin : 0f);
             bool running = isRunning;
-            float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * Mathf.Min(difficultyMultiplier, MaxSpeedMultiplier)
-                          * FrenzyMultiplier * (ability != null ? ability.SpeedMultiplier : 1f);
+            float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * speedMultiplier;
             health.Anim.SetSpeed(running ? 1f : 0.5f);
 
             Vector3 desired = PathDirection(toPlayer / distance, distance);
@@ -275,8 +288,7 @@ namespace ZombieRush.Zombie
         }
 
         /// Lands a delayed swing (attackHitDelay): hurts the player only if they are still
-        /// within reach. Returns true if it hit. Called on the timer, or earlier by
-        /// JuggernautMotion at the moment the swing visibly connects.
+        /// within reach. Returns true if it hit. Called on the timer.
         public bool LandPendingHit()
         {
             if (!hitPending || health.IsDead) return false;
@@ -284,7 +296,7 @@ namespace ZombieRush.Zombie
             if (playerHealth == null || playerHealth.IsDead || guarding) return false;
             Vector3 d = playerHealth.transform.position - transform.position;
             d.y = 0f;
-            float reach = cfg.attackRange + AttackRangeMargin + 0.4f;
+            float reach = CentreReach(cfg.attackReach + cfg.attackLandTolerance);
             if (d.sqrMagnitude > reach * reach) return false;
             playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
             return true;
@@ -351,12 +363,15 @@ namespace ZombieRush.Zombie
             {
                 repathTimer = RepathInterval + Random.value * 0.2f;
                 pathCorner = -1;
-                if (ArenaNavMesh.TrySnap(transform.position, out var from) && ArenaNavMesh.TrySnap(targetPosition, out var to, 3f)
-                    && NavMesh.CalculatePath(from, to, NavMesh.AllAreas, path) && path.status != NavMeshPathStatus.PathInvalid
-                    && path.corners.Length > 1)
+                if (!ArenaNavMesh.TrySnap(transform.position, out var from)) RouteNote = "zombie off walk map";
+                else if (!ArenaNavMesh.TrySnap(targetPosition, out var to, 3f)) RouteNote = "target off walk map";
+                else if (!NavMesh.CalculatePath(from, to, NavMesh.AllAreas, path) || path.status == NavMeshPathStatus.PathInvalid) RouteNote = "no path";
+                else if (path.corners.Length <= 1) RouteNote = "path has no corners";
+                else
                 {
                     corners = path.corners;
                     pathCorner = 1;
+                    RouteNote = path.status == NavMeshPathStatus.PathPartial ? "partial path" : "complete path";
                 }
             }
             if (pathCorner < 0) return straight;
@@ -397,6 +412,31 @@ namespace ZombieRush.Zombie
         {
             if (escapeTimer > 0f) return;
 
+            // No progress: a zombie can keep moving (sliding to and fro along a fence or a rubble
+            // pile) without getting any closer. Every progressWindow it must have closed in by
+            // progressMin, or it escapes sideways - each time further, alternating sides.
+            bool nearTarget = distanceToTarget < CentreReach(cfg.attackReach) + 4f;
+            progressTimer += Time.deltaTime;
+            if (nearTarget) { progressTimer = 0f; distanceAtWindow = distanceToTarget; failedEscapes = 0; }
+            else if (progressTimer >= progressWindow)
+            {
+                bool closedIn = distanceAtWindow - distanceToTarget >= progressMin;
+                progressTimer = 0f;
+                distanceAtWindow = distanceToTarget;
+                if (closedIn) failedEscapes = 0;
+                else
+                {
+                    failedEscapes++;
+                    repathTimer = 0f;
+                    pathCorner = -1;
+                    avoidHoldTimer = 0f;
+                    escapeTimer = escapeDuration * Mathf.Min(1f + 0.5f * failedEscapes, 3f);
+                    float turn = failedEscapes % 2 == 0 ? -1f : 1f;
+                    escapeDir = (Quaternion.Euler(0f, turn * Random.Range(60f, 100f), 0f) * currentMoveDir).normalized;
+                    return;
+                }
+            }
+
             stuckCheckTimer += Time.deltaTime;
             if (stuckCheckTimer < stuckCheckInterval) return;
 
@@ -405,7 +445,6 @@ namespace ZombieRush.Zombie
             positionAtLastCheck = transform.position;
 
             bool slow = movedSqr < stuckDistanceThreshold * stuckDistanceThreshold;
-            bool nearTarget = distanceToTarget < cfg.attackRange + 4f;
             stuckStrikes = slow && !nearTarget ? stuckStrikes + 1 : 0;
             if (stuckStrikes < 2) return;
 

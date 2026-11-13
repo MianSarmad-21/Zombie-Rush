@@ -13,10 +13,15 @@ namespace ZombieRush.Data
         public float runDistance = 0f;
 
         [Header("Attack")]
-        public float attackRange = 1.6f;
+        [Tooltip("Arm's reach: the gap between the zombie's body and the player's body (capsule edge to edge, metres) at which it swings.")]
+        public float attackReach = 0.45f;
+        [Tooltip("Once swinging, it keeps attacking until the gap grows past attackReach + this (stops it flicking between chase and attack).")]
+        public float attackHoldMargin = 0.2f;
+        [Tooltip("A delayed swing (attackHitDelay) still lands if the gap is within attackReach + this when the hit comes.")]
+        public float attackLandTolerance = 0.3f;
         public float attackDamage = 12f;
         public float attackCooldown = 1.1f;
-        [Tooltip("Seconds from the start of the swing until the damage lands (0 = at once). The player can still step out of reach meanwhile. A JuggernautMotion on the zombie lands it earlier, at the moment the swing connects.")]
+        [Tooltip("Seconds from the start of the swing until the damage lands (0 = at once). The player can still step out of reach meanwhile.")]
         public float attackHitDelay = 0f;
 
         [Header("Detection")]

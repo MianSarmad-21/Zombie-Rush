@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4575d34803cfe3499b6d537f42e6f33, type: 3}
+  m_Name: NetConfig
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Net.NetConfig
+  netPlayerPrefab: {fileID: 8196158872530673668, guid: 7da1186c620e00c41b2cb6c2817d1534, type: 3}
+  remotePlayerPrefab: {fileID: 4845084184732867134, guid: 9047eb735dce5f448b0437cd5ba5be01, type: 3}
+  matchPrefab: {fileID: 6368040064229392762, guid: 873eceb9d4e228144bf3fd0d599fd9dc, type: 3}
+  networkPrefabs:
+  - {fileID: 5280062581628689994, guid: 415583653b436af4890ab14b64950659, type: 3}
+  - {fileID: 100000001, guid: 57272c24e542b6b49bd8c495d305ed5a, type: 3}
+  - {fileID: 100000001, guid: 48a68082bfa67e74a95b12617275f215, type: 3}
+  - {fileID: 100000001, guid: e2d0a1b42434ae54d8a647944ceb2016, type: 3}
+  - {fileID: 100000001, guid: 98b68410e79d56d4d8b1ceac07996e41, type: 3}
+  maxPlayers: 4
+  directPort: 7777
+  tickRate: 30
+  followSharpness: 14
+  snapDistance: 4

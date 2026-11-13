@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using ZombieRush.Core;
+using ZombieRush.Data;
 using ZombieRush.World;
 using ZombieRush.Zombie;
 
@@ -46,7 +47,8 @@ namespace ZombieRush.Waves
         public float breatherDuration = 5f;
 
         [Header("Difficulty")]
-        public float difficultyPerWave = 0.15f; // +15% zombie health/damage per wave beyond the first
+        [Tooltip("How zombies and the player grow wave by wave (health, damage, speed). Empty = the config's defaults.")]
+        public WaveBalanceConfig balance;
 
         [Header("Performance")]
         [Tooltip("Zombies of each type created up-front (spread over frames) so wave 1 doesn't hitch.")]
@@ -72,13 +74,22 @@ namespace ZombieRush.Waves
             if (Instance == this) Instance = null;
         }
 
-        void Start() => StartCoroutine(RunWaves());
+        void Start()
+        {
+            WaveScaling.Balance = balance;
+            WaveScaling.Wave = 1;
+            StartCoroutine(RunWaves());
+        }
 
         IEnumerator RunWaves()
         {
             // Wait one frame first so every UI script has subscribed before
             // Wave 1's announcement fires.
             yield return null;
+
+            // the waves run on the host only; everyone else sees its zombies
+            while (!ZombieRush.Net.NetSession.IsRunning) yield return null;
+            if (!ZombieRush.Net.NetSession.IsServer) yield break;
 
             if (!HasValidSetup()) yield break;
             yield return Prewarm();
@@ -89,6 +100,8 @@ namespace ZombieRush.Waves
             while (true)
             {
                 CurrentWave++;
+                WaveScaling.Balance = balance;
+                WaveScaling.Wave = CurrentWave;
                 var zone = ZoneManager.Instance;
                 if (spawnAtZoneEdge && zone != null) ArrangeSpawnPoints(zone.center, zone.CurrentRadius * edgeRadiusFactor, zone.Forward);
                 GameEvents.RaiseWaveAnnounced(CurrentWave);
@@ -192,18 +205,21 @@ namespace ZombieRush.Waves
             var zombie = pool.Get(prefab, spawnPos, Quaternion.identity);
             if (zombie == null) return false;
 
-            float multiplier = 1f + (CurrentWave - 1) * difficultyPerWave;
-            float healthMultiplier = multiplier * Difficulty.HealthMultiplier(PlayerCount);
+            var b = WaveScaling.Balance;
+            float healthMultiplier = b.ZombieHealth(CurrentWave) * Difficulty.HealthMultiplier(PlayerCount);
             zombie.ResetForSpawn(healthMultiplier);
 
             var ai = zombie.GetComponent<ZombieAI>();
             if (ai != null)
             {
-                ai.difficultyMultiplier = multiplier;
+                ai.difficultyMultiplier = b.ZombieDamage(CurrentWave);
+                ai.speedMultiplier = b.ZombieSpeed(CurrentWave);
                 ai.alwaysHunt = true; // wave zombies may surface beyond sight range; they must never idle and stall the wave
             }
 
             zombie.GetComponent<ZombieSpawnRise>().Begin(spawnPos);
+            var zn = zombie.GetComponent<ZombieRush.Net.ZombieNet>();
+            if (zn != null) zn.ServerSpawn();
 
             AliveCount++;
             return true;

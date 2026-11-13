@@ -16,7 +16,9 @@ MonoBehaviour:
   maxHealth: 60
   moveSpeed: 2.2
   chaseSpeed: 3.5
-  attackRange: 1.6
+  attackReach: 0.45
+  attackHoldMargin: 0.2
+  attackLandTolerance: 0.3
   attackDamage: 12
   attackCooldown: 1.1
   sightRange: 25

@@ -4,22 +4,22 @@ namespace ZombieRush.Weapons
 {
     /// Fires several pellets in a spread cone per shot instead of one hitscan
     /// ray - shorter effective range, heavier close-up damage than the pistol.
-    /// Damage per pellet comes from WeaponData.damage.
+    /// Damage per pellet comes from WeaponData.damage, grown by the wave (WaveScaling.PlayerDamage).
     public class ShotgunWeapon : WeaponBase
     {
         public int pelletCount = 8;
         public float spreadDegrees = 6f;
 
+        public override GunStyle Style => GunStyle.Shotgun;
+
+        /// The pellet cone (the crosshair circle), a little tighter while aiming.
+        public override float SpreadDegrees => spreadDegrees * (data != null ? Mathf.Lerp(1f, data.aimSpreadScale, AimAmount) : 1f);
+
         protected override void Fire()
         {
-            var aim = playerCamera.transform.rotation;
+            float cone = SpreadDegrees;
             for (int i = 0; i < pelletCount; i++)
-            {
-                // Random point in a circular cone around the aim direction.
-                Vector2 offset = Random.insideUnitCircle * spreadDegrees;
-                Vector3 dir = aim * Quaternion.Euler(offset.y, offset.x, 0f) * Vector3.forward;
-                HitScan(dir, data.damage);
-            }
+                HitScan(SpreadDirection(cone), data.damage * ZombieRush.Core.WaveScaling.PlayerDamage);   // each pellet somewhere in the cone
         }
     }
 }

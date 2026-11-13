@@ -11,6 +11,7 @@ Styled icons (Assets/UI/IconsPro) - the same game-icons.net shapes (CC BY 3.0),
 re-rendered with outlines, gradients and bevels; same credit applies.
 (iconx_armor = Lorc "checked-shield", iconx_medkit = "heart-plus", iconx_rifle = Delapouite "mp5",
  iconx_turret = Sbed "turret", iconx_lock = Lorc "padlock".)
+iconx_view (eye) is drawn for this project by Tools/UI/make_icon_view.py; no third-party licence.
 
 Fonts (Assets/UI/Fonts) - SIL Open Font License 1.1 (licence files alongside):
   Oswald (The Oswald Project Authors), Rubik Dirt (The Rubik Filtered Project Authors)

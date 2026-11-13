@@ -188,6 +188,17 @@ namespace ZombieRush.EditorTools
         // Gameplay UI
         // =====================================================================
 
+        /// The pieces the Survivor's Kit UI keeps from this builder: the damage / low-health screen effects,
+        /// the per-gun crosshair and the scope sight.
+        internal static void BuildKeptPieces(Transform root, Transform hud)
+        {
+            A = UIAssetGenerator.Ensure();
+            BuildScreenEffects(root);
+            root.Find("ScreenFX")?.SetAsFirstSibling();
+            BuildCrosshair(hud);
+            BuildScope(hud).transform.SetAsFirstSibling();
+        }
+
         static void BuildScreenEffects(Transform parent)
         {
             var fx = Node("ScreenFX", parent);
@@ -365,7 +376,9 @@ namespace ZombieRush.EditorTools
             Responsive(weapon.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-180f, -24f));
 
             TurretButtonPC(hudGo.transform);
+            ViewButtonPC(hudGo.transform);
             BuildCrosshair(hudGo.transform);
+            BuildScope(hudGo.transform).transform.SetAsFirstSibling();
 
             layout.targets = targets.ToArray();
             layout.pcPoses = pcPoses.ToArray();
@@ -476,6 +489,81 @@ namespace ZombieRush.EditorTools
             ui.showOn = SchemeFilter.TouchOnly;
         }
 
+        /// Adds (or replaces) only the first/third-person buttons in the open scene's existing
+        /// gameplay UI, leaving everything else as it is. Returns a line for the report.
+        [MenuItem("Zombie Rush/UI/Add View Button (open scene)", priority = 3)]
+        public static string AddViewButtons()
+        {
+            A = UIAssetGenerator.Ensure();
+            var hud = Object.FindAnyObjectByType<HUDController>(FindObjectsInactive.Include);
+            var touch = Object.FindAnyObjectByType<TouchControlsUI>(FindObjectsInactive.Include);
+            if (hud == null || touch == null || touch.controlsRoot == null)
+                return "View button: no gameplay UI in the open scene. Run Build Gameplay UI first.";
+
+            void Replace(Transform parent, string name)
+            {
+                var old = parent.Find(name);
+                if (old != null) Undo.DestroyObjectImmediate(old.gameObject);
+            }
+            Replace(hud.transform, "ViewButton_PC");
+            Undo.RegisterCreatedObjectUndo(ViewButtonPC(hud.transform), "Add View Button");
+            Replace(touch.controlsRoot.transform, "ViewButton_Touch");
+            Undo.RegisterCreatedObjectUndo(ViewButtonTouch(touch.controlsRoot.transform), "Add View Button");
+            EditorSceneManager.MarkSceneDirty(hud.gameObject.scene);
+            return "View button: added ViewButton_PC (HUD) and ViewButton_Touch (touch controls).";
+        }
+
+        /// PC first/third-person key hint above the turret hint: [V] eye 3RD PERSON. Also clickable
+        /// while the cursor is free.
+        static GameObject ViewButtonPC(Transform parent)
+        {
+            var holder = Node("ViewButton_PC", parent);
+            Place(holder, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-32f, 300f), new Vector2(300f, 72f));
+            var content = Node("Content", holder.transform);
+            Stretch(content);
+            var bg = SlicedSlant(content.transform, "Bg", A.BtnSlant, Vector2.zero, new Vector2(300f, 72f));
+            Stretch(bg.gameObject);
+            bg.raycastTarget = true;
+            var frame = SlicedSlant(content.transform, "Frame", A.BtnSlantGlow, Vector2.zero, new Vector2(300f, 72f));
+            frame.color = UITheme.Bone.WithAlpha(0.6f);
+            Stretch(frame.gameObject);
+
+            var key = Img(content.transform, "KeyCap", A.BtnSquare, Color.white);
+            Place(key.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(40f, 0f), new Vector2(50f, 42f));
+            var keyText = Txt(key.transform, "Key", GameInput.ToggleViewKey.ToString(), A.Bold, 22, UITheme.Bone, TextAnchor.MiddleCenter);
+            Stretch(keyText.gameObject);
+
+            var icon = Img(content.transform, "Icon", A.IconX("view"), Color.white);
+            Place(icon.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(100f, 0f), new Vector2(54f, 54f));
+            var ui = holder.AddComponent<ViewToggleButtonUI>();
+            ui.label = Txt(content.transform, "Label", ui.toThirdPersonText, A.Bold, 24, UITheme.Bone, TextAnchor.MiddleLeft);
+            Place(ui.label.gameObject, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(136f, 1f), new Vector2(150f, 40f));
+            Shadowed(ui.label);
+            ui.content = content;
+            ui.showOn = SchemeFilter.KeyboardMouseOnly;
+
+            var btn = content.AddComponent<TouchButton>();
+            btn.action = TouchAction.ToggleView;
+            btn.visual = frame;
+            btn.normalColor = UITheme.Bone.WithAlpha(0.6f);
+            btn.pressedColor = Color.white;
+            btn.pressedScale = 0.95f;
+            return holder;
+        }
+
+        /// Touch first/third-person button above the turret button.
+        static GameObject ViewButtonTouch(Transform controls)
+        {
+            var holder = Node("ViewButton_Touch", controls);
+            Stretch(holder);
+            var ui = holder.AddComponent<ViewToggleButtonUI>();
+            var btn = RoundButton(holder.transform, "View", ui.toThirdPersonText, "view", 116f, new Vector2(-92f, 650f), UITheme.Bone, TouchAction.ToggleView);
+            ui.label = btn.transform.Find("Caption").GetComponent<Text>();
+            ui.content = btn.gameObject;
+            ui.showOn = SchemeFilter.TouchOnly;
+            return holder;
+        }
+
         /// Turret icon + radial cooldown sweep + padlock badge. size 0 = reuse the round button's own icon.
         static void TurretIcon(Transform parent, Vector2 pos, float size, TurretButtonUI ui)
         {
@@ -507,31 +595,62 @@ namespace ZombieRush.EditorTools
             ui.lockBadge = badge.gameObject;
         }
 
-        static void BuildCrosshair(Transform parent)
+        /// Crosshair in three shapes (CrosshairUI picks the held gun's): rifle lines, pistol dot + ticks,
+        /// shotgun arc brackets; each mark carries its own outline so it moves as one. Plus the hit marker.
+        static GameObject BuildCrosshair(Transform parent)
         {
             var root = Node("Crosshair", parent);
             Place(root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(80f, 80f));
-            NestedCanvas(root, false); // hit marker animates; keep its rebuilds off the main HUD
+            NestedCanvas(root, false); // the marks move every frame; keep their rebuilds off the main HUD
             var ui = root.AddComponent<CrosshairUI>();
 
             var cross = Node("Cross", root.transform);
             Stretch(cross);
             ui.crosshairGroup = cross.AddComponent<CanvasGroup>();
             ui.crosshairGroup.blocksRaycasts = false;
-            Color c = Color.white.WithAlpha(0.92f);
-            Color shadow = Color.black.WithAlpha(0.5f);
-            foreach (var (n, pos, size) in new[]
+            Color c = Color.white.WithAlpha(0.95f);
+            // every mark: solid white with a crisp dark outline, so it reads on bright sky and dark walls alike
+            Image Mark(Transform p, string n, Vector2 size)
             {
-                ("Top", new Vector2(0f, 14f), new Vector2(3f, 12f)),
-                ("Bottom", new Vector2(0f, -14f), new Vector2(3f, 12f)),
-                ("Left", new Vector2(-14f, 0f), new Vector2(12f, 3f)),
-                ("Right", new Vector2(14f, 0f), new Vector2(12f, 3f)),
-                ("Dot", Vector2.zero, new Vector2(4f, 4f)),
-            })
-            {
-                Line(cross.transform, n + "Shadow", pos + new Vector2(1f, -1f), size + Vector2.one, shadow);
-                Line(cross.transform, n, pos, size, c);
+                var m = Line(p, n, Vector2.zero, size, c);
+                var o = m.gameObject.AddComponent<Outline>();
+                o.effectColor = new Color(0f, 0f, 0f, 0.8f);
+                o.effectDistance = new Vector2(1.5f, -1.5f);
+                m.raycastTarget = false;
+                return m;
             }
+
+            // rifle: four lines that spread apart, and a centre dot
+            var lines = Node("Lines", cross.transform); Stretch(lines);
+            ui.linesRoot = lines;
+            ui.lines = new[] { Mark(lines.transform, "Top", new Vector2(4f, 16f)).rectTransform, Mark(lines.transform, "Bottom", new Vector2(4f, 16f)).rectTransform,
+                               Mark(lines.transform, "Left", new Vector2(16f, 4f)).rectTransform, Mark(lines.transform, "Right", new Vector2(16f, 4f)).rectTransform };
+            Mark(lines.transform, "Dot", new Vector2(4f, 4f));
+
+            // pistol: a bold dot with four short ticks
+            var dot = Node("Dot", cross.transform); Stretch(dot);
+            ui.dotRoot = dot;
+            Mark(dot.transform, "Centre", new Vector2(6f, 6f));
+            ui.dotTicks = new[] { Mark(dot.transform, "Top", new Vector2(4f, 10f)).rectTransform, Mark(dot.transform, "Bottom", new Vector2(4f, 10f)).rectTransform,
+                                  Mark(dot.transform, "Left", new Vector2(10f, 4f)).rectTransform, Mark(dot.transform, "Right", new Vector2(10f, 4f)).rectTransform };
+
+            // shotgun: four bold arc brackets on the pellet cone (CrosshairUI sets their radius), and a centre dot
+            var ring = Node("Circle", cross.transform); Stretch(ring);
+            ui.circleRoot = ring;
+            Mark(ring.transform, "Centre", new Vector2(5f, 5f));
+            var arcs = new List<ArcGraphic>();
+            foreach (float centre in new[] { 45f, 135f, 225f, 315f })
+            {
+                var go = Node("Arc" + Mathf.RoundToInt(centre), ring.transform);
+                Place(go, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(10f, 10f));
+                var arc = go.AddComponent<ArcGraphic>();
+                arc.Setup(30f, 7f, centre, 56f, 0.26f);
+                arc.color = c;
+                arc.raycastTarget = false;
+                arcs.Add(arc);
+            }
+            ui.ringArcs = arcs.ToArray();
+            dot.SetActive(false); ring.SetActive(false);
 
             var marker = Node("HitMarker", root.transform);
             Place(marker, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(60f, 60f));
@@ -546,6 +665,106 @@ namespace ZombieRush.EditorTools
             }
             ui.hitMarker = marker.GetComponent<RectTransform>();
             ui.hitMarkerGraphics = graphics.ToArray();
+            return root;
+        }
+
+        const string ScopeSpritePath = "Assets/UI/Art/scope_overlay.png";   // drawn by Tools/UI/make_scope_overlay.py
+
+        /// Full-screen rifle scope sight (ScopeUI shows it while scoped): the square sight centred and
+        /// screen-high, black filling the sides. Goes behind the rest of the HUD.
+        static GameObject BuildScope(Transform parent)
+        {
+            var root = Node("Scope", parent);
+            Stretch(root);
+            var ui = root.AddComponent<ScopeUI>();
+            var sight = Node("Sight", root.transform);
+            Stretch(sight);
+            ui.group = sight.AddComponent<CanvasGroup>();
+            ui.group.blocksRaycasts = false;
+            ui.group.interactable = false;
+
+            var imp = AssetImporter.GetAtPath(ScopeSpritePath) as TextureImporter;
+            if (imp != null && imp.textureType != TextureImporterType.Sprite)
+            {
+                imp.textureType = TextureImporterType.Sprite; imp.spriteImportMode = SpriteImportMode.Single;
+                imp.alphaIsTransparency = true; imp.mipmapEnabled = false; imp.maxTextureSize = 2048;
+                imp.SaveAndReimport();
+            }
+            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(ScopeSpritePath);
+            var lens = Img(sight.transform, "Lens", sprite, Color.white);
+            lens.raycastTarget = false;
+            var lrt = lens.rectTransform;
+            lrt.anchorMin = new Vector2(0.5f, 0f); lrt.anchorMax = new Vector2(0.5f, 1f); lrt.pivot = new Vector2(0.5f, 0.5f);
+            lrt.sizeDelta = Vector2.zero; lrt.anchoredPosition = Vector2.zero;
+            var fit = lens.gameObject.AddComponent<AspectRatioFitter>();
+            fit.aspectMode = AspectRatioFitter.AspectMode.HeightControlsWidth; fit.aspectRatio = 1f;
+            foreach (var (n, minX, maxX) in new[] { ("BarLeft", 0f, 0.5f), ("BarRight", 0.5f, 1f) })
+            {
+                // black from the screen edge to the lens edge (half a screen height from the centre)
+                var bar = Img(sight.transform, n, A.White, Color.black);
+                bar.raycastTarget = false;
+                var r = bar.rectTransform;
+                r.anchorMin = new Vector2(minX, 0f); r.anchorMax = new Vector2(maxX, 1f); r.pivot = new Vector2(0.5f, 0.5f);
+                r.offsetMin = n == "BarRight" ? new Vector2(538f, 0f) : Vector2.zero;
+                r.offsetMax = n == "BarLeft" ? new Vector2(-538f, 0f) : Vector2.zero;
+            }
+            sight.SetActive(false);
+            return root;
+        }
+
+        /// Touch aim button (a toggle: tap to aim / look through the scope, tap again to stop).
+        static GameObject AimButtonTouch(Transform controls)
+        {
+            var btn = RoundButton(controls, "Aim", "AIM", "scope", 126f, new Vector2(-440f, 560f), UITheme.Bone, TouchAction.Aim);
+            return btn.gameObject;
+        }
+
+        /// Touch shoulder-swap button (third-person camera to the other shoulder), small, above the view button.
+        static GameObject ShoulderButtonTouch(Transform controls)
+        {
+            var btn = RoundButton(controls, "Shoulder", "SIDE", "shoulder", 100f, new Vector2(-92f, 805f), UITheme.Bone, TouchAction.ShoulderSwap);
+            return btn.gameObject;
+        }
+
+        [MenuItem("Zombie Rush/UI/Upgrade Aim HUD (open scene)", priority = 4)]
+        static void UpgradeAimHudMenu() => Debug.Log(UpgradeAimHud());
+
+        /// Puts the per-gun crosshair, the scope sight and the touch Aim / Shoulder buttons into the open
+        /// scene's existing HUD without rebuilding the rest of it.
+        public static string UpgradeAimHud()
+        {
+            A = UIAssetGenerator.Ensure();
+            var hud = Object.FindAnyObjectByType<HUDController>(FindObjectsInactive.Include);
+            var touch = Object.FindAnyObjectByType<TouchControlsUI>(FindObjectsInactive.Include);
+            if (hud == null || touch == null || touch.controlsRoot == null)
+                return "Aim HUD: no gameplay UI in the open scene. Run Build Gameplay UI first.";
+
+            int crossIndex = -1;
+            var oldCross = hud.transform.Find("Crosshair");
+            if (oldCross != null) { crossIndex = oldCross.GetSiblingIndex(); Undo.DestroyObjectImmediate(oldCross.gameObject); }
+            var cross = BuildCrosshair(hud.transform);
+            if (crossIndex >= 0) cross.transform.SetSiblingIndex(crossIndex);
+            Undo.RegisterCreatedObjectUndo(cross, "Upgrade Aim HUD");
+
+            var oldScope = hud.transform.Find("Scope");
+            if (oldScope != null) Undo.DestroyObjectImmediate(oldScope.gameObject);
+            var scope = BuildScope(hud.transform);
+            scope.transform.SetAsFirstSibling();   // behind the health, ammo and the rest of the HUD
+            Undo.RegisterCreatedObjectUndo(scope, "Upgrade Aim HUD");
+
+            foreach (var n in new[] { "Aim", "Shoulder" })
+            {
+                var old = touch.controlsRoot.transform.Find(n);
+                if (old != null) Undo.DestroyObjectImmediate(old.gameObject);
+            }
+            Undo.RegisterCreatedObjectUndo(AimButtonTouch(touch.controlsRoot.transform), "Upgrade Aim HUD");
+            Undo.RegisterCreatedObjectUndo(ShoulderButtonTouch(touch.controlsRoot.transform), "Upgrade Aim HUD");
+
+            EditorSceneManager.MarkSceneDirty(hud.gameObject.scene);
+            bool saved = EditorSceneManager.SaveScene(hud.gameObject.scene);
+            bool sightFound = AssetDatabase.LoadAssetAtPath<Sprite>(ScopeSpritePath) != null;
+            return "Aim HUD: crosshair (lines / dot / ring), scope sight (" + (sightFound ? "sight image found" : "MISSING " + ScopeSpritePath) +
+                   "), touch Aim + Shoulder buttons. Scene " + (saved ? "saved" : "NOT saved") + ".";
         }
 
         static void BuildTouchControls(Transform parent)
@@ -597,7 +816,10 @@ namespace ZombieRush.EditorTools
             RoundButton(controls.transform, "Reload", "RELOAD", "reload", 138f, new Vector2(-470f, 110f), UITheme.Gold, TouchAction.Reload);
             RoundButton(controls.transform, "Jump", "JUMP", "jump", 138f, new Vector2(-462f, 330f), UITheme.Bone, TouchAction.Jump);
             RoundButton(controls.transform, "Crouch", "CROUCH", "crouch", 126f, new Vector2(-270f, 485f), UITheme.Cyan, TouchAction.Crouch);
+            AimButtonTouch(controls.transform);
+            ShoulderButtonTouch(controls.transform);
             TurretButtonTouch(controls.transform);
+            ViewButtonTouch(controls.transform);
 
             // Pause, top-right.
             var pause = Node("Pause", controls.transform);

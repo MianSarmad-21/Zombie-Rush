@@ -37,6 +37,38 @@ namespace ZombieRush.Effects
             return m;
         }
 
+        public const string FxFolder = "ZombieRush/Fx/";
+        /// Transparent base materials made by the HUD/FX tool (Zombie Rush > Effects > Build Effect Materials):
+        /// Fx_Glow (unlit, for glowing poison) and Fx_Lit (lit by the scene, for blood).
+        public const string GlowBase = FxFolder + "Fx_Glow", LitBase = FxFolder + "Fx_Lit";
+        static readonly Dictionary<string, Texture2D> textures = new Dictionary<string, Texture2D>();
+
+        /// One of the effect textures in Resources/ZombieRush/Fx (Fx_Splat, Fx_Puddle, Fx_Drop, Fx_Smoke, Fx_Chunk).
+        public static Texture2D Tex(string name)
+        {
+            if (textures.TryGetValue(name, out var t) && t != null) return t;
+            t = Resources.Load<Texture2D>(FxFolder + name);
+            textures[name] = t;
+            return t;
+        }
+
+        /// A see-through effect material: an effect texture tinted to a colour, lit by the scene (blood) or
+        /// glowing on its own (poison). Cached per texture, colour and kind.
+        public static Material Fx(string texture, Color color, bool lit)
+        {
+            string key = $"fx{texture}{(lit ? "L" : "G")}{ColorUtility.ToHtmlStringRGBA(color)}";
+            if (cache.TryGetValue(key, out var m) && m != null) return m;
+            var baseMat = Resources.Load<Material>(lit ? LitBase : GlowBase);
+            m = baseMat != null ? new Material(baseMat) : new Material(Particle(color));
+            var tex = Tex(texture) ?? SoftDot;
+            m.mainTexture = tex;
+            if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
+            m.color = color;
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
+            cache[key] = m;
+            return m;
+        }
+
         /// A material from Resources/ZombieRush (made by the character setup tool), or a plain
         /// lit fallback in the given colour.
         public static Material Lit(string resourceName, Color fallback, Color emission = default)

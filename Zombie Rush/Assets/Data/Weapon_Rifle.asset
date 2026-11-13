@@ -26,3 +26,15 @@ MonoBehaviour:
   - {fileID: 8300000, guid: c7116269849c2f54697e060011ac169a, type: 3}
   reloadSound: {fileID: 0}
   fireVolume: 0.7
+  overrideEyeOffset: 1
+  eyeOffset: {x: 0, y: 0.03, z: -0.06}
+  crosshair: 0
+  spreadBase: 0.3
+  spreadPerShot: 0.45
+  spreadMax: 4
+  spreadRecovery: 6
+  spreadMoving: 2
+  aimSpreadScale: 0.3
+  aimZoom: 0.8
+  hasScope: 1
+  scopeZoom: 2

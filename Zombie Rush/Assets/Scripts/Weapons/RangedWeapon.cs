@@ -1,8 +1,8 @@
 namespace ZombieRush.Weapons
 {
-    /// Single-ray hitscan gun (the pistol): what's under the crosshair gets hit.
+    /// Single-ray hitscan gun (pistol, rifle): the shot lands within the current spread of the crosshair.
     public class RangedWeapon : WeaponBase
     {
-        protected override void Fire() => HitScan(playerCamera.transform.forward, data.damage);
+        protected override void Fire() => HitScan(SpreadDirection(SpreadDegrees), data.damage * ZombieRush.Core.WaveScaling.PlayerDamage);
     }
 }

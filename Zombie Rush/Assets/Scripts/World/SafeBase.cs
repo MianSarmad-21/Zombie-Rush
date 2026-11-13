@@ -70,6 +70,7 @@ namespace ZombieRush.World
             }
             GameEvents.RaiseSafeBaseChanged(true);
             GameEvents.RaiseNotice("SAFE BASE", "GEAR UP  ·  STEP OUT TO START THE WAVE");
+            ZombieRush.UI.SafeZoneLabel.Ensure(this); // floating "SAFE ZONE" sign over the base building
         }
 
         /// Flat (XZ) test - height doesn't matter, the base is a cylinder (or half of one).

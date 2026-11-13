@@ -12,17 +12,32 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c44efd6a762e76b6826983a01b5359b9, type: 3}
   m_Name: Weapon_Shotgun
   m_EditorClassIdentifier: 
-  weaponName: Shotgun
+  weaponName: Double Barrel
   icon: {fileID: 21300000, guid: 15fb97d16ab0e3b42bc56f2a07f71577, type: 3}
   damage: 9
-  fireRate: 1.1
+  fireRate: 2.5
   range: 18
   unlimitedUses: 0
-  magazineSize: 6
+  magazineSize: 2
   maxReserveAmmo: 24
-  reloadTime: 2.2
+  reloadTime: 2.4
+  autoReload: 1
+  autoReloadDelay: 0.3
+  crosshair: 2
+  spreadBase: 0
+  spreadPerShot: 0
+  spreadMax: 0
+  spreadRecovery: 6
+  spreadMoving: 0
+  aimSpreadScale: 0.75
+  aimZoom: 0.9
+  hasScope: 0
+  scopeZoom: 2
   fireSounds:
   - {fileID: 8300000, guid: bfe6c8d73f14c074397ed5a9dd4fd4c8, type: 3}
   - {fileID: 8300000, guid: 25257dee1fb9aad44b772a4c91aa6288, type: 3}
   reloadSound: {fileID: 0}
   fireVolume: 0.8
+  overrideEyeOffset: 1
+  eyeOffset: {x: 0, y: 0.03, z: -0.06}
+  fpLift: {x: 0, y: 0, z: 0}

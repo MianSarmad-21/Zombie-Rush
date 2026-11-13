@@ -40,7 +40,44 @@ namespace ZombieRush.Zombie
         /// corpse is cleared - check IsDead). Lets turrets find targets without physics queries.
         public static readonly System.Collections.Generic.List<ZombieHealth> Active = new System.Collections.Generic.List<ZombieHealth>();
 
-        void OnEnable() => Active.Add(this);
+        /// Any zombie took damage: (zombie, damage, fired by the player). Health bars and damage numbers listen.
+        public static event System.Action<ZombieHealth, float, bool> AnyDamaged;
+
+        /// Health left, 0 to 1.
+        public float HealthFraction => MaxHealth > 0f ? Mathf.Clamp01(CurrentHealth / MaxHealth) : 0f;
+
+        [Tooltip("Head bone to the top of the skull for a 1.85 m zombie, metres (grows with bigger zombies).")]
+        public float skullHeight = 0.2f;
+        Transform headBone;
+        bool headLooked;
+
+        /// Top of the head in world space: the animated head bone (so hunched and giant zombies get it
+        /// right, and it follows the head), else the top of the CharacterController.
+        public Vector3 HeadPosition
+        {
+            get
+            {
+                if (!headLooked)
+                {
+                    headLooked = true;
+                    var an = GetComponentInChildren<Animator>(true);
+                    if (an != null && an.isHuman) headBone = an.GetBoneTransform(HumanBodyBones.Head);
+                }
+                if (headBone != null)
+                {
+                    float size = controller != null ? controller.height * transform.lossyScale.y / 1.85f : 1f;
+                    return headBone.position + Vector3.up * (skullHeight * size);
+                }
+                if (controller == null) return transform.position + Vector3.up * 1.9f;
+                return transform.position + Vector3.up * ((controller.center.y + controller.height * 0.5f) * transform.lossyScale.y);
+            }
+        }
+
+        void OnEnable()
+        {
+            Active.Add(this);
+            ZombieRush.UI.ZombieOverheadUI.Ensure();
+        }
         void OnDisable() => Active.Remove(this);
 
         /// Assigned by a pool. When set, the corpse is handed back to the pool
@@ -96,9 +133,68 @@ namespace ZombieRush.Zombie
         public void TakeDamage(float amount) => TakeDamage(amount, true);
 
         /// byPlayer = false for turret hits: no crosshair hit marker for shots the player didn't fire.
-        public void TakeDamage(float amount, bool byPlayer)
+        public void TakeDamage(float amount, bool byPlayer) => TakeHit(amount, byPlayer, transform.position + Vector3.up, Vector3.zero);
+
+        Vector3 lastHitPoint, lastHitDir;
+        [Tooltip("Leave a pool of blood when it dies (off for zombies that burst into something else, e.g. poison).")]
+        public bool bleedsOnDeath = true;
+
+        /// Its network side in a match (null outside one). On a joined player's machine this zombie is a mirror
+        /// of the host's: hits are sent to the host, health and death come back from it.
+        [System.NonSerialized] public ZombieRush.Net.ZombieNet net;
+        bool Mirror => net != null && net.IsSpawned && !net.IsServer;
+
+        /// Mirror: health from the host (bars and numbers).
+        public void SetNetHealth(float current, float max)
+        {
+            var cfgMax = Config != null ? Config.maxHealth : 1f;
+            if (cfgMax > 0f && max > 0f) difficultyMultiplier = max / cfgMax;
+            CurrentHealth = current;
+        }
+
+        /// Blood and the hurt sound for a hit (without changing health).
+        public void LocalHitFx(Vector3 point, Vector3 direction)
+        {
+            var lib = SoundManager.Library;
+            if (lib != null)
+            {
+                SoundManager.PlayAt(lib.bulletImpact, transform.position + Vector3.up, 0.5f, 25f, 3);
+                if (CurrentHealth > 0f) SoundManager.PlayAt(lib.zombieHurt, transform.position + Vector3.up * 1.6f, 0.8f, 30f, 2);
+            }
+            BloodEffect.Spawn(point, direction);
+        }
+
+        /// Mirror: the host says it died. Same look as a real death; the host removes it later.
+        public void NetDie()
         {
             if (IsDead) return;
+            CurrentHealth = 0f;
+            IsDead = true;
+            Died?.Invoke(this);
+            if (ai != null) ai.enabled = false;
+            foreach (var col in colliders) col.enabled = false;
+            if (bleedsOnDeath) BloodEffect.SpawnDeath(lastHitPoint == Vector3.zero ? transform.position + Vector3.up * 0.8f : lastHitPoint, lastHitDir);
+            var lib = SoundManager.Library;
+            if (lib != null) SoundManager.PlayAt(lib.zombieDeath, transform.position + Vector3.up * 1.4f, 1f, 35f, 3);
+            Anim.TriggerDie();
+        }
+
+        /// A hit at a point on the body, by a shot travelling along `direction` (blood sprays along it).
+        public void TakeHit(float amount, bool byPlayer, Vector3 point, Vector3 direction)
+        {
+            if (IsDead) return;
+            lastHitPoint = point; lastHitDir = direction;
+
+            if (Mirror)
+            {
+                // a joined player's shot: show it here at once, the host applies the damage
+                net.ClientHit(amount, point, direction);
+                if (byPlayer) GameEvents.RaiseEnemyHit();
+                LocalHitFx(point, direction);
+                AnyDamaged?.Invoke(this, amount, byPlayer);
+                return;
+            }
+            if (net != null && net.IsSpawned && byPlayer) net.LastAttacker = net.NetworkManager.LocalClientId;
 
             CurrentHealth -= amount;
             if (byPlayer) GameEvents.RaiseEnemyHit();
@@ -108,10 +204,12 @@ namespace ZombieRush.Zombie
                 SoundManager.PlayAt(lib.bulletImpact, transform.position + Vector3.up, 0.5f, 25f, 3);
                 if (CurrentHealth > 0f) SoundManager.PlayAt(lib.zombieHurt, transform.position + Vector3.up * 1.6f, 0.8f, 30f, 2);
             }
-            BloodEffect.Spawn(transform.position + Vector3.up);
+            BloodEffect.Spawn(point, direction);
 
             if (CurrentHealth <= 0f) Die(true);
             else Anim.TriggerHit();
+            if (net != null) { net.PushHealth(); net.BroadcastHit(point, direction); }
+            AnyDamaged?.Invoke(this, amount, byPlayer);
         }
 
         /// Kills the zombie outright. reward = false drops no coins or ammo (a Bomber that
@@ -131,16 +229,18 @@ namespace ZombieRush.Zombie
             if (ai != null) ai.enabled = false;
             foreach (var col in colliders) col.enabled = false;
 
-            BloodEffect.Spawn(transform.position + Vector3.up * 0.8f);
+            if (bleedsOnDeath) BloodEffect.SpawnDeath(lastHitPoint == Vector3.zero ? transform.position + Vector3.up * 0.8f : lastHitPoint, lastHitDir);
             var lib = SoundManager.Library;
             if (lib != null) SoundManager.PlayAt(lib.zombieDeath, transform.position + Vector3.up * 1.4f, 1f, 35f, 3);
 
-            GameEvents.RaiseZombieKilled(new ZombieKilledInfo
+            var killed = new ZombieKilledInfo
             {
                 Position = transform.position,
                 Coins = reward && Random.value <= coinDropChance ? Random.Range(minCoins, maxCoins + 1) : 0,
                 Ammo = reward && Random.value <= ammoDropChance ? Random.Range(minAmmo, maxAmmo + 1) : 0,
-            });
+            };
+            if (net != null && net.IsSpawned) net.ServerDied(killed);   // the reward goes to the killer's machine
+            else GameEvents.RaiseZombieKilled(killed);
 
             deathRoutine = StartCoroutine(DeathRoutine(!Anim.TriggerDie()));
         }
@@ -153,6 +253,8 @@ namespace ZombieRush.Zombie
             yield return new WaitForSeconds(corpseDuration);
             deathRoutine = null;
 
+            if (Mirror) yield break;   // the host removes it from the match
+            if (net != null) net.ServerDespawn();
             if (ReleaseToPool != null) ReleaseToPool(this);
             else Destroy(gameObject);
         }
