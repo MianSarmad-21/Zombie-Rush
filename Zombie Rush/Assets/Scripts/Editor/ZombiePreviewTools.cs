@@ -14,31 +14,14 @@ namespace ZombieRush.EditorTools
     /// Shooting it still works (hit / death). Test zombies disappear when Play mode stops.
     public static class ZombiePreviewTools
     {
-        const string MinerPrefab = "Assets/Prefabs/Zombie_Miner.prefab";
-        const string YakuPrefab = "Assets/Prefabs/Zombie_Yaku.prefab";
+        const string WandererPrefab = "Assets/Prefabs/Zombie_Wanderer.prefab";
 
         static ZombieHealth current;
 
-        [MenuItem("Zombie Rush/Test/Spawn Miner In Front Of Me", priority = 1)]
-        static void SpawnMiner() => Spawn(MinerPrefab);
+        [MenuItem("Zombie Rush/Test/Spawn Wanderer In Front Of Me", priority = 1)]
+        static void SpawnWanderer() => Spawn(WandererPrefab);
 
-        [MenuItem("Zombie Rush/Test/Spawn Yaku In Front Of Me", priority = 2)]
-        static void SpawnYaku() => Spawn(YakuPrefab);
-
-        [MenuItem("Zombie Rush/Test/Spawn Spitter In Front Of Me", priority = 3)]
-        static void SpawnSpitter() => Spawn("Assets/Prefabs/Zombie_Spitter.prefab");
-
-        [MenuItem("Zombie Rush/Test/Spawn Bomber In Front Of Me", priority = 4)]
-        static void SpawnBomber() => Spawn("Assets/Prefabs/Zombie_Bomber.prefab");
-
-        [MenuItem("Zombie Rush/Test/Spawn Screamer In Front Of Me", priority = 5)]
-        static void SpawnScreamer() => Spawn("Assets/Prefabs/Zombie_Screamer.prefab");
-
-        [MenuItem("Zombie Rush/Test/Spawn Miner In Front Of Me", true)]
-        [MenuItem("Zombie Rush/Test/Spawn Yaku In Front Of Me", true)]
-        [MenuItem("Zombie Rush/Test/Spawn Spitter In Front Of Me", true)]
-        [MenuItem("Zombie Rush/Test/Spawn Bomber In Front Of Me", true)]
-        [MenuItem("Zombie Rush/Test/Spawn Screamer In Front Of Me", true)]
+        [MenuItem("Zombie Rush/Test/Spawn Wanderer In Front Of Me", true)]
         static bool CanSpawn() => Application.isPlaying;
 
         [MenuItem("Zombie Rush/Test/Animation: Idle", priority = 20)] static void Idle() => Speed(0f);

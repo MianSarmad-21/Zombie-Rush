@@ -4,7 +4,8 @@ using UnityEngine.SceneManagement;
 
 namespace ZombieRush.Core
 {
-    public enum GameState { Playing, Paused, GameOver }
+    /// Lobby: before a match starts (choosing Solo / Host / Join); nothing moves or spawns.
+    public enum GameState { Playing, Paused, GameOver, Lobby }
 
     public class GameManager : MonoBehaviour
     {
@@ -36,7 +37,20 @@ namespace ZombieRush.Core
             bestWaveAtStart = GameSettings.BestWave;
         }
 
-        void Start() => SetState(GameState.Playing);
+        /// Start in the lobby screen (multiplayer menu) instead of straight into play.
+        public static bool StartInLobby = true;
+
+        void Start() => SetState(StartInLobby ? GameState.Lobby : GameState.Playing);
+
+        /// The lobby screen started a match (solo or with a squad).
+        public void BeginMatch()
+        {
+            StartInLobby = false;   // a restart of this level goes straight into play
+            if (State == GameState.Lobby) SetState(GameState.Playing);
+        }
+
+        /// Pausing freezes time only when playing alone; in a squad the others keep playing.
+        public static System.Func<bool> CanFreezeTime = () => true;
 
         void OnEnable()
         {
@@ -68,6 +82,19 @@ namespace ZombieRush.Core
 
         void HandlePlayerDied()
         {
+            if (ZombieRush.Net.NetSession.InSquad)
+            {
+                // in a squad a fallen player waits for the next wave; the match ends when everyone is down
+                GameEvents.RaiseNotice("YOU ARE DOWN", "BACK IN THE NEXT WAVE");
+                return;
+            }
+            EndMatch();
+        }
+
+        /// The match is over (solo death, or the host says the whole squad is down).
+        public void EndMatch()
+        {
+            if (State == GameState.GameOver) return;
             IsNewBest = ReachedWave > bestWaveAtStart;
             GameSettings.Save();
             SetState(GameState.GameOver);
@@ -78,7 +105,8 @@ namespace ZombieRush.Core
         {
             restartAt = Time.unscaledTime + autoRestartDelay;
             yield return new WaitForSecondsRealtime(autoRestartDelay);
-            RestartLevel();
+            // in a squad only the host restarts (everyone reloads with it)
+            if (!ZombieRush.Net.NetSession.InSquad || ZombieRush.Net.NetSession.IsServer) RestartLevel();
         }
 
         void SetState(GameState newState)
@@ -86,8 +114,9 @@ namespace ZombieRush.Core
             State = newState;
 
             // Paused really freezes the game: wave timers, spawning and rising zombies all stop.
-            Time.timeScale = newState == GameState.Paused ? 0f : 1f;
-            AudioListener.pause = newState == GameState.Paused;
+            bool freeze = newState == GameState.Paused && CanFreezeTime();
+            Time.timeScale = freeze ? 0f : 1f;
+            AudioListener.pause = freeze;
 
             GameInput.ClearQueued();
             ApplyCursor();
@@ -115,12 +144,27 @@ namespace ZombieRush.Core
         public void RestartLevel()
         {
             Time.timeScale = 1f;
+            if (ZombieRush.Net.NetSession.InSquad)
+            {
+                // the host reloads the level for the whole squad; a joined player waits for the host
+                if (ZombieRush.Net.NetSession.IsServer) ZombieRush.Net.NetSession.ReloadLevelForAll();
+                else GameEvents.RaiseNotice("WAITING FOR THE HOST", "THE HOST RESTARTS THE MATCH");
+                return;
+            }
+            ZombieRush.Net.NetSession.Shutdown();   // solo: a fresh local match after the reload
+            StartInLobby = false;
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
         public void QuitToMenu()
         {
             GameSettings.Save();
+            // leave the match and go back to the first screen (Solo / Host / Join)
+            ZombieRush.Net.NetSession.Leave();
+            StartInLobby = true;
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            return;
             if (string.IsNullOrEmpty(mainMenuScene) || !Application.CanStreamedLevelBeLoaded(mainMenuScene))
             {
                 RestartLevel();

@@ -11,7 +11,7 @@ namespace ZombieRush.EditorTools
     /// raised behind the head, eyes on the horizon) and the Solver finds the humanoid muscle values
     /// that produce them on the Miner's own skeleton, so every clip is smooth, stays inside the
     /// rig's joint limits and can never flip, and the planted foot stays on the ground. Needs the
-    /// avatar built from the bind pose straightened into a T-pose (see MinerZombieTools).
+    /// avatar built from the bind pose straightened into a T-pose (straightened by the setup tool).
     static class MinerAnimationAuthoring
     {
         const float Fps = 30f;
@@ -533,7 +533,7 @@ namespace ZombieRush.EditorTools
             { State = state; Name = name; Length = length; Loop = loop; Pose = pose; }
         }
 
-        /// Bakes any character's clip set (see YakuAnimationAuthoring) on its own skeleton into `folder`.
+        /// Bakes any character's clip set (see SurvivorAnimationAuthoring) on its own skeleton into `folder`.
         internal static Dictionary<string, AnimationClip> BakeSet(GameObject model, Avatar avatar, string folder, IEnumerable<ClipSpec> clips)
         {
             var solver = new Solver(model, avatar);

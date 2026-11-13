@@ -63,6 +63,11 @@ namespace ZombieRush.Weapons
         float flashTimer;
 
         static readonly int ShootHash = Animator.StringToHash("Shoot");
+
+        /// Its network side in a match. On a joined player's machine the turret is a copy of the host's:
+        /// no aiming or shooting of its own; head, shots and sinking come from the host.
+        [System.NonSerialized] public ZombieRush.Net.TurretNet net;
+        bool Mirror => net != null && net.IsSpawned && !net.IsServer;
         static readonly RaycastHit[] hits = new RaycastHit[8];
 
         /// Called by TurretDeployer right after Instantiate.
@@ -151,7 +156,12 @@ namespace ZombieRush.Weapons
                 {
                     float k = Mathf.Clamp01(stateTime / 0.8f);
                     transform.position = groundPos - Vector3.up * sinkDepth * k * k;
-                    if (k >= 1f) { state = State.Gone; Destroy(gameObject); }
+                    if (k >= 1f)
+                    {
+                        state = State.Gone;
+                        if (net != null && net.IsSpawned) { if (net.IsServer) net.ServerRemove(); }   // the host removes it everywhere
+                        else Destroy(gameObject);
+                    }
                     break;
                 }
             }
@@ -163,6 +173,7 @@ namespace ZombieRush.Weapons
             state = State.Sinking;
             stateTime = 0f;
             target = null;
+            if (net != null) net.BroadcastSink();
             var lib = SoundManager.Library;
             if (lib != null) SoundManager.PlayAt(lib.turretPowerDown, groundPos + Vector3.up, 1f, 30f);
         }
@@ -175,6 +186,7 @@ namespace ZombieRush.Weapons
 
         void UpdateCombat()
         {
+            if (Mirror) { yaw = net.Yaw; return; }
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
 
             retargetTimer -= Time.deltaTime;
@@ -200,6 +212,8 @@ namespace ZombieRush.Weapons
 
         void LateUpdate()
         {
+            if (Mirror) yaw = Mathf.LerpAngle(yaw, net.Yaw, 1f - Mathf.Exp(-20f * Time.deltaTime));
+            else if (net != null) net.PushYaw(yaw);
             if (head != null) head.rotation = Quaternion.AngleAxis(yaw, Vector3.up) * headRest;
         }
 
@@ -265,15 +279,28 @@ namespace ZombieRush.Weapons
             for (int h = 0; h < n; h++)
             {
                 if (hits[h].collider.transform.IsChildOf(transform)) continue;
+                if (ZombieRush.World.ShootThrough.Is(hits[h].collider)) continue; // base walls: shoot over them
                 if (hits[h].distance < nearest) { nearest = hits[h].distance; hitCol = hits[h].collider; end = hits[h].point; }
             }
             if (hitCol != null)
             {
                 var zombie = hitCol.GetComponentInParent<ZombieHealth>();
-                if (zombie != null) zombie.TakeDamage(damage, false);
+                if (zombie != null) zombie.TakeHit(damage, false, end, (end - from).normalized);
                 else hitCol.GetComponentInParent<IDamageable>()?.TakeDamage(damage);
             }
 
+            if (net != null) net.BroadcastShot(i, end);
+            ShotFx(i, end);
+        }
+
+        /// The look of one shot from muzzle i to `end`: tracer, flash, the Shoot animation and the sound.
+        public void ShotFx(int i, Vector3 end)
+        {
+            if (head == null) return;
+            if (tracers == null) BuildFx();
+            int count = muzzles != null && muzzles.Length > 0 ? muzzles.Length : 1;
+            i = Mathf.Clamp(i, 0, count - 1);
+            Vector3 from = muzzles != null && muzzles.Length > 0 && muzzles[i] != null ? muzzles[i].position : head.position;
             if (tracers != null && i < tracers.Length)
             {
                 tracers[i].SetPosition(0, from);

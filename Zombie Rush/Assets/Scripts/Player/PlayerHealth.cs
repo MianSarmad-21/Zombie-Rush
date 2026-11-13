@@ -13,7 +13,9 @@ namespace ZombieRush.Player
         /// Every player in the match, alive or dead. Zombies pick their targets from here.
         public static readonly List<PlayerHealth> All = new List<PlayerHealth>();
 
+        [Tooltip("Max health on wave 1; later waves add WaveBalanceConfig.playerHealthPerWave.")]
         public float maxHealth = 100f;
+        float baseMaxHealth;
         [Header("Armor")]
         public float maxArmor = 100f;
         [Tooltip("Share of incoming damage the armor soaks up while it lasts.")]
@@ -26,9 +28,22 @@ namespace ZombieRush.Player
         /// Inside the safe base: zombies can't reach or hurt this player.
         public bool InSafeBase => SafeBase.Instance != null && SafeBase.Instance.Contains(transform.position);
 
+        /// Set on a teammate's copy (multiplayer): damage dealt to the copy (on the host) is sent to the
+        /// player who owns it instead of being applied here. Null on the local player.
+        public System.Action<float> forwardDamage;
+        public bool IsRemoteCopy => forwardDamage != null;
+
+        /// A teammate's copy: mirrors the owner's health and death.
+        public void SetRemoteState(float health, float max, bool dead)
+        {
+            maxHealth = max; CurrentHealth = health; IsDead = dead;
+        }
+
         void Awake()
         {
+            if (forwardDamage == null && GetComponent<PlayerViewSwitcher>() is PlayerViewSwitcher pv && pv.remote) { CurrentHealth = maxHealth; return; }
             if (Instance == null) Instance = this;
+            baseMaxHealth = maxHealth;
             CurrentHealth = maxHealth;
         }
 
@@ -37,7 +52,7 @@ namespace ZombieRush.Player
             if (Instance == this) Instance = null;
         }
 
-        // The player always begins a wave at full health.
+        // The player always begins a wave at full health, and gains max health as the waves go on.
         void OnEnable()
         {
             if (!All.Contains(this)) All.Add(this);
@@ -56,7 +71,30 @@ namespace ZombieRush.Player
             RaiseArmor();
         }
 
-        void HandleWaveAnnounced(int wave) => FullHeal();
+        /// Back on its feet with full health (a squad member who fell, at the next wave).
+        public void Revive()
+        {
+            if (!IsDead) return;
+            IsDead = false;
+            CurrentHealth = maxHealth;
+            var sb = SafeBase.Instance;
+            if (sb != null)
+            {
+                var cc = GetComponent<CharacterController>();
+                if (cc != null) cc.enabled = false;
+                transform.position = sb.Center + Vector3.up * 0.1f;
+                if (cc != null) cc.enabled = true;
+            }
+            RaiseHealth();
+            if (this == Instance) GameEvents.RaiseNotice("BACK IN THE FIGHT", "");
+        }
+
+        void HandleWaveAnnounced(int wave)
+        {
+            if (IsDead && forwardDamage == null && ZombieRush.Net.NetSession.InSquad) Revive();
+            maxHealth = WaveScaling.Balance.PlayerMaxHealth(baseMaxHealth, wave);
+            FullHeal();
+        }
 
         public void FullHeal()
         {
@@ -68,6 +106,7 @@ namespace ZombieRush.Player
         public void TakeDamage(float amount)
         {
             if (IsDead || amount <= 0f || InSafeBase) return;
+            if (forwardDamage != null) { forwardDamage(amount); return; }
 
             if (CurrentArmor > 0f)
             {

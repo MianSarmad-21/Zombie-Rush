@@ -32,7 +32,7 @@ namespace ZombieRush.EditorTools
         const string RifleDataPath = "Assets/Data/Weapon_Rifle.asset";
 
         const string PistolModelPath = "Assets/Nokobot/Modern Guns - Handgun/_Prefabs/Handgun Black/M1911 Handgun_Black.prefab";
-        const string MuzzleFlashPath = "Assets/Nokobot/Modern Guns - Handgun/Effects/MuzzleFlash.prefab";
+        internal const string MuzzleFlashPath = "Assets/Nokobot/Modern Guns - Handgun/Effects/MuzzleFlash.prefab";
         const string RifleModelPath = "Assets/DelthorGames/MCX/Prefabs/MCX.prefab";
         const string TurretModelPath = "Assets/Sci-fi turrets/Prefabs/Canon_lvl_3.prefab";
 
@@ -168,7 +168,7 @@ namespace ZombieRush.EditorTools
             Debug.Log("Zombie Rush: turret unlocked for testing.");
         }
 
-        static bool Named(WeaponBase w, string key)
+        internal static bool Named(WeaponBase w, string key)
         {
             string n = (w.name + " " + (w.data != null ? w.data.name + " " + w.data.weaponName : "")).ToLowerInvariant();
             return n.Contains(key);
@@ -610,7 +610,7 @@ namespace ZombieRush.EditorTools
         }
 
         /// Additive URP particle copy of the pack's muzzle flash material.
-        static Material ParticleToUrp(Material src)
+        internal static Material ParticleToUrp(Material src)
         {
             if (src == null) return null;
             if (src.shader != null && src.shader.name.StartsWith("Universal Render Pipeline")) return src;

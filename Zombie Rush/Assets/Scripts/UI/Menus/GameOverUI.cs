@@ -23,6 +23,8 @@ namespace ZombieRush.UI
         public Image[] stars;
         public Sprite starFull;
         public Sprite starEmpty;
+        public Color bestColor = UITheme.Bone;
+        public Color newBestColor = UITheme.Gold;
         [Tooltip("Wave needed for each star (ascending).")]
         public int[] starWaves = { 1, 3, 5, 8, 12 };
 
@@ -67,7 +69,7 @@ namespace ZombieRush.UI
             {
                 bool isNew = gm != null && gm.IsNewBest;
                 bestText.text = isNew ? $"{GameSettings.BestWave}  NEW!" : GameSettings.BestWave.ToString();
-                bestText.color = isNew ? UITheme.Gold : UITheme.Bone;
+                bestText.color = isNew ? newBestColor : bestColor;
             }
             if (countdownText != null) countdownText.text = "";
 

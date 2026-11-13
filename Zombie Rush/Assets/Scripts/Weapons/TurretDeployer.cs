@@ -58,14 +58,34 @@ namespace ZombieRush.Weapons
             if (turretPrefab == null) { Debug.LogWarning("[Zombie Rush] TurretDeployer has no turret prefab - run Zombie Rush > Weapons > Install Guns + Turret."); return; }
             if (!FindSpot(out var spot)) { Deny("NO ROOM HERE", "FACE AN OPEN PIECE OF GROUND"); return; }
 
-            Prune();
-            if (active.Count >= maxActive) { active[0].Retire(); active.RemoveAt(0); }
-
             Vector3 fwd = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
-            var turret = Instantiate(turretPrefab);
-            turret.Deploy(spot, Quaternion.LookRotation(fwd, Vector3.up));
-            active.Add(turret);
+            var rot = Quaternion.LookRotation(fwd, Vector3.up);
             readyAt = Time.time + cooldown;
+            if (ZombieRush.Net.NetSession.IsRunning && ZombieRush.Net.MatchNet.Instance != null)
+            {
+                // in a match the host places it for everyone
+                ZombieRush.Net.MatchNet.Instance.RequestTurret(spot, rot);
+                return;
+            }
+            Place(turretPrefab, spot, rot, active, maxActive);
+        }
+
+        /// Puts a turret down at `spot`, retiring the oldest of `owned` past `max`. With a match running
+        /// (host only) it is spawned for everyone.
+        public static Turret Place(Turret prefab, Vector3 spot, Quaternion rot, List<Turret> owned, int max)
+        {
+            owned.RemoveAll(t => t == null || t.Expired);
+            if (owned.Count >= max) { owned[0].Retire(); owned.RemoveAt(0); }
+            var turret = Instantiate(prefab);
+            turret.Deploy(spot, rot);
+            var tn = turret.GetComponent<ZombieRush.Net.TurretNet>();
+            if (tn != null && Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsServer)
+            {
+                tn.ServerSetup(spot, rot);
+                tn.NetworkObject.Spawn(true);
+            }
+            owned.Add(turret);
+            return turret;
         }
 
         void Deny(string title, string subtitle)

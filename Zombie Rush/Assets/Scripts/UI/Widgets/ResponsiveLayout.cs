@@ -8,10 +8,13 @@ namespace ZombieRush.UI
     public struct RectPose
     {
         public Vector2 anchorMin, anchorMax, pivot, anchoredPosition;
+        [Tooltip("Uniform scale in this pose; 0 leaves the scale alone.")]
+        public float scale;
 
         public static RectPose Of(RectTransform rt) => new RectPose
         {
             anchorMin = rt.anchorMin, anchorMax = rt.anchorMax, pivot = rt.pivot, anchoredPosition = rt.anchoredPosition,
+            scale = rt.localScale.x,
         };
 
         public void ApplyTo(RectTransform rt)
@@ -20,6 +23,7 @@ namespace ZombieRush.UI
             rt.anchorMax = anchorMax;
             rt.pivot = pivot;
             rt.anchoredPosition = anchoredPosition;
+            if (scale > 0f) rt.localScale = Vector3.one * scale;
         }
     }
 

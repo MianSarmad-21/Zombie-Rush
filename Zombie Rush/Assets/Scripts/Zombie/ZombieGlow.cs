@@ -3,7 +3,7 @@ using UnityEngine;
 namespace ZombieRush.Zombie
 {
     /// Drives the green zombie glow (the "Zombie Rush/Zombie Rim Glow" material the setup tool
-    /// adds to every zombie): a slow sickly pulse, a bright flare while frenzied by a Screamer,
+    /// adds to every zombie): a slow sickly pulse
     /// and a fade-out when the zombie dies. One property block per renderer, no material copies.
     [RequireComponent(typeof(ZombieHealth))]
     public class ZombieGlow : MonoBehaviour
@@ -13,8 +13,6 @@ namespace ZombieRush.Zombie
         [Tooltip("How much the glow breathes in and out (0 = steady).")]
         [Range(0f, 1f)] public float pulse = 0.25f;
         public float pulseSpeed = 1.6f;
-        [Tooltip("Glow strength while frenzied by a Screamer's shriek.")]
-        public float frenzyIntensity = 2.2f;
         [Tooltip("Seconds for the glow to die away after the zombie does.")]
         public float deathFade = 1.2f;
 
@@ -61,8 +59,7 @@ namespace ZombieRush.Zombie
             }
             else
             {
-                bool frenzied = ai != null && ai.FrenzyMultiplier > 1.01f;
-                target = (frenzied ? frenzyIntensity : intensity) * (1f + pulse * Mathf.Sin(phase * Mathf.PI * 2f) * 0.5f);
+                target = intensity * (1f + pulse * Mathf.Sin(phase * Mathf.PI * 2f) * 0.5f);
                 current = Mathf.MoveTowards(current, target, Time.deltaTime * 4f);
             }
 

@@ -1,0 +1,46 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 724c598fa3465504f92af6f62f3987d0, type: 3}
+  m_Name: ZombieHudConfig
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Data.ZombieHudConfig
+  showAtFullHealth: 1
+  maxDistance: 40
+  hideBehindWalls: 1
+  wallCheckInterval: 0.15
+  fadeSpeed: 8
+  barSize: {x: 120, y: 14}
+  border: 2
+  headClearance: 0.12
+  bigZombieHealth: 300
+  bigBarWidthScale: 1.6
+  nearDistance: 6
+  farDistance: 35
+  farScale: 0.55
+  backColor: {r: 0.03, g: 0.03, b: 0.04, a: 0.75}
+  fillColor: {r: 0.82, g: 0.13, b: 0.12, a: 1}
+  chipColor: {r: 0.93, g: 0.9, b: 0.85, a: 0.9}
+  chipDelay: 0.35
+  chipSpeed: 1.2
+  showTurretDamage: 0
+  mergeWindow: 0.05
+  popupDuration: 0.8
+  popupRise: 70
+  popupScatter: 28
+  popupPunch: 1.6
+  popupPunchTime: 0.12
+  popupFadeStart: 0.55
+  fontSize: 34
+  killFontSize: 44
+  hitColor: {r: 0.97, g: 0.95, b: 0.9, a: 1}
+  killColor: {r: 0.96, g: 0.72, b: 0.24, a: 1}
+  maxBars: 30
+  maxPopups: 30

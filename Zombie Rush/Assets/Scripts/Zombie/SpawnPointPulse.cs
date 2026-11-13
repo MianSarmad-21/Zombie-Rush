@@ -16,17 +16,22 @@ namespace ZombieRush.Zombie
         MaterialPropertyBlock block;
         Color baseColor;
 
-        void Awake()
+        void Awake() => Init();
+
+        /// Also run from Update: a script reload during Play clears these fields without calling Awake again.
+        bool Init()
         {
             rend = GetComponent<Renderer>();
             block = new MaterialPropertyBlock();
             var mat = rend != null ? rend.sharedMaterial : null;
-            if (mat == null || !mat.HasProperty(BaseColorId)) { enabled = false; return; }
+            if (mat == null || !mat.HasProperty(BaseColorId)) { enabled = false; return false; }
             baseColor = mat.GetColor(BaseColorId);
+            return true;
         }
 
         void Update()
         {
+            if ((block == null || rend == null) && !Init()) return;
             float t = (Mathf.Sin(Time.time * speed) + 1f) * 0.5f;
             var c = baseColor;
             c.a = Mathf.Lerp(minAlpha, maxAlpha, t);

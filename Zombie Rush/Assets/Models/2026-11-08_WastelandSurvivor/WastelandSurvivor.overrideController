@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!221 &22100000
+AnimatorOverrideController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: WastelandSurvivor
+  m_Controller: {fileID: 9100000, guid: 5661e7fc6d426a446bb4130abc64d26d, type: 2}
+  m_Clips:
+  - m_OriginalClip: {fileID: 7400000, guid: 80d3860210229e749afa5ca08b760f6f, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: c6789dc39d38ce7418d0c45753f3c1ea, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: 589c8df4617b58443856cab4d33e75d7, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: 84c5f57d8a4557340b75c11880aceb31, type: 2}
+    m_OverrideClip: {fileID: -1610863427237328480, guid: 69bdf8e6e62406b46ac4cc403a559edb, type: 3}
+  - m_OriginalClip: {fileID: 7400000, guid: f209add18413cc14490e9bf964ecf558, type: 2}
+    m_OverrideClip: {fileID: -9121621101649706817, guid: 69bdf8e6e62406b46ac4cc403a559edb, type: 3}
+  - m_OriginalClip: {fileID: 7400000, guid: a88f819e2f1b54a428996b3a559b74f0, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: f30afefb704eea74b91f28d7145aa2c5, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: 930815962d985794189d439844f4d593, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: 3a1396d8bffff484ea7d9bb8ea707b40, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: 7a85b6979d46d8e4da8ebf242b24bc49, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: 1c3aaebb0c17f2749ada6b81c6289089, type: 2}
+    m_OverrideClip: {fileID: 0}
+  - m_OriginalClip: {fileID: 7400000, guid: 55f575f3df188d543943ac499d60cd63, type: 2}
+    m_OverrideClip: {fileID: 0}

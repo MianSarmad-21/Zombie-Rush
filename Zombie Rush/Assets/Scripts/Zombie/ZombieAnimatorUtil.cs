@@ -8,6 +8,7 @@ namespace ZombieRush.Zombie
         public static readonly int AttackParam = Animator.StringToHash("Attack");
         public static readonly int HitParam = Animator.StringToHash("Hit");
         public static readonly int DieParam = Animator.StringToHash("Die");
+        public static readonly int SpitParam = Animator.StringToHash("Spit");
 
         /// Allocates (Animator.parameters copies an array), so only call once and cache the result.
         public static bool Has(Animator animator, int nameHash, AnimatorControllerParameterType type)
@@ -31,8 +32,14 @@ namespace ZombieRush.Zombie
         public bool HasAttack { get; private set; }
         public bool HasHit { get; private set; }
         public bool HasDie { get; private set; }
+        public bool HasSpit { get; private set; }
 
         public ZombieAnimatorCache(GameObject owner) => this.owner = owner;
+
+        /// Set by the host's network side: one-off animations (ZombieNet.AnimAttack/Hit/Spit) and the
+        /// walk/run speed are passed on to everyone else.
+        public System.Action<byte> networkTap;
+        public System.Action<float> speedTap;
 
         /// Lazy because ZombieVisual may assign the controller in its own Awake,
         /// which can run after ours.
@@ -48,16 +55,19 @@ namespace ZombieRush.Zombie
             HasAttack = ZombieAnimatorUtil.Has(Animator, ZombieAnimatorUtil.AttackParam, AnimatorControllerParameterType.Trigger);
             HasHit = ZombieAnimatorUtil.Has(Animator, ZombieAnimatorUtil.HitParam, AnimatorControllerParameterType.Trigger);
             HasDie = ZombieAnimatorUtil.Has(Animator, ZombieAnimatorUtil.DieParam, AnimatorControllerParameterType.Trigger);
+            HasSpit = ZombieAnimatorUtil.Has(Animator, ZombieAnimatorUtil.SpitParam, AnimatorControllerParameterType.Trigger);
             return true;
         }
 
         public void SetSpeed(float value)
         {
             if (Resolve() && HasSpeed) Animator.SetFloat(ZombieAnimatorUtil.SpeedParam, value);
+            speedTap?.Invoke(value);
         }
 
-        public bool TriggerAttack() => Trigger(HasAttack, ZombieAnimatorUtil.AttackParam);
-        public bool TriggerHit() => Trigger(HasHit, ZombieAnimatorUtil.HitParam);
+        public bool TriggerAttack() { networkTap?.Invoke(1); return Trigger(HasAttack, ZombieAnimatorUtil.AttackParam); }
+        public bool TriggerHit() { networkTap?.Invoke(2); return Trigger(HasHit, ZombieAnimatorUtil.HitParam); }
+        public bool TriggerSpit() { networkTap?.Invoke(3); return Trigger(HasSpit, ZombieAnimatorUtil.SpitParam); }
 
         static readonly int DieState = Animator.StringToHash("Die");
 
@@ -69,6 +79,7 @@ namespace ZombieRush.Zombie
             if (!Resolve()) return false;
             if (HasHit) Animator.ResetTrigger(ZombieAnimatorUtil.HitParam);
             if (HasAttack) Animator.ResetTrigger(ZombieAnimatorUtil.AttackParam);
+            if (HasSpit) Animator.ResetTrigger(ZombieAnimatorUtil.SpitParam);
             if (Animator.HasState(0, DieState))
             {
                 Animator.CrossFadeInFixedTime(DieState, 0.1f, 0);

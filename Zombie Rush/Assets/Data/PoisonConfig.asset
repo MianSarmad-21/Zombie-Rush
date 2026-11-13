@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b157bd45a13bf54aa800c46316ca91f, type: 3}
+  m_Name: PoisonConfig
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Data.PoisonConfig
+  rangedOnly: 1
+  holdRange: 10
+  spitMinRange: 0
+  spitMaxRange: 15
+  spitCooldown: 3.2
+  firstSpitDelay: 1.5
+  releaseTime: 1
+  spitDuration: 1.8
+  flightTime: {x: 0.55, y: 1.15}
+  lead: 0.6
+  directDamage: 12
+  directRadius: 0.9
+  globSize: 0.22
+  puddleRadius: 1.6
+  puddleDuration: 7
+  puddleDamagePerSecond: 7
+  burstDelay: 1.4
+  cloudRadius: 3.2
+  cloudDuration: 6
+  cloudDamagePerSecond: 9
+  acidColor: {r: 0.55, g: 1, b: 0.15, a: 1}
+  cloudColor: {r: 0.4, g: 0.85, b: 0.15, a: 0.35}
+  damageTick: 0.5

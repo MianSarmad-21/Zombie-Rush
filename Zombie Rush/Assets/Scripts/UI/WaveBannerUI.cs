@@ -14,6 +14,11 @@ namespace ZombieRush.UI
         public Text titleText;
         public Text subtitleText;
         public Text detailText;
+        [Tooltip("Optional backing behind the subtitle: when set, it takes the subtitle colour instead of the text.")]
+        public Graphic subtitleBack;
+        public Color incomingColor = UITheme.Blood;
+        public Color noticeColor = UITheme.Cyan;
+        public Color clearedColor = UITheme.Cyan;
         public float incomingHold = 2.6f;
         public float noticeHold = 2.4f;
         public float fadeSpeed = 5f;
@@ -47,7 +52,7 @@ namespace ZombieRush.UI
 
         void HandleWaveAnnounced(int wave)
         {
-            Show($"WAVE {wave}", "INCOMING", UITheme.Blood, incomingHold);
+            Show($"WAVE {wave}", "INCOMING", incomingColor, incomingHold);
             showingWave = true;
             countdown = 0f;
             SetDetail("");
@@ -57,14 +62,14 @@ namespace ZombieRush.UI
         void HandleNotice(string title, string subtitle)
         {
             if (enabled && holdTimer > 0f && showingWave) return;
-            Show(title, subtitle, UITheme.Cyan, noticeHold);
+            Show(title, subtitle, noticeColor, noticeHold);
             showingWave = false;
             SetDetail("");
         }
 
         void HandleWaveCompleted(int wave, float breather)
         {
-            Show($"WAVE {wave}", "CLEARED", UITheme.Cyan, Mathf.Max(0.5f, breather - 0.25f));
+            Show($"WAVE {wave}", "CLEARED", clearedColor, Mathf.Max(0.5f, breather - 0.25f));
             showingWave = true;
             countdown = breather;
             lastCountdownShown = -1;
@@ -73,7 +78,13 @@ namespace ZombieRush.UI
         void Show(string title, string subtitle, Color subtitleColor, float hold)
         {
             if (titleText != null) titleText.text = title;
-            if (subtitleText != null) { subtitleText.text = subtitle; subtitleText.color = subtitleColor; }
+            if (subtitleText != null)
+            {
+                subtitleText.text = subtitle;
+                // with a backing (an ink stamp) the colour goes on the backing, the words stay readable on it
+                if (subtitleBack != null) { var c = subtitleColor; c.a = subtitleBack.color.a; subtitleBack.color = c; }
+                else subtitleText.color = subtitleColor;
+            }
             holdTimer = hold;
             slam = 1f;
             enabled = true;

@@ -14,7 +14,11 @@ namespace ZombieRush.Player
         [Tooltip("How many weapons (from the top of the list) the player starts with. The rest are picked up from the racks in the safe base.")]
         public int startingWeapons = 1;
 
+        [Tooltip("Seconds after changing weapon before it can fire or reload (the draw animation).")]
+        public float equipTime = 0.4f;
+
         int currentIndex;
+        float readyAt;
         bool[] unlocked;
         PlayerInventory inventory;
 
@@ -24,6 +28,11 @@ namespace ZombieRush.Player
         bool lastReloading;
 
         public WeaponBase CurrentWeapon => weapons != null && weapons.Length > 0 ? weapons[currentIndex] : null;
+        /// Index of the gun in hand.
+        public int CurrentIndex => currentIndex;
+
+        [Tooltip("A teammate's copy (multiplayer): no input, no ammo pickups, no HUD events; the network picks the gun.")]
+        public bool remote;
 
         void Awake()
         {
@@ -41,11 +50,13 @@ namespace ZombieRush.Player
         void OnEnable() => GameEvents.OnZombieKilled += HandleZombieKilled;
         void OnDisable() => GameEvents.OnZombieKilled -= HandleZombieKilled;
 
-        void Start() => RaiseAmmoStatus(force: true);
+        void Start() { if (!remote) RaiseAmmoStatus(force: true); }
 
         void Update()
         {
+            if (remote) return;
             if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
+            if (PlayerHealth.Instance != null && PlayerHealth.Instance.IsDead) return;
             if (weapons.Length == 0) return;
 
             int slot = GameInput.WeaponSlotPressed(weapons.Length);
@@ -55,8 +66,10 @@ namespace ZombieRush.Player
             var weapon = CurrentWeapon;
             if (weapon != null)
             {
-                if (GameInput.FireHeld) weapon.TryUse();
-                if (GameInput.ConsumeReload()) weapon.TryReload();
+                // The gun is being drawn: no shooting or reloading until it is up.
+                bool ready = Time.time >= readyAt;
+                if (GameInput.FireHeld && ready) weapon.TryUse();
+                if (GameInput.ConsumeReload() && ready) weapon.TryReload();
             }
 
             RaiseAmmoStatus(force: false);
@@ -66,6 +79,7 @@ namespace ZombieRush.Player
         {
             if (index < 0 || index >= weapons.Length || index == currentIndex || !unlocked[index]) return;
             currentIndex = index;
+            readyAt = Time.time + equipTime;
             UpdateWeaponVisibility();
             RaiseAmmoStatus(force: true);
         }
@@ -117,6 +131,7 @@ namespace ZombieRush.Player
 
         void RaiseAmmoStatus(bool force)
         {
+            if (remote) return;
             var weapon = CurrentWeapon;
             if (weapon == null || weapon.data == null) return;
 
@@ -149,6 +164,7 @@ namespace ZombieRush.Player
         /// is carrying, not just the equipped one.
         void HandleZombieKilled(ZombieKilledInfo info)
         {
+            if (remote) return;
             if (info.Ammo <= 0) return;
             foreach (var weapon in weapons)
                 if (weapon != null && weapon.data != null) inventory.AddReserveAmmo(weapon.data, info.Ammo);

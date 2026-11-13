@@ -16,6 +16,10 @@ namespace ZombieRush.Player
         public float walkSpeed = 5f;
         [Tooltip("Ground speed that counts as running (blend 2). Taken from the PlayerController when there is one.")]
         public float runSpeed = 8f;
+        [Tooltip("How much further out diagonal movement is pushed in the blend tree, so it mixes the two nearest clips without idle.")]
+        public float diagonalPush = 0.15f;
+        [Tooltip("Floor this close under the feet still counts as standing (bumpy ground), metres.")]
+        public float groundProbe = 0.45f;
         [Tooltip("Smoothing of the movement blend, seconds.")]
         public float blendDamping = 0.12f;
         [Tooltip("How fast the upper-body action layer fades in and out (weight per second).")]
@@ -50,6 +54,7 @@ namespace ZombieRush.Player
         const float CoyoteTime = 0.15f; // isGrounded flickers on slopes and steps: don't flash the air pose
 
         public Animator Animator => animator;
+        public bool IsDead => dead;
 
         void Awake()
         {
@@ -64,7 +69,7 @@ namespace ZombieRush.Player
         {
             if (body != null)
             {
-                if (body.isGrounded) lastGrounded = Time.time;
+                if (body.isGrounded || NearGround()) lastGrounded = Time.time;
                 Drive(body.velocity, player != null && player.IsCrouching, Time.time - lastGrounded < CoyoteTime);
             }
 
@@ -76,6 +81,16 @@ namespace ZombieRush.Player
             }
         }
 
+        /// Floor close under the feet while not jumping up. Walking over bumpy rubble the controller
+        /// briefly loses contact; without this the body would drop into the falling pose mid-stride.
+        bool NearGround()
+        {
+            if (body.velocity.y > 1.5f) return false; // taking off
+            float r = body.radius * 0.9f;
+            Vector3 start = body.transform.position + Vector3.up * (r + 0.05f);
+            return Physics.SphereCast(start, r, Vector3.down, out _, groundProbe + 0.05f, ~0, QueryTriggerInteraction.Ignore);
+        }
+
         /// Feeds the movement blend: world velocity, crouching, standing on the ground.
         public void Drive(Vector3 worldVelocity, bool crouching, bool grounded)
         {
@@ -84,7 +99,17 @@ namespace ZombieRush.Player
             float speed = local.magnitude;
             float amount = speed <= walkSpeed ? speed / Mathf.Max(0.01f, walkSpeed)
                                               : 1f + (speed - walkSpeed) / Mathf.Max(0.01f, runSpeed - walkSpeed);
-            Vector3 dir = speed > 0.05f ? local / speed * Mathf.Min(amount, 2f) : Vector3.zero;
+            Vector3 dir = Vector3.zero;
+            if (speed > 0.05f)
+            {
+                Vector3 unit = local / speed;
+                // The blend tree only has straight clips (forward, back, strafes). Between two of them
+                // it leaks some idle in, which makes the feet slide; pushing diagonals a little further
+                // out removes that. sin(2 * angle) is 0 on the straight lines and 1 on the diagonals.
+                float diag = 2f * Mathf.Abs(unit.x * unit.z);
+                float boost = amount <= 1f ? 1f + diagonalPush * diag : 1f;
+                dir = unit * Mathf.Min(amount, 2f) * boost;
+            }
             animator.SetFloat(MoveX, dir.x, blendDamping, Time.deltaTime);
             animator.SetFloat(MoveY, dir.z, blendDamping, Time.deltaTime);
             animator.SetBool(Crouch, crouching);
@@ -120,7 +145,8 @@ namespace ZombieRush.Player
 
         void OnAnimatorIK(int layer)
         {
-            float w = leftHandTarget != null && !dead ? leftHandWeight : 0f;
+            if (leftHandTarget == null) return; // hands left to WeaponAimRig, if there is one
+            float w = !dead ? leftHandWeight : 0f;
             animator.SetIKPositionWeight(AvatarIKGoal.LeftHand, w);
             animator.SetIKRotationWeight(AvatarIKGoal.LeftHand, w);
             if (w <= 0f) return;
