@@ -88,12 +88,25 @@ namespace ZombieRush.Net
         {
             var nm = Manager();
             var t = nm.GetComponent<UnityTransport>();
-            t.SetConnectionData("127.0.0.1", NetConfig.Current != null ? NetConfig.Current.directPort : (ushort)7777, "127.0.0.1");
+            // solo is local only: any free port will do, so a busy 7777 (another app, or a socket an earlier
+            // session never released) can't stop the game from starting
+            t.SetConnectionData("127.0.0.1", FreeLocalPort(), "127.0.0.1");
             Mode = NetMode.Solo;
             bool ok = nm.StartHost();
             Say(ok ? "Solo started." : "Could not start the game.");
             if (!ok) Mode = NetMode.None;
             return ok;
+        }
+
+        /// A UDP port nothing on this machine is using (asks the OS for one), or the configured port if that fails.
+        static ushort FreeLocalPort()
+        {
+            try
+            {
+                using (var probe = new System.Net.Sockets.UdpClient(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0)))
+                    return (ushort)((System.Net.IPEndPoint)probe.Client.LocalEndPoint).Port;
+            }
+            catch (System.Exception) { return NetConfig.Current != null ? NetConfig.Current.directPort : (ushort)7777; }
         }
 
         /// Direct host (same network or testing on one PC): listens on every address.

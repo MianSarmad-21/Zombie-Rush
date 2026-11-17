@@ -13,8 +13,12 @@ namespace ZombieRush.Player
 
         [Header("Move")]
         public float walkSpeed = 4f;
-        public float sprintSpeed = 8f;
+        public float sprintSpeed = 6.5f;
         public float crouchSpeed = 2.5f;
+        [Tooltip("Side-step speed as a share of the move speed (A/D).")]
+        [Range(0.5f, 1f)] public float strafeSpeedFactor = 0.75f;
+        [Tooltip("Backpedal speed as a share of the move speed (S).")]
+        [Range(0.5f, 1f)] public float backSpeedFactor = 0.75f;
         public float jumpHeight = 1.2f;
         public float gravity = -20f;
 
@@ -71,7 +75,40 @@ namespace ZombieRush.Player
         void ClampPitch()
         {
             pitch = Mathf.Clamp(pitch, pitchOverride ? pitchMin : lookPitchMin, pitchOverride ? pitchMax : lookPitchMax);
-            if (cameraPivot != null) cameraPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+            ApplyPivot();
+        }
+
+        // ---- recoil: a view kick on top of the look angle (the shots go where the camera points, so it counts)
+        [Header("Recoil")]
+        [Tooltip("Seconds the view takes to snap up to a kick.")]
+        public float recoilRise = 0.035f;
+        [Tooltip("Seconds the view takes to settle back after the shooting stops.")]
+        public float recoilSettle = 0.22f;
+        [Tooltip("Most degrees a long burst can climb.")]
+        public float recoilMax = 4f;
+        Vector2 recoilWant, recoilNow, recoilVel;   // x = degrees up, y = degrees right
+
+        /// One shot's kick: `up` degrees up, `side` degrees right (negative = left).
+        public void AddRecoil(float up, float side)
+        {
+            recoilWant.x = Mathf.Min(recoilWant.x + up, recoilMax);
+            recoilWant.y = Mathf.Clamp(recoilWant.y + side, -recoilMax * 0.5f, recoilMax * 0.5f);
+        }
+
+        void UpdateRecoil()
+        {
+            float dt = Time.deltaTime;
+            if (dt <= 0f) return;
+            recoilNow = Vector2.SmoothDamp(recoilNow, recoilWant, ref recoilVel, recoilRise, Mathf.Infinity, dt);
+            // the wanted kick drains back to rest all the time, so single shots bob and a burst climbs a little
+            recoilWant *= Mathf.Exp(-dt / Mathf.Max(0.01f, recoilSettle));
+            if (recoilWant.sqrMagnitude < 1e-6f && recoilNow.sqrMagnitude < 1e-6f) { recoilWant = recoilNow = recoilVel = Vector2.zero; }
+            ApplyPivot();
+        }
+
+        void ApplyPivot()
+        {
+            if (cameraPivot != null) cameraPivot.localRotation = Quaternion.Euler(pitch - recoilNow.x, recoilNow.y, 0f);
         }
 
         /// True while crouched (drives the third-person body's crouch animation).
@@ -113,6 +150,7 @@ namespace ZombieRush.Player
             if (health != null && health.IsDead) return;   // down in a squad: wait for the next wave
 
             HandleLook();
+            UpdateRecoil();
             HandleCrouch();
             HandleMove();
         }
@@ -123,6 +161,9 @@ namespace ZombieRush.Player
             if (look == Vector2.zero) return;
 
             transform.Rotate(0f, look.x, 0f);
+            // the momentum turns with the player: running forward stays forward while turning (otherwise the
+            // lagging velocity is briefly sideways and the legs blend into strafe/diagonal steps: a zig-zag)
+            planarVelocity = Quaternion.Euler(0f, look.x, 0f) * planarVelocity;
             pitch -= look.y;
             ClampPitch();
         }
@@ -159,7 +200,10 @@ namespace ZombieRush.Player
 
             if (slowTimer > 0f) slowTimer -= Time.deltaTime;
             float speed = (isCrouching ? crouchSpeed : (sprinting ? sprintSpeed : walkSpeed)) * SlowMultiplier;
-            Vector3 move = transform.right * input.x + transform.forward * input.y;
+            // sideways and backwards slower than forwards, as in most shooters: a body facing the aim can't
+            // side-step or backpedal at a full run, and the strafe/backpedal animations are made for these speeds
+            float fwd = input.y >= 0f ? input.y : input.y * backSpeedFactor;
+            Vector3 move = transform.right * (input.x * strafeSpeedFactor) + transform.forward * fwd;
 
             if (controller.isGrounded)
             {

@@ -31,6 +31,13 @@ namespace ZombieRush.UI
 
         void OnDisable() => Release();
 
+        /// Where the stick rests when no thumb is on it (the HUD editor moves it).
+        public void SetHome(Vector2 anchored)
+        {
+            baseDefaultPosition = anchored;
+            if (pointerId == NoPointer && stickBase != null) stickBase.anchoredPosition = anchored;
+        }
+
         public void OnPointerDown(PointerEventData e)
         {
             if (pointerId != NoPointer || stickBase == null) return;

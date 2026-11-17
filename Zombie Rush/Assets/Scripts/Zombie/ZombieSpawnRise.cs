@@ -30,6 +30,7 @@ namespace ZombieRush.Zombie
             if (ai != null) ai.enabled = false;
 
             transform.position = groundPosition - Vector3.up * riseHeight;
+            ZombieRush.Effects.SpawnBreachEffect.Play(groundPosition);   // the ground splits open where it climbs out
             if (routine != null) StopCoroutine(routine);
             routine = StartCoroutine(Rise(groundPosition));
         }

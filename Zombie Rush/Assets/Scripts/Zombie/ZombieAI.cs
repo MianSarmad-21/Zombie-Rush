@@ -36,6 +36,8 @@ namespace ZombieRush.Zombie
         [System.NonSerialized] public bool rangedOnly;
         [System.NonSerialized] public float holdRange;
         [System.NonSerialized] public System.Func<bool> hasShot;
+        /// Never claws (set by BellyBurst): it keeps walking at the target and its own ability does the damage.
+        [System.NonSerialized] public bool noMelee;
 
         [Header("Obstacle avoidance")]
         public float probeDistance = 1.6f;
@@ -101,6 +103,8 @@ namespace ZombieRush.Zombie
         Vector3 escapeDir;
         int stuckStrikes;
         float progressTimer, distanceAtWindow = float.MaxValue;
+        float progressAlong;        // metres walked along its own route this window
+        Vector3 lastProgressPos;
         int failedEscapes;
 
         // Hysteresis: a zombie on the edge of a threshold (attack range, run distance) would
@@ -109,8 +113,17 @@ namespace ZombieRush.Zombie
         bool isRunning;
         const float RunDistanceMargin = 1.5f;
 
+        // Crowding: near the player but boxed out by other zombies. The legs follow the real speed (no running
+        // on the spot) and the zombie circles round the player to an open side instead of pushing in behind.
+        float blockedTimer;
+        float speedRatio;       // smoothed real speed / wanted speed, drives the walk/run animation
+        float flankSide;        // +1 / -1: which way round the player it circles when boxed out
+        float flankTimer;
+
         /// Centre-to-centre distance at which the bodies are `gap` apart (both capsules' radii added).
-        float CentreReach(float gap) => controller.radius + targetRadius + gap;
+        /// (The own radius is scaled like the target's: a scaled-up zombie's capsule stops it further out, and
+        /// with the unscaled radius it could never get within reach to attack.)
+        float CentreReach(float gap) => controller.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.z) + targetRadius + gap;
 
         void Awake()
         {
@@ -138,9 +151,15 @@ namespace ZombieRush.Zombie
             stuckStrikes = 0;
             progressTimer = 0f;
             distanceAtWindow = float.MaxValue;
+            progressAlong = 0f;
+            lastProgressPos = transform.position;
             failedEscapes = 0;
             inAttackRange = false;
             isRunning = false;
+            blockedTimer = 0f;
+            speedRatio = 1f;
+            flankSide = Random.value < 0.5f ? 1f : -1f;   // half go round each way
+            flankTimer = 0f;
             targetRadius = DefaultTargetRadius;
             nextProbeTime = 0f;
             repathTimer = Random.value * RepathInterval;
@@ -244,7 +263,7 @@ namespace ZombieRush.Zombie
             }
 
             float attackReach = CentreReach(cfg.attackReach + (inAttackRange ? cfg.attackHoldMargin : 0f));
-            inAttackRange = !rangedOnly && !guarding && sqrDistance <= attackReach * attackReach;
+            inAttackRange = !rangedOnly && !noMelee && !guarding && sqrDistance <= attackReach * attackReach;
             if (inAttackRange)
             {
                 FaceDirection(toPlayer);
@@ -258,7 +277,7 @@ namespace ZombieRush.Zombie
                     if (lib != null) SoundManager.PlayAt(lib.zombieAttack, transform.position + Vector3.up * 1.5f, 0.9f, 20f, 3);
                     attackTimer = cfg.attackCooldown;
                     if (cfg.attackHitDelay > 0f) { hitPending = true; hitPendingTimer = cfg.attackHitDelay; }
-                    else if (playerHealth != null) playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
+                    else if (playerHealth != null && !(cfg.highSwing && Ducked(playerHealth))) playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
                 }
                 return;
             }
@@ -268,13 +287,29 @@ namespace ZombieRush.Zombie
             isRunning = cfg.runDistance <= 0f || distance <= cfg.runDistance + (isRunning ? RunDistanceMargin : 0f);
             bool running = isRunning;
             float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * speedMultiplier;
-            health.Anim.SetSpeed(running ? 1f : 0.5f);
+
+            // how fast it really moves (others in the way, a wall): the legs follow that, never running on the spot
+            Vector3 realV = controller.velocity; realV.y = 0f;
+            float ratio = speed > 0.01f ? Mathf.Clamp01(realV.magnitude / speed) : 0f;
+            speedRatio = Mathf.MoveTowards(speedRatio, ratio, Time.deltaTime * 4f);
+            bool crowded = distance < CentreReach(cfg.attackReach) + 2.5f;
+            blockedTimer = ratio < 0.3f ? blockedTimer + Time.deltaTime : Mathf.Max(0f, blockedTimer - Time.deltaTime * 2f);
+            health.Anim.SetSpeed((running ? 1f : 0.5f) * Mathf.Clamp01(speedRatio * 1.25f));
 
             Vector3 desired = PathDirection(toPlayer / distance, distance);
             Vector3 moveDir = ComputeMoveDirection(desired);
-            FaceDirection(moveDir);
+            if (crowded && blockedTimer > 0.35f)
+            {
+                // boxed out next to the player: circle round to an open side (swap sides if that one stays blocked)
+                flankTimer += Time.deltaTime;
+                if (flankTimer > 1.6f) { flankTimer = 0f; flankSide = -flankSide; }
+                Vector3 round = Vector3.Cross(Vector3.up, toPlayer / distance) * flankSide;
+                moveDir = (round + toPlayer / distance * 0.45f).normalized;
+            }
+            else flankTimer = 0f;
+            FaceDirection(crowded && blockedTimer > 0.35f ? toPlayer : moveDir);
 
-            UpdateLastResortUnstuck(moveDir, distance);
+            UpdateLastResortUnstuck(moveDir, desired, distance, speed);
             if (escapeTimer > 0f)
             {
                 escapeTimer -= Time.deltaTime;
@@ -298,7 +333,17 @@ namespace ZombieRush.Zombie
             d.y = 0f;
             float reach = CentreReach(cfg.attackReach + cfg.attackLandTolerance);
             if (d.sqrMagnitude > reach * reach) return false;
+            if (cfg.highSwing && Ducked(playerHealth)) return false;   // a giant's swing passes over a crouched player
             playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
+            return true;
+        }
+
+        /// The target is crouched (its own machine's input, or a teammate copy's synced crouch on the host).
+        static bool Ducked(PlayerHealth target)
+        {
+            var pc = target.GetComponent<PlayerController>();
+            if (pc == null || !pc.IsCrouching) return false;
+            if (pc.enabled) ZombieRush.UI.PickupToast.Show("DUCKED!", new Color(0.55f, 1f, 0.45f));   // the local player sees it
             return true;
         }
 
@@ -408,20 +453,28 @@ namespace ZombieRush.Zombie
         /// Only after two slow checks in a row, never in the scrum around the player (where being
         /// blocked by other zombies is normal), and sideways rather than backwards - a zombie
         /// that keeps reversing for a second at a time looks like it is glitching to and fro.
-        void UpdateLastResortUnstuck(Vector3 currentMoveDir, float distanceToTarget)
+        void UpdateLastResortUnstuck(Vector3 currentMoveDir, Vector3 routeDir, float distanceToTarget, float speed)
         {
-            if (escapeTimer > 0f) return;
+            // how far it really walked along its own route (the path corner it heads for) since last frame
+            Vector3 stepMoved = transform.position - lastProgressPos; stepMoved.y = 0f;
+            lastProgressPos = transform.position;
+            if (escapeTimer > 0f) { progressTimer = 0f; progressAlong = 0f; return; }
+            progressAlong += Vector3.Dot(stepMoved, routeDir);
 
             // No progress: a zombie can keep moving (sliding to and fro along a fence or a rubble
-            // pile) without getting any closer. Every progressWindow it must have closed in by
-            // progressMin, or it escapes sideways - each time further, alternating sides.
+            // pile) without getting anywhere. Every progressWindow it must have walked a fair share
+            // of its speed ALONG ITS ROUTE, or it escapes sideways - each time further, alternating sides.
+            // (It used to need to get closer to the player: a slow far-off walker chasing a player who
+            // runs away, or a route bending round a building, "failed" that and wandered off sideways.)
             bool nearTarget = distanceToTarget < CentreReach(cfg.attackReach) + 4f;
             progressTimer += Time.deltaTime;
-            if (nearTarget) { progressTimer = 0f; distanceAtWindow = distanceToTarget; failedEscapes = 0; }
+            if (nearTarget) { progressTimer = 0f; progressAlong = 0f; distanceAtWindow = distanceToTarget; failedEscapes = 0; }
             else if (progressTimer >= progressWindow)
             {
-                bool closedIn = distanceAtWindow - distanceToTarget >= progressMin;
+                float need = Mathf.Min(progressMin, speed * progressWindow * 0.3f);
+                bool closedIn = progressAlong >= need;
                 progressTimer = 0f;
+                progressAlong = 0f;
                 distanceAtWindow = distanceToTarget;
                 if (closedIn) failedEscapes = 0;
                 else

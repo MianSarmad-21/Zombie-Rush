@@ -155,7 +155,7 @@ namespace ZombieRush.EditorTools
                 $"Player base {where} ({basePos.x:0}, {basePos.z:0}){(clearance > 0f ? $", ~{clearance:0} m of open ground" : "")}.\n" +
                 $"Safe base: {safeBase.radius:0} m, zombies can't enter; {gearCount} gear pickups (weapons, armor, ammo, medkit). " +
                 "Waves start when a player steps out.\n" +
-                $"Fight zone starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion ({zone.expandCost} coins), " +
+                $"Fight zone starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion ({zone.ExpandCost} coins), " +
                 $"{steps} expansions to {zone.maxRadius:0} m - covers the whole city.\n" +
                 navNote;
             Debug.Log("Zombie Rush: " + summary);

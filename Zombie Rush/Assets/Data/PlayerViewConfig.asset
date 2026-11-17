@@ -13,14 +13,15 @@ MonoBehaviour:
   m_Name: PlayerViewConfig
   m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Data.PlayerViewConfig
   startView: 0
-  shoulderOffset: {x: 0.55, y: 0.2, z: -2.1}
+  shoulderOffset: {x: 0.55, y: 0.2, z: -1.5}
   pitchMin: -55
-  pitchMax: 60
+  pitchMax: 50
   lookUpDistance: 0.65
   lookUpHeight: -0.15
   lookDownDistance: 1.0
   lookDownHeight: 0.25
-  followLag: 0.12
+  lookDownSide: 0.3
+  followLag: 0
   maxLag: 0.6
   blendTime: 0.25
   faceMoveDirection: 0

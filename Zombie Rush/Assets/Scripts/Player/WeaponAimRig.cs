@@ -519,6 +519,10 @@ namespace ZombieRush.Player
             if (flat < 0.01f) return aimPoint;
             float pitch = Mathf.Atan2(d.y, flat) * Mathf.Rad2Deg;
             float limited = Mathf.Clamp(pitch, -config.maxBendDown, config.maxBendUp);
+            // A gun with body clips: BodyGunPose bends the whole upper body to the view and the head rides on it
+            // (cheek on the stock), so the look-at only turns the head and spine sideways. Pitched here too, the
+            // head tipped twice: into the stock looking down, far back looking up.
+            if (BodyClips) limited = 0f;
             Vector3 dir = new Vector3(d.x, 0f, d.z) / flat;
             return chest.position + (dir * Mathf.Cos(limited * Mathf.Deg2Rad) + Vector3.up * Mathf.Sin(limited * Mathf.Deg2Rad)) * 10f;
         }

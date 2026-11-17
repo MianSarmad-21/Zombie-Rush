@@ -54,6 +54,15 @@ namespace ZombieRush.Net
                 PullHealth();
                 zh.Anim.SetSpeed(speed.Value / 255f);
                 if (dead.Value) zh.NetDie();
+                else
+                {
+                    // just spawned for its rise (still under the ground): the ground breaks open here too
+                    var rise = GetComponent<ZombieSpawnRise>();
+                    float depth = rise != null ? rise.riseHeight : 2.2f;
+                    if (Physics.Raycast(transform.position + Vector3.up * (depth + 0.6f), Vector3.down, out var g, depth + 1.2f, ~0, QueryTriggerInteraction.Ignore)
+                        && g.point.y > transform.position.y + depth * 0.5f)
+                        SpawnBreachEffect.Play(g.point);
+                }
             }
         }
 

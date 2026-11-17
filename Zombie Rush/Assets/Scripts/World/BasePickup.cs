@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using ZombieRush.Core;
 using ZombieRush.Data;
@@ -7,31 +8,50 @@ namespace ZombieRush.World
 {
     public enum PickupKind { Weapon, Armor, Ammo, Medkit }
 
-    /// Starting gear in the safe base: walk into it to take it. Weapon racks never run
-    /// out (every squad member can grab one); armor, ammo and medkits recharge after use.
-    /// Visual: a small glowing beam (ZoneBoundaryFX child) with a floating icon.
+    /// Gear in the safe base: walk into it to take it. Only the local player picks things up on this machine
+    /// (each player's own game handles them).
+    ///   - Weapon on a gun table (takeOnce): the gun is gone from the table for the whole match, for the whole squad
+    ///     (MatchNet tells the others). A player who already has that gun leaves it there.
+    ///   - Armour vest (oncePerLife): never disappears; every player can take one per life.
+    ///   - Old-style beam pickups (armour/ammo/medkit) recharge after `rechargeTime`.
+    /// Visual: `display` (the model on the table), or the older glowing beam + floating icon.
     [RequireComponent(typeof(SphereCollider))]
     public class BasePickup : MonoBehaviour
     {
         public PickupKind kind = PickupKind.Armor;
-        [Tooltip("Weapon racks: the weapon handed out (must be in the player's weapon list).")]
+        [Tooltip("Weapons: the weapon handed out (must be in the player's weapon list).")]
         public WeaponData weapon;
         [Tooltip("Armor / medkit points.")]
         public float amount = 50f;
-        [Tooltip("Seconds until it can be used again. 0 = never runs out (weapon racks).")]
+        [Tooltip("Seconds until it can be used again. 0 = never runs out.")]
         public float rechargeTime = 25f;
         public string label = "ARMOR";
 
-        [Header("Visual")]
+        [Header("Base tables")]
+        [Tooltip("Network id, the same on every machine (set by Base Furnish). -1 = not synced.")]
+        public int id = -1;
+        [Tooltip("Gone for good once a player takes it (a gun on a table).")]
+        public bool takeOnce;
+        [Tooltip("Each player can take it once per life; it never disappears (the armour vest).")]
+        public bool oncePerLife;
+        [Tooltip("The model shown while it can be taken.")]
+        public GameObject display;
+
+        [Header("Visual (beam pickups)")]
         public Transform icon;      // floating sprite, faces the camera
         public ZoneBoundaryFX beam;
         public float bobHeight = 0.12f;
 
+        static readonly Dictionary<int, BasePickup> byId = new Dictionary<int, BasePickup>();
+
         float readyAt;
+        bool taken;
+        int takenLife = -1;
         Vector3 iconBase;
         Camera cam;
+        SphereCollider trigger;
 
-        bool Ready => Time.time >= readyAt;
+        bool Ready => !taken && Time.time >= readyAt;
 
         void Reset()
         {
@@ -43,13 +63,31 @@ namespace ZombieRush.World
 
         void Awake()
         {
-            GetComponent<SphereCollider>().isTrigger = true;
+            trigger = GetComponent<SphereCollider>();
+            trigger.isTrigger = true;
             if (icon != null) iconBase = icon.localPosition;
+        }
+
+        void OnEnable() { if (id >= 0) byId[id] = this; }
+        void OnDisable() { if (id >= 0 && byId.TryGetValue(id, out var p) && p == this) byId.Remove(id); }
+
+        /// A teammate took this gun (MatchNet): it goes from the table here too.
+        public static void MarkTaken(int id)
+        {
+            if (byId.TryGetValue(id, out var p) && p != null) p.Take();
+        }
+
+        void Take()
+        {
+            taken = true;
+            if (display != null) display.SetActive(false);
+            if (trigger != null) trigger.enabled = false;
         }
 
         void Update()
         {
             bool ready = Ready;
+            if (display != null && !taken && display.activeSelf != ready) display.SetActive(ready);
             if (icon != null)
             {
                 if (icon.gameObject.activeSelf != ready) icon.gameObject.SetActive(ready);
@@ -72,19 +110,27 @@ namespace ZombieRush.World
         {
             if (!Ready) return;
             var player = other.GetComponentInParent<PlayerHealth>();
-            if (player == null || player.IsDead) return;
+            if (player == null || player != PlayerHealth.Instance || player.IsDead) return;
+            if (oncePerLife && takenLife == player.Life) return;
 
             string gained = TryGive(player);
             if (gained == null) return;
 
-            if (rechargeTime > 0f) readyAt = Time.time + rechargeTime;
-            if (player != PlayerHealth.Instance) return;
-            GameEvents.RaiseNotice(label, gained);
+            if (oncePerLife) takenLife = player.Life;
+            else if (takeOnce)
+            {
+                Take();
+                if (id >= 0 && Net.MatchNet.Instance != null) Net.MatchNet.Instance.ReportPickupTaken(id);
+            }
+            else if (rechargeTime > 0f) readyAt = Time.time + rechargeTime;
+
+            if (kind == PickupKind.Weapon) GameEvents.RaiseNotice(label, gained);
+            else UI.PickupToast.Show(gained, kind == PickupKind.Armor ? new Color(0.55f, 0.8f, 1f) : (Color?)null);
             var lib = Audio.SoundManager.Library;
             if (lib != null) Audio.SoundManager.Play(lib.pickup, 0.8f);
         }
 
-        /// What the player got (for the on-screen notice), or null if they didn't need it.
+        /// What the player got (for the on-screen message), or null if they didn't need it.
         string TryGive(PlayerHealth player)
         {
             switch (kind)
@@ -106,7 +152,8 @@ namespace ZombieRush.World
                 case PickupKind.Weapon:
                     var owner = player.GetComponentInChildren<PlayerWeaponController>();
                     if (owner == null || weapon == null) return null;
-                    if (owner.Unlock(weapon)) { owner.RefillAmmo(); return "WEAPON UNLOCKED"; }
+                    // a gun never held before starts with full spare ammo (PlayerInventory); no refill of the others
+                    if (owner.Unlock(weapon)) return "WEAPON TAKEN";
                     return null;
             }
             return null;

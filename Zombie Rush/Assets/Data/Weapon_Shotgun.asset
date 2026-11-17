@@ -23,6 +23,10 @@ MonoBehaviour:
   reloadTime: 2.4
   autoReload: 1
   autoReloadDelay: 0.3
+  ammoPack: {fileID: 2364143489564986337, guid: 2f22cda3a287a414ab17e7f45ea87658, type: 3}
+  ammoName: SHOTGUN
+  tableAmmo: 10
+  dropAmmo: {x: 3, y: 6}
   crosshair: 2
   spreadBase: 0
   spreadPerShot: 0
@@ -33,10 +37,22 @@ MonoBehaviour:
   aimZoom: 0.9
   hasScope: 0
   scopeZoom: 2
+  scopeEyeHeight: 0.075
+  scopeEyeBack: 0.02
+  ironSights: 1
+  sightHeight: 0.03
+  sightForward: 0.1
+  recoilUp: 3.2
+  recoilSide: 0.8
+  recoilAimScale: 0.7
+  gunKickBack: 0.06
+  gunKickPitch: 7
+  bodyKickPitch: 6
+  idleSteady: 0.6
   fireSounds:
   - {fileID: 8300000, guid: bfe6c8d73f14c074397ed5a9dd4fd4c8, type: 3}
   - {fileID: 8300000, guid: 25257dee1fb9aad44b772a4c91aa6288, type: 3}
-  reloadSound: {fileID: 0}
+  reloadSound: {fileID: 8300000, guid: abd42fb21d45f7e48bbd29c095fb5f34, type: 3}
   fireVolume: 0.8
   overrideEyeOffset: 1
   eyeOffset: {x: 0, y: 0.03, z: -0.06}

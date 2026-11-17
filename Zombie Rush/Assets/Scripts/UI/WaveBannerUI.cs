@@ -22,6 +22,8 @@ namespace ZombieRush.UI
         public float incomingHold = 2.6f;
         public float noticeHold = 2.4f;
         public float fadeSpeed = 5f;
+        [Tooltip("Simple HUD (user, 2026-11-17): no big banner - wave news and notices go to the side feed (PickupToast) as one line each.")]
+        public bool simple = true;
 
         float holdTimer;
         float countdown;
@@ -52,6 +54,7 @@ namespace ZombieRush.UI
 
         void HandleWaveAnnounced(int wave)
         {
+            if (simple) { PickupToast.Notice($"WAVE {wave}", "INCOMING", incomingColor); return; }
             Show($"WAVE {wave}", "INCOMING", incomingColor, incomingHold);
             showingWave = true;
             countdown = 0f;
@@ -61,6 +64,7 @@ namespace ZombieRush.UI
         /// Short messages (safe base, pickups). Never covers a wave banner that is still showing.
         void HandleNotice(string title, string subtitle)
         {
+            if (simple) { PickupToast.Notice(title, subtitle, noticeColor); return; }
             if (enabled && holdTimer > 0f && showingWave) return;
             Show(title, subtitle, noticeColor, noticeHold);
             showingWave = false;
@@ -69,6 +73,7 @@ namespace ZombieRush.UI
 
         void HandleWaveCompleted(int wave, float breather)
         {
+            if (simple) { PickupToast.Notice($"WAVE {wave} CLEARED", breather >= 1f ? $"NEXT WAVE IN {Mathf.RoundToInt(breather)}s" : "", clearedColor); return; }
             Show($"WAVE {wave}", "CLEARED", clearedColor, Mathf.Max(0.5f, breather - 0.25f));
             showingWave = true;
             countdown = breather;

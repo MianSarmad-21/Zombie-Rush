@@ -28,10 +28,13 @@ namespace ZombieRush.EditorTools
                 ti.textureType = TextureImporterType.Default;
                 ti.sRGBTexture = true;
                 ti.alphaSource = TextureImporterAlphaSource.FromInput;
-                ti.alphaIsTransparency = true;
+                // Fx_Breach (zombie spawn cracks) is PREMULTIPLIED: its glow lives in see-through pixels, which
+                // "alpha is transparency" would overwrite; and it is seen big on the ground, so 512
+                bool premul = path.EndsWith("Fx_Breach.png");
+                ti.alphaIsTransparency = !premul;
                 ti.wrapMode = TextureWrapMode.Clamp;
                 ti.mipmapEnabled = true;
-                ti.maxTextureSize = 256;
+                ti.maxTextureSize = premul ? 512 : 256;
                 ti.textureCompression = TextureImporterCompression.CompressedHQ;
                 ti.SaveAndReimport();
                 tex++;

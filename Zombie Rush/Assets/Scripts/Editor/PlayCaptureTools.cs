@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using ZombieRush.Player;
@@ -91,6 +92,7 @@ namespace ZombieRush.EditorTools
             try
             {
                 var switcher = PlayerViewSwitcher.Local;
+                if (switcher == null && SessionState.GetString(ModeKey, "") == "retry" && step > 0 && t < 200) { nextTime = t + 0.5; return; }   // the level is reloading
                 if (switcher == null) { Finish("FAILED: no PlayerViewSwitcher in play."); return; }
                 ZombieRush.Core.GameManager.Instance?.Resume(); // undo a focus-loss pause
                 if (step == 0 && !ZombieRush.Net.NetSession.IsRunning && SessionState.GetString(ModeKey, "") == "uishots")
@@ -133,6 +135,8 @@ namespace ZombieRush.EditorTools
             catch (System.Exception e) { plan = null; Finish("FAILED: " + e); }
         }
 
+        static Vector3 startSpawn; static float startSpawnYaw;
+
         static List<(float, System.Action)> BuildPlan(PlayerViewSwitcher switcher, string mode)
         {
             var player = switcher.GetComponent<PlayerController>();
@@ -140,10 +144,40 @@ namespace ZombieRush.EditorTools
             var cam = switcher.playerCamera;
             var p = new List<(float, System.Action)>
             {
-                (0.7f, () => MoveToOpenSpot(switcher.transform)),
+                (0.7f, () => { startSpawn = switcher.transform.position; startSpawnYaw = switcher.transform.eulerAngles.y; MoveToOpenSpot(switcher.transform); }),
                 (0.7f, () => switcher.SetView(CharacterView.ThirdPerson)),
                 (0.3f, () => SetPitch(player, 0f)),
             };
+
+            if (mode == "retry")
+            {
+                // user: "when I click retry after dying the zombies don't respawn". Fight a little, die, press the
+                // game over RESTART button (GameManager.RestartLevel), then watch the reloaded level: does the solo
+                // match start again, does the wave loop run, do zombies come?
+                p.Clear();
+                System.Action<string> probe = tag =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>();
+                    var gm2 = ZombieRush.Core.GameManager.Instance;
+                    var nm = Unity.Netcode.NetworkManager.Singleton;
+                    log.AppendLine($"  {tag} t={Time.time:0.0}: running {ZombieRush.Net.NetSession.IsRunning} server {ZombieRush.Net.NetSession.IsServer} mode {ZombieRush.Net.NetSession.Mode} " +
+                        $"nm {(nm == null ? "none" : $"{nm.GetEntityId()} listening {nm.IsListening} shutting {nm.ShutdownInProgress}")} state {(gm2 != null ? gm2.State.ToString() : "-")} " +
+                        $"match {(ZombieRush.Net.MatchNet.Instance != null)} battle {(ZombieRush.World.SafeBase.Instance != null && ZombieRush.World.SafeBase.Instance.BattleStarted)} " +
+                        $"wave {(wm != null ? wm.CurrentWave : -1)} alive {(wm != null ? wm.AliveCount : -1)} zombies {Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None).Length} " +
+                        $"player {(PlayerViewSwitcher.Local != null ? PlayerViewSwitcher.Local.transform.position.ToString("F0") : "none")}");
+                };
+                System.Action stepOut = () => { var s = PlayerViewSwitcher.Local; if (s != null) MoveToOpenSpot(s.transform, true); };
+                p.Add((1.0f, () => probe("start")));
+                p.Add((1.0f, stepOut));
+                for (int k = 0; k < 6; k++) p.Add((2.5f, () => probe("before death")));
+                p.Add((2.0f, () => { var gm2 = ZombieRush.Core.GameManager.Instance; gm2.autoRestartDelay = 0f; var ph = PlayerViewSwitcher.Local.GetComponent<PlayerHealth>(); ph.TakeDamage(99999f); }));
+                p.Add((0.5f, () => probe("dead")));
+                p.Add((0.0f, () => { log.AppendLine("  -- RESTART pressed"); ZombieRush.Core.GameManager.Instance.RestartLevel(); }));
+                for (int k = 0; k < 4; k++) p.Add((2.0f, () => probe("after reload, in base")));
+                p.Add((1.0f, stepOut));
+                for (int k = 0; k < 8; k++) p.Add((2.5f, () => probe("after reload, stepped out")));
+                return p;
+            }
 
             if (mode == "perf")
             {
@@ -359,6 +393,219 @@ namespace ZombieRush.EditorTools
                 return p;
             }
 
+            if (mode == "chests")
+            {
+                // Loot chests + zone fog: the fog from inside the zone; chests spawned for wave 1; one opened for real
+                // (hold E through the touch path), shots of every stage; the loot picked up; the zone fund paid into.
+                var sbase = ZombieRush.World.SafeBase.Instance;
+                var zm = ZombieRush.World.ZoneManager.Instance;
+                var ph = switcher.GetComponent<PlayerHealth>();
+                var inv = switcher.GetComponent<PlayerInventory>();
+                var pwc = switcher.GetComponent<PlayerWeaponController>();
+                var pcc = switcher.GetComponent<CharacterController>();
+                var pc = switcher.GetComponent<PlayerController>();
+                var pitchField = typeof(PlayerController).GetField("pitch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var spawner = zm != null ? zm.GetComponent<ZombieRush.World.ChestSpawner>() : null;
+                if (sbase == null || zm == null || spawner == null) { p.Add((0.1f, () => log.AppendLine("  FAILED: no safe base, zone or ChestSpawner (run chests)."))); return p; }
+                void Put(Vector3 at, Vector3 look, float pitchDown)
+                {
+                    if (pcc != null) pcc.enabled = false;
+                    switcher.transform.position = at + Vector3.up * 0.05f;
+                    if (pcc != null) pcc.enabled = true;
+                    var f = look - at; f.y = 0f;
+                    if (f.sqrMagnitude > 0.001f) switcher.transform.rotation = Quaternion.LookRotation(f.normalized, Vector3.up);
+                    if (pitchField != null && pc != null) { pitchField.SetValue(pc, pitchDown); pc.ResetPitchLimits(); }
+                }
+                void Snap(string tag) { Directory.CreateDirectory(Folder); ScreenCapture.CaptureScreenshot($"{Folder}/Chest_{tag}.png"); }
+                ZombieRush.World.LootChest chest = null;
+                p.Add((0.6f, () =>
+                {
+                    switcher.SetView(CharacterView.FirstPerson);
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var z in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(z.gameObject);
+                    var fx = zm.boundaryVisual != null ? zm.boundaryVisual.GetComponent<ZombieRush.World.ZoneBoundaryFX>() : null;
+                    log.AppendLine($"  zone radius {zm.CurrentRadius:0}, fog {(fx != null && fx.fogMaterial != null ? fx.fogMaterial.name : "OFF")}; price {zm.ExpandCost}, fund {zm.Fund}");
+                }));
+                // fog: from 8 m inside the zone wall looking out, and from the base door looking out
+                Vector3 outDir = (sbase.Center - zm.center).sqrMagnitude > 1f ? (sbase.Center - zm.center).normalized : Vector3.forward;
+                outDir = Quaternion.Euler(0f, 60f, 0f) * Vector3.forward;
+                p.Add((0.8f, () => Put(zm.center + outDir * (zm.CurrentRadius - 8f), zm.center + outDir * (zm.CurrentRadius + 30f), -4f)));
+                p.Add((0.4f, () => Snap("FogEdge")));
+                p.Add((0.8f, () => Put(zm.center + outDir * (sbase.radius + 2f), zm.center + outDir * (zm.CurrentRadius + 30f), -6f)));
+                p.Add((0.4f, () => Snap("FogFromBase")));
+                // chests for wave 1
+                p.Add((0.4f, () =>
+                {
+                    int n = spawner.Spawn(1, 3);
+                    log.AppendLine($"  spawned {n} chests: " + string.Join(", ", ZombieRush.World.LootChest.All.Select(c => $"{c.name} at {c.transform.position:F0}")));
+                    chest = ZombieRush.World.LootChest.All.FirstOrDefault();
+                }));
+                p.Add((0.5f, () => { if (chest != null) Put(chest.transform.position + chest.transform.forward * 4.5f + chest.transform.right * 1.5f, chest.transform.position, 18f); }));
+                p.Add((0.5f, () => Snap("Closed")));
+                p.Add((0.3f, () =>
+                {
+                    if (chest == null) return;
+                    Put(chest.transform.position + chest.transform.forward * 1.7f, chest.transform.position, 30f);
+                    ph.TakeDamage(40f);   // out of the safe base: hurt, so a medkit is wanted
+                    inv.TakeReserveAmmo(pwc.CurrentWeapon.data, inv.GetReserveAmmo(pwc.CurrentWeapon.data) - 5);
+                }));
+                p.Add((0.3f, () => { log.AppendLine($"  prompt target {(ZombieRush.World.ChestPrompt.Target == chest ? "THIS chest" : "none")}"); Snap("Prompt"); ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Interact); }));
+                p.Add((0.45f, () => { log.AppendLine($"  holding: progress {chest?.Progress:0.00}"); Snap("Shaking"); }));
+                // keep holding until the lock breaks, then snap the break, the lid and the loot in flight at set delays
+                float brokeAt = -1f; int shots = 0;
+                for (int s = 0; s < 40; s++)
+                    p.Add((0.07f, () =>
+                    {
+                        if (chest == null || shots >= 3) return;
+                        if (brokeAt < 0f && chest.Opened)
+                        {
+                            brokeAt = Time.time;
+                            ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Interact);
+                            log.AppendLine($"  lock broke after the hold");
+                        }
+                        if (brokeAt < 0f) return;
+                        float since = Time.time - brokeAt;
+                        if (shots == 0 && since >= 0.05f) { Snap("LockBreak"); shots++; }
+                        else if (shots == 1 && since >= 0.45f) { Snap("LidOpening"); shots++; }
+                        else if (shots == 2 && since >= 0.75f) { Snap("LootFlying"); shots++; }
+                    }));
+                p.Add((0.1f, () => { ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Interact); log.AppendLine($"  opened {chest?.Opened}, stage shots {shots}"); }));
+                p.Add((0.9f, () =>
+                {
+                    Put(chest.transform.position + chest.transform.forward * 4f + chest.transform.right * 1.2f, chest.transform.position + chest.transform.forward * 1f, 22f);
+                    log.AppendLine("  loot on the ground: " + string.Join(", ", Object.FindObjectsByType<ZombieRush.World.ChestReward>(FindObjectsSortMode.None).Select(r => r.kind + " " + r.amount)
+                        .Concat(Object.FindObjectsByType<ZombieRush.World.AmmoPickup>(FindObjectsSortMode.None).Where(a => a.name.StartsWith("AmmoDrop")).Select(a => "Ammo " + a.weapon.weaponName + " " + a.amount))));
+                }));
+                p.Add((0.4f, () => Snap("Open")));
+                // walk over the loot (health dropped first so a medkit is wanted)
+                float hp = 0, ar = 0; int ammo = 0;
+                p.Add((0.2f, () =>
+                {
+                    hp = ph.CurrentHealth; ar = ph.CurrentArmor; ammo = inv.GetReserveAmmo(pwc.CurrentWeapon.data);
+                }));
+                p.Add((0.1f, () => { }));
+                foreach (int k in new[] { 0, 1, 2, 3 })
+                {
+                    p.Add((0.5f, () =>
+                    {
+                        var items = Object.FindObjectsByType<ZombieRush.World.ChestReward>(FindObjectsSortMode.None).Select(r => r.transform)
+                            .Concat(Object.FindObjectsByType<ZombieRush.World.AmmoPickup>(FindObjectsSortMode.None).Where(a => a.name.StartsWith("AmmoDrop")).Select(a => a.transform)).ToList();
+                        if (items.Count > 0) Put(items[0].position, items[0].position + chest.transform.forward, 30f);
+                    }));
+                }
+                p.Add((0.5f, () => { Snap("Collected"); log.AppendLine($"  after walking over the loot: health {hp:0} -> {ph.CurrentHealth:0}, armour {ar:0} -> {ph.CurrentArmor:0}, reserve {ammo} -> {inv.GetReserveAmmo(pwc.CurrentWeapon.data)}"); }));
+                // zone fund: give the player coins and press P twice (part, then the rest)
+                p.Add((0.3f, () =>
+                {
+                    var wallet = PlayerCurrency.Instance;
+                    int price = zm.ExpandCost;
+                    wallet.AddCoins(price / 2);
+                    float r0 = zm.CurrentRadius;
+                    zm.ExpandZone();
+                    log.AppendLine($"  zone fund: price {price}, paid {price / 2} -> fund {zm.Fund}, remaining {zm.Remaining}, radius {r0:0} -> {zm.CurrentRadius:0}");
+                    Snap("FundToast");
+                    wallet.AddCoins(price);
+                    zm.ExpandZone();
+                    log.AppendLine($"  paid the rest -> radius {zm.CurrentRadius:0}, fund {zm.Fund}, coins left {wallet.Coins}, next price {zm.ExpandCost}");
+                }));
+                return p;
+            }
+
+            if (mode == "baselook")
+            {
+                // The furnished base: the gun tables from the hall, a table close up, the lanterns outside at night,
+                // a lantern flame close up; then real pick-ups: an AK from a table, rifle ammo from a box (reserve
+                // lowered first), an armour vest, and a zombie-style ammo drop on the ground.
+                var sbase = ZombieRush.World.SafeBase.Instance;
+                var pwc = switcher.GetComponent<PlayerWeaponController>();
+                var inv = switcher.GetComponent<PlayerInventory>();
+                var ph = switcher.GetComponent<PlayerHealth>();
+                var pcc = switcher.GetComponent<CharacterController>();
+                var pc = switcher.GetComponent<PlayerController>();
+                var pitchField = typeof(PlayerController).GetField("pitch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var furn = sbase != null ? sbase.transform.Find("BaseFurniture") : null;
+                if (furn == null || pwc == null) { p.Add((0.1f, () => log.AppendLine("  FAILED: no BaseFurniture (run basefurnish) or no weapons."))); return p; }
+                var tables = furn.GetComponentsInChildren<Transform>().Where(t => t.name.StartsWith("Bench_")).OrderBy(t => t.name).ToArray();
+                var lanterns = furn.GetComponentsInChildren<Transform>().Where(t => t.name.StartsWith("Lantern_")).ToArray();
+                var rifle = pwc.weapons.First(w => w.name == "Rifle").data;
+                void Put(Vector3 at, Vector3 look, float pitchDown)
+                {
+                    if (pcc != null) pcc.enabled = false;
+                    switcher.transform.position = at + Vector3.up * 0.05f;
+                    if (pcc != null) pcc.enabled = true;
+                    var f = look - at; f.y = 0f;
+                    if (f.sqrMagnitude > 0.001f) switcher.transform.rotation = Quaternion.LookRotation(f.normalized, Vector3.up);
+                    if (pitchField != null && pc != null) { pitchField.SetValue(pc, pitchDown); pc.ResetPitchLimits(); }
+                }
+                void Snap(string tag) { Directory.CreateDirectory(Folder); ScreenCapture.CaptureScreenshot($"{Folder}/Base_{tag}.png"); }
+                Vector3 Front(Transform t, float d) => t.position + t.forward * d;   // tables face the hall (+Z)
+
+                p.Add((0.6f, () =>
+                {
+                    switcher.SetView(CharacterView.FirstPerson);
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var z in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(z.gameObject);
+                    log.AppendLine($"  {tables.Length} tables, {lanterns.Length} lanterns; start: rifle unlocked {pwc.IsUnlocked(rifle)}, gun in hand {pwc.CurrentWeapon?.name}");
+                }));
+                // views: the row of tables from the hall, table 1 close up
+                Vector3 mid = (tables[0].position + tables[1].position) * 0.5f;   // the two benches on one side wall
+                p.Add((0.8f, () => Put(mid + tables[0].forward * 6f, mid, 10f)));
+                p.Add((0.3f, () => Snap("Tables")));
+                p.Add((0.6f, () => Put(Front(tables[0], 2.2f) + tables[0].right * 0.2f, tables[0].position, 28f)));
+                p.Add((0.3f, () => Snap("Table1")));
+                p.Add((0.6f, () => Put(Front(tables[2], 2.2f) + tables[2].right * 0.4f, tables[2].position, 28f)));
+                p.Add((0.3f, () => Snap("Table2")));
+                // lanterns: from out in the yard, then one close up
+                if (lanterns.Length > 0)
+                {
+                    var l0 = lanterns[0];
+                    p.Add((0.8f, () => Put(l0.position + l0.forward * 6f + l0.right * 3f, l0.position, -6f)));   // from the middle of the hall
+                    p.Add((0.4f, () => Snap("Lanterns")));
+                    p.Add((0.6f, () => Put(l0.position + l0.forward * 2.2f + l0.right * 0.9f, l0.position + l0.forward * 0.55f, -18f)));
+                    p.Add((0.4f, () => Snap("LanternClose")));
+                }
+                // pick-ups: walk up to table 1 (AK + shotgun on it)
+                var gunPick = tables[0].GetComponentsInChildren<ZombieRush.World.BasePickup>().FirstOrDefault(b => b.weapon == rifle);
+                p.Add((0.8f, () => Put(Front(tables[0], 0.75f) - tables[0].right * 0.3f, tables[0].position, 20f)));
+                p.Add((0.3f, () =>
+                {
+                    log.AppendLine($"  at table 1: rifle unlocked {pwc.IsUnlocked(rifle)}, in hand {pwc.CurrentWeapon?.name}, AK on the table shown {(gunPick != null && gunPick.display != null && gunPick.display.activeSelf)}");
+                    Snap("TakeGun");
+                }));
+                // ammo box: rifle reserve lowered, then the rifle box on table 1
+                var box = tables[0].GetComponentsInChildren<ZombieRush.World.AmmoPickup>().FirstOrDefault(a => a.weapon == rifle);
+                int before = 0;
+                p.Add((0.3f, () =>
+                {
+                    Put(sbase.Center + (sbase.Center - tables[0].position).normalized * 3f, sbase.Center, 0f);   // step away first
+                    inv.TakeReserveAmmo(rifle, inv.GetReserveAmmo(rifle) - 20);
+                    before = inv.GetReserveAmmo(rifle);
+                }));
+                if (box != null)
+                {
+                    p.Add((0.6f, () => Put(box.transform.position + tables[0].forward * 0.8f - Vector3.up * box.transform.position.y + Vector3.up * tables[0].position.y, box.transform.position, 25f)));
+                    p.Add((0.25f, () =>
+                    {
+                        log.AppendLine($"  rifle ammo box: reserve {before} -> {inv.GetReserveAmmo(rifle)}, box shown {(box.display != null && box.display.activeSelf)}");
+                        Snap("AmmoToast");
+                    }));
+                }
+                // a zombie-style drop out in the hall
+                ZombieRush.World.AmmoPickup drop = null;
+                p.Add((0.5f, () =>
+                {
+                    Put(sbase.Center, sbase.Center + tables[1].forward, 30f);
+                    inv.TakeReserveAmmo(rifle, inv.GetReserveAmmo(rifle) - 10);
+                    before = inv.GetReserveAmmo(rifle);
+                    drop = ZombieRush.World.AmmoPickup.SpawnDrop(sbase.Center + tables[1].forward * 2.6f, rifle, 22);
+                    log.AppendLine($"  drop spawned {(drop != null ? drop.name : "NULL")} (rifle.ammoPack {(rifle.ammoPack != null ? rifle.ammoPack.name : "null")})");
+                }));
+                p.Add((0.6f, () => Snap("Drop")));
+                p.Add((0.5f, () => Put(sbase.Center + tables[1].forward * 2.6f, sbase.Center + tables[1].forward * 5f, 10f)));
+                p.Add((0.4f, () => log.AppendLine($"  drop picked: reserve {before} -> {inv.GetReserveAmmo(rifle)}, drop gone {drop == null}")));
+                return p;
+            }
+
             if (mode == "hud")
             {
                 // Zombie health bars and damage numbers: real Game view captures (the overlay canvas
@@ -411,6 +658,70 @@ namespace ZombieRush.EditorTools
                 p.Add((0.12f, () => { GameShot("Hud_3_Kill"); HudStatus("Wanderer killed"); }));
                 p.Add((0.8f, () => { GameShot("Hud_4_Drain"); HudStatus("after 0.8 s"); }));
                 p.Add((1.2f, () => HudStatus("after 2 s")));
+                return p;
+            }
+
+            if (mode == "burst")
+            {
+                // The Bloater (BellyBurst): 1) one walks at the player from 10 m with its AI on, swells and bursts
+                // (player health logged, shots every 0.3 s); 2) a second one is shot dead with a Wanderer beside it:
+                // it must still burst and hurt the Wanderer. Shots Burst_<nn>.png and Burst_Kill_<n>.png.
+                var ph = switcher.GetComponent<PlayerHealth>();
+                GameObject b1 = null, b2 = null, w = null;
+                string St(GameObject go)
+                {
+                    if (go == null) return "removed";
+                    var h = go.GetComponent<ZombieRush.Zombie.ZombieHealth>();
+                    var bb = go.GetComponent<ZombieRush.Zombie.BellyBurst>();
+                    var a = go.GetComponentInChildren<Animator>();
+                    var ci = a != null ? a.GetCurrentAnimatorClipInfo(0) : null;
+                    float d = Vector3.Distance(new Vector3(go.transform.position.x, 0f, go.transform.position.z), new Vector3(switcher.transform.position.x, 0f, switcher.transform.position.z));
+                    bool shown = go.GetComponentsInChildren<Renderer>().Any(r => r.enabled);
+                    return $"{d:0.0} m, hp {(h != null ? h.CurrentHealth : 0f):0}, {(ci != null && ci.Length > 0 ? ci[0].clip.name : "-")}{(bb != null && bb.IsSwelling ? ", SWELLING" : "")}{(h != null && h.IsDead ? ", DEAD" : "")}{(shown ? "" : ", body hidden (burst)")}";
+                }
+                void Status(string tag) => log.AppendLine($"  {tag}: player hp {(ph != null ? ph.CurrentHealth : -1f):0} | bloater1 {St(b1)}{(b2 != null || w != null ? $" | bloater2 {St(b2)} | wanderer {St(w)}" : "")}");
+                GameObject SpawnAt(string n, Vector3 pos, Vector3 face)
+                {
+                    if (Physics.Raycast(pos + Vector3.up * 20f, Vector3.down, out var hit, 40f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
+                    var z = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Prefabs/Zombie_{n}.prefab"), pos, Quaternion.LookRotation(face, Vector3.up));
+                    var rz = z.GetComponent<ZombieRush.Zombie.ZombieSpawnRise>(); if (rz != null) rz.enabled = false;
+                    return z;
+                }
+                p.Add((0.8f, () =>
+                {
+                    MoveToOpenSpot(switcher.transform, true);
+                    var sbase = ZombieRush.World.SafeBase.Instance;
+                    if (sbase != null)
+                    {
+                        Vector3 away = switcher.transform.position - sbase.Center; away.y = 0f;
+                        if (away.sqrMagnitude > 0.01f) switcher.transform.rotation = Quaternion.LookRotation(away.normalized, Vector3.up);
+                    }
+                }));
+                p.Add((0.5f, () =>
+                {
+                    if (ph != null) ph.FullHeal();
+                    Vector3 f = Vector3.ProjectOnPlane(switcher.transform.forward, Vector3.up).normalized;
+                    b1 = SpawnAt("Bloater", switcher.transform.position + f * 10f, -f);
+                    Status("spawned");
+                }));
+                for (int k = 0; k < 26; k++)
+                {
+                    int f = k;
+                    p.Add((0.3f, () => { Shot(cam, $"Burst_{f:00}"); if (b1 != null && f % 3 == 0) Side(b1.transform, $"Burst_Side_{f:00}", 70f); Status($"t{f:00}"); }));
+                }
+                p.Add((0.5f, () =>
+                {
+                    if (ph != null) ph.FullHeal();
+                    Vector3 f = Vector3.ProjectOnPlane(switcher.transform.forward, Vector3.up).normalized;
+                    Vector3 r = Vector3.Cross(Vector3.up, f);
+                    b2 = SpawnAt("Bloater", switcher.transform.position + f * 9f, -f);
+                    w = SpawnAt("Wanderer", switcher.transform.position + f * 9f + r * 1.2f, -f);
+                    foreach (var go in new[] { b2, w }) { var ai = go.GetComponent<ZombieRush.Zombie.ZombieAI>(); if (ai != null) ai.enabled = false; }
+                    Status("second pair spawned (AI off)");
+                }));
+                p.Add((0.6f, () => { b2.GetComponent<ZombieRush.Zombie.ZombieHealth>().TakeDamage(1000f); Status("bloater2 shot dead"); }));
+                for (int k = 0; k < 4; k++) { int f = k; p.Add((0.15f, () => { Shot(cam, $"Burst_Kill_{f}"); Status($"kill{f}"); })); }
+                p.Add((1.0f, () => Status("later")));
                 return p;
             }
 
@@ -509,6 +820,134 @@ namespace ZombieRush.EditorTools
                 p.Add((0.6f, () => { foreach (var (n, go) in crowd) if (go != null) go.GetComponent<ZombieRush.Zombie.ZombieHealth>().TakeDamage(1000f); Status("all killed"); }));
                 for (int k = 0; k < 4; k++) { int f = k; p.Add((0.5f, () => { Shot(cam, $"Fight_Dead{f}"); Status($"dead{f}"); })); }
                 p.Add((2.5f, () => Status("later")));
+                return p;
+            }
+
+            if (mode == "breach")
+            {
+                // The zombie spawn "ground breach": two zombies surface 6-9 m in front of the player (third person);
+                // shots as the ground tears open, while they climb out and as the scar fades.
+                var crowd = new List<GameObject>();
+                p.Add((0.5f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) { wm.StopAllCoroutines(); wm.enabled = false; }
+                    foreach (var zz in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(zz.gameObject);
+                    MoveToOpenSpot(switcher.transform, true);
+                    switcher.SetView(CharacterView.ThirdPerson);
+                    var ph0 = switcher.GetComponent<PlayerHealth>(); if (ph0 != null) ph0.enabled = false;
+                    var pads = wm != null ? wm.spawnPoints.Count(t => t != null && t.GetComponentsInChildren<Renderer>().Any(r => r.enabled)) : -1;
+                    log.AppendLine($"  old spawn discs still drawn: {pads}");
+                }));
+                p.Add((0.6f, () =>
+                {
+                    Vector3 f = Vector3.ProjectOnPlane(switcher.transform.forward, Vector3.up).normalized, rt = Vector3.Cross(Vector3.up, f);
+                    foreach (var (n, off) in new[] { ("Wanderer", f * 7f - rt * 1.8f), ("Horror", f * 9f + rt * 2.5f) })
+                    {
+                        var pf = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Prefabs/Zombie_{n}.prefab");
+                        Vector3 pos = switcher.transform.position + off;
+                        if (Physics.Raycast(pos + Vector3.up * 20f, Vector3.down, out var hit, 40f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
+                        var z = Object.Instantiate(pf, pos, Quaternion.LookRotation(-f, Vector3.up));
+                        var ai = z.GetComponent<ZombieRush.Zombie.ZombieAI>(); if (ai != null) ai.enabled = false;
+                        (z.GetComponent<ZombieRush.Zombie.ZombieSpawnRise>() ?? z.AddComponent<ZombieRush.Zombie.ZombieSpawnRise>()).Begin(pos);
+                        crowd.Add(z);
+                    }
+                }));
+                foreach (var (dt, tag) in new[] { (0.12f, "0_tear"), (0.25f, "1_open"), (0.35f, "2_rising"), (0.6f, "3_out"), (1.2f, "4_cooling"), (1.5f, "5_scar"), (1.3f, "6_gone") })
+                {
+                    string tg = tag;
+                    p.Add((dt, () => { Shot(cam, $"Breach_{tg}"); foreach (var z in crowd) if (z != null) { var ai = z.GetComponent<ZombieRush.Zombie.ZombieAI>(); if (ai != null) ai.enabled = false; } }));
+                }
+                p.Add((0.1f, () => { foreach (var z in crowd) if (z != null) Object.Destroy(z); }));
+                return p;
+            }
+
+            if (mode == "chase")
+            {
+                // Far-off zombies chasing a player who walks away and strafes (user: "zombies move randomly instead
+                // of following, like something pulls them, mostly when the player is far"). Per zombie: frames
+                // walking more than 70 deg off its route, sideways escapes started, and how many the OLD rule
+                // (must get 0.6 m closer to the player every 2 s) would have fired.
+                var crowd = new List<(string name, GameObject go)>();
+                var ph = switcher.GetComponent<PlayerHealth>();
+                var stats = new Dictionary<GameObject, (int frames, int off, int escapes, int oldRule, float startD, float winD, float winT, bool esc)>();
+                System.Action<ScriptableRenderContext, Camera> rec = (ctx, c) =>
+                {
+                    if (c != cam) return;
+                    foreach (var (n, go) in crowd)
+                    {
+                        if (go == null || !stats.TryGetValue(go, out var s)) continue;
+                        var ai = go.GetComponent<ZombieRush.Zombie.ZombieAI>(); var cc = go.GetComponent<CharacterController>();
+                        Vector3 v = cc.velocity; v.y = 0f;
+                        Vector3 to = ai.RouteCornerPoint - go.transform.position; to.y = 0f;
+                        float d = Vector3.Distance(new Vector3(go.transform.position.x, 0, go.transform.position.z), new Vector3(switcher.transform.position.x, 0, switcher.transform.position.z));
+                        s.frames++;
+                        if (v.magnitude > 0.3f && to.sqrMagnitude > 0.04f && Vector3.Angle(v, to) > 70f && d > 5f) s.off++;
+                        float esc = (float)typeof(ZombieRush.Zombie.ZombieAI).GetField("escapeTimer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(ai);
+                        if (esc > 0f && !s.esc)
+                        {
+                            s.escapes++;
+                            string ahead = to.sqrMagnitude > 0.01f && Physics.SphereCast(go.transform.position + Vector3.up, 0.4f, to.normalized, out var fh, 2f, ~0, QueryTriggerInteraction.Ignore)
+                                ? $"{fh.collider.name} at {fh.distance:0.0} m" : "nothing";
+                            log.AppendLine($"    {n} escape at {Time.time:0.0}s: {d:0.0} m from player, speed {v.magnitude:0.00} m/s, route corner {ai.RouteCorner}/{ai.RouteCornerCount} {to.magnitude:0.0} m away, ahead: {ahead}");
+                        }
+                        s.esc = esc > 0f;
+                        s.winT += Time.deltaTime;
+                        if (d < 6f) { s.winT = 0f; s.winD = d; }
+                        else if (s.winT >= 2f) { if (s.winD - d < 0.6f) s.oldRule++; s.winT = 0f; s.winD = d; }
+                        stats[go] = s;
+                    }
+                };
+                p.Add((0.5f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) { wm.StopAllCoroutines(); wm.enabled = false; }
+                    foreach (var zz in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(zz.gameObject);
+                    MoveToOpenSpot(switcher.transform, true);
+                    var sbase = ZombieRush.World.SafeBase.Instance;
+                    if (sbase != null)
+                    {
+                        Vector3 away = switcher.transform.position - sbase.Center; away.y = 0f;
+                        if (away.sqrMagnitude > 0.01f) switcher.transform.rotation = Quaternion.LookRotation(away.normalized, Vector3.up);
+                    }
+                }));
+                p.Add((0.5f, () =>
+                {
+                    if (ph != null) ph.FullHeal();
+                    var plan2 = new[] { ("Wanderer", 26f, 160f), ("Wanderer", 30f, -150f), ("Horror", 28f, 180f), ("Ghoul", 32f, 135f), ("Runner", 34f, -135f), ("Wanderer", 25f, 110f) };
+                    foreach (var (n, dist, ang) in plan2)
+                    {
+                        var pf = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Prefabs/Zombie_{n}.prefab");
+                        if (pf == null) { log.AppendLine($"  no prefab Zombie_{n}"); continue; }
+                        Vector3 f = Quaternion.Euler(0f, ang, 0f) * Vector3.ProjectOnPlane(switcher.transform.forward, Vector3.up).normalized;
+                        Vector3 pos = switcher.transform.position + f * dist;
+                        if (Physics.Raycast(pos + Vector3.up * 20f, Vector3.down, out var hit, 40f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
+                        var zm = ZombieRush.World.ZoneManager.Instance;
+                        if (zm != null && ZombieRush.World.ArenaSpawn.TryNear(pos, zm.Shape, switcher.transform.position, out var good, 8f, 30)) pos = good;
+                        var z = Object.Instantiate(pf, pos, Quaternion.LookRotation(-f, Vector3.up));
+                        var rz = z.GetComponent<ZombieRush.Zombie.ZombieSpawnRise>(); if (rz != null) rz.enabled = false;
+                        crowd.Add((n, z));
+                        float d0 = Vector3.Distance(pos, switcher.transform.position);
+                        stats[z] = (0, 0, 0, 0, d0, d0, 0f, false);
+                    }
+                    RenderPipelineManager.beginCameraRendering += rec;
+                }));
+                foreach (var (dir, secs) in new[] { (new Vector2(0f, 0.5f), 3f), (new Vector2(1f, 0f), 3f), (new Vector2(-1f, 0f), 3f), (new Vector2(0f, 1f), 3f) })
+                {
+                    var dd = dir;
+                    p.Add((secs, () => { if (ph != null) ph.FullHeal(); ZombieRush.Core.GameInput.SetTouchMove(dd); }));
+                }
+                p.Add((0.2f, () =>
+                {
+                    ZombieRush.Core.GameInput.SetTouchMove(Vector2.zero);
+                    RenderPipelineManager.beginCameraRendering -= rec;
+                    foreach (var (n, go) in crowd)
+                    {
+                        if (go == null || !stats.TryGetValue(go, out var s)) continue;
+                        var ai = go.GetComponent<ZombieRush.Zombie.ZombieAI>();
+                        float d = Vector3.Distance(go.transform.position, switcher.transform.position);
+                        log.AppendLine($"  {n}: {s.startD:0} -> {d:0} m, off its route {100f * s.off / Mathf.Max(1, s.frames):0}% of {s.frames} frames, sideways escapes {s.escapes} (old rule would have fired {s.oldRule}), route {ai.RouteNote}");
+                    }
+                    foreach (var (n, go) in crowd) if (go != null) Object.Destroy(go);
+                }));
                 return p;
             }
 
@@ -831,6 +1270,7 @@ namespace ZombieRush.EditorTools
                 // camera space (what the eye sees) and the right hand's distance from it (hand slipping on the grip).
                 var samples = new List<(Vector3 gunCam, float handGap, Vector3 camWorld)>();
                 var heads = new List<Vector3>(); Transform headBone = null;
+                var onScreen = new List<Vector3>(); var camLocal = new List<Vector3>();
                 var roots = new List<(Vector3 pos, float yaw, float bodyYaw, float dt)>();
                 int inactive = 0, frames = 0; float minW = 1f; string heldName = "";
                 Transform gunBone = null, hand = null;
@@ -846,7 +1286,24 @@ namespace ZombieRush.EditorTools
                     roots.Add((switcher.transform.position, switcher.transform.eulerAngles.y, bodyT.localEulerAngles.y, Time.deltaTime));
                     samples.Add((refT.InverseTransformPoint(gunBone.position), hand != null ? Vector3.Distance(hand.position, gunBone.position) : 0f, cam.transform.position));
                     if (headBone != null) heads.Add(switcher.transform.InverseTransformPoint(headBone.position));
+                    if (headBone != null && switcher.IsThirdPerson) onScreen.Add(cam.transform.InverseTransformPoint(headBone.parent != null ? headBone.parent.position : headBone.position));
+                    if (switcher.IsThirdPerson) camLocal.Add(cam.transform.localPosition);
                 };
+                // what the eye sees in third person: the upper body's place in the camera's view
+                string OnScreenStats()
+                {
+                    if (onScreen.Count < 6) return "";
+                    var s = onScreen.Skip(onScreen.Count / 5).ToList();
+                    float j = 0f; for (int k = 2; k < s.Count; k++) j += (s[k] - 2f * s[k - 1] + s[k - 2]).magnitude * 1000f;
+                    string r = $", body on screen: drift x {(s.Max(v => v.x) - s.Min(v => v.x)) * 1000:0} y {(s.Max(v => v.y) - s.Min(v => v.y)) * 1000:0} z {(s.Max(v => v.z) - s.Min(v => v.z)) * 1000:0} mm, shake {j / (s.Count - 2):0.0} mm/frame";
+                    if (camLocal.Count > 6)
+                    {
+                        var c = camLocal.Skip(camLocal.Count / 5).ToList();
+                        int jumps = 0; for (int k = 1; k < c.Count; k++) if ((c[k] - c[k - 1]).magnitude > 0.05f) jumps++;
+                        r += $", camera boom z {c.Min(v => v.z):0.00} to {c.Max(v => v.z):0.00} m ({jumps} jumps over 5 cm; every 4th: {string.Join(" ", c.Where((v, i) => i % 4 == 0).Select(v => v.z.ToString("0.00")))})";
+                    }
+                    onScreen.Clear(); camLocal.Clear(); return r;
+                }
                 string Stats(string what)
                 {
                     if (samples.Count < 5) return $"    {what}: {samples.Count} frames";
@@ -882,7 +1339,7 @@ namespace ZombieRush.EditorTools
                     string act = $"pose off {inactive}/{frames} frames, min hold {minW:0.00}, held {heldName}, ";
                     inactive = 0; frames = 0; minW = 1f;
                     return $"    {what}: {samples.Count} frames, {act}{swing}gun shake in view {acc / n:0.0} mm/frame (max {accMax:0.0}), camera shake {cacc / n:0.0} mm/frame, player root shake {racc / rn:0.0} mm/frame (speed change per frame: level {vjh / rn:0.00} m/s, up-down {vjv / rn:0.00} m/s), " +
-                           $"player yaw jitter {yawj / rn:0.00} deg, body yaw jitter {byj / rn:0.00} deg, frame time {dtMin * 1000:0}-{dtMax * 1000:0} ms, hand-gun distance {gmin * 1000:0} to {gmax * 1000:0} mm";
+                           $"player yaw jitter {yawj / rn:0.00} deg, body yaw jitter {byj / rn:0.00} deg, frame time {dtMin * 1000:0}-{dtMax * 1000:0} ms, hand-gun distance {gmin * 1000:0} to {gmax * 1000:0} mm" + OnScreenStats();
                 }
                 p.Add((0.3f, () =>
                 {
@@ -919,7 +1376,7 @@ namespace ZombieRush.EditorTools
                 return p;
             }
 
-            if (mode == "tpppitch")
+            if (mode.StartsWith("tpppitch"))
             {
                 // Third person with the rifle, looking far up to far down: the camera boom (player view) and the
                 // body bend seen from the side (the backpack must stay on the back, not sink into the body).
@@ -930,16 +1387,25 @@ namespace ZombieRush.EditorTools
                     var ph0 = switcher.GetComponent<PlayerHealth>(); if (ph0 != null) ph0.enabled = false;
                     switcher.SetView(CharacterView.ThirdPerson);
                 }));
-                int rifle = System.Array.FindIndex(weapons.weapons, w => w.name.Contains("Rifle"));
+                string pitchGun = mode.Contains(":") ? mode.Substring(mode.IndexOf(':') + 1) : "Rifle";
+                int rifle = System.Array.FindIndex(weapons.weapons, w => w.name.Contains(pitchGun));
                 p.Add((0.9f, () => { if (rifle >= 0) { weapons.Unlock(weapons.weapons[rifle].data); weapons.SelectWeapon(rifle); } }));
-                foreach (float pitch in new[] { -60f, -30f, 0f, 30f, 55f })
+                // Top and bottom of the real look range from the view config, so a limit change is tested as it ships.
+                float upMax = switcher.config != null ? switcher.config.pitchMax : 60f;
+                float downMax = switcher.config != null ? -switcher.config.pitchMin : 55f;
+                foreach (float pitch in new[] { -upMax, -30f, 0f, 30f, downMax })
                 {
                     float pp = pitch;
                     string tag = pp < 0 ? $"Up{-pp:0}" : pp > 0 ? $"Down{pp:0}" : "Level";
                     p.Add((0.5f, () => { SetPitch(player, pp); weapons.RefillAmmo(); ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Fire); }));
                     p.Add((0.25f, () => { SetPitch(player, pp); ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Fire); }));
-                    p.Add((0.3f, () => { ScreenCapture.CaptureScreenshot($"{Folder}/TPP_{tag}_Game.png"); UnityEditorInternal.InternalEditorUtility.RepaintAllViews(); }));
-                    p.Add((0.2f, () => Side(switcher.transform, $"TPP_{tag}_Side", 60f)));
+                    p.Add((0.3f, () => { ScreenCapture.CaptureScreenshot($"{Folder}/TPP_{pitchGun}_{tag}_Game.png"); UnityEditorInternal.InternalEditorUtility.RepaintAllViews(); }));
+                    p.Add((0.2f, () =>
+                    {
+                        Side(switcher.transform, $"TPP_{pitchGun}_{tag}_Side", 60f);
+                        var bgp = Object.FindAnyObjectByType<ZombieRush.Player.BodyGunPose>();
+                        if (bgp != null) log.AppendLine($"  {pitchGun} {tag}: torso bend {bgp.DebugFix:0} deg (view pitch {bgp.DebugWantPitch:0}), steady move {bgp.DebugMove * 100f:0.0} cm, right hand from right shoulder (right, up, fwd) {bgp.DebugHandFromShoulder.x:0.00} {bgp.DebugHandFromShoulder.y:0.00} {bgp.DebugHandFromShoulder.z:0.00} m");
+                    }));
                 }
                 p.Add((0.2f, () => SetPitch(player, 0f)));
                 return p;
@@ -1040,6 +1506,487 @@ namespace ZombieRush.EditorTools
                 return p;
             }
 
+            if (mode == "gatefire")
+            {
+                // 2026-11-16: the burning coal line across the main gate: the player walks over it; zombies chasing a
+                // player inside the base stop outside it.
+                var sbG = ZombieRush.World.SafeBase.Instance;
+                var fire = GameObject.Find("GateFires") != null ? GameObject.Find("GateFires").transform.Cast<Transform>().OrderBy(t =>
+                    sbG != null && sbG.playerStart != null ? Vector3.Angle(sbG.playerStart.forward, Vector3.ProjectOnPlane(t.position - sbG.Center, Vector3.up)) : 0f).FirstOrDefault() : null;
+                var phG = switcher.GetComponent<PlayerHealth>();
+                Vector3 outDir = Vector3.forward; Vector3 cG = Vector3.zero;
+                void Put(float r, bool faceOut)
+                {
+                    var cc = switcher.GetComponent<CharacterController>();
+                    if (cc != null) cc.enabled = false;
+                    var p2 = cG + outDir * r; p2.y = fire.position.y + 0.1f;
+                    switcher.transform.SetPositionAndRotation(p2, Quaternion.LookRotation(faceOut ? outDir : -outDir));
+                    if (cc != null) cc.enabled = true;
+                }
+                float Radius() => Vector3.ProjectOnPlane(switcher.transform.position - cG, Vector3.up).magnitude;
+                void Pic(string n) { Directory.CreateDirectory(Folder); ScreenCapture.CaptureScreenshot($"{Folder}/GateFire_{n}.png"); }
+                var zs = new List<GameObject>();
+                p.Add((0.8f, () =>
+                {
+                    if (fire == null || sbG == null) { log.AppendLine("  no GateFires / SafeBase"); return; }
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) { wm.StopAllCoroutines(); wm.enabled = false; }
+                    foreach (var zz in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(zz.gameObject);
+                    if (phG != null) phG.enabled = false;
+                    cG = sbG.Center; outDir = Vector3.ProjectOnPlane(fire.position - cG, Vector3.up).normalized;
+                    log.AppendLine($"  gate fire {fire.name} at {Vector3.ProjectOnPlane(fire.position - cG, Vector3.up).magnitude:0.0} m, safe radius {sbG.radius:0.0}");
+                    switcher.SetView(CharacterView.FirstPerson);
+                    Put(21f, true);
+                }));
+                p.Add((0.02f, () => Pic("Inside")));
+                // walk out over it (third person)
+                p.Add((0.8f, () => { switcher.SetView(CharacterView.ThirdPerson); Put(22.5f, true); }));
+                p.Add((1.3f, () => ZombieRush.Core.GameInput.SetTouchMove(new Vector2(0f, 0.6f))));
+                p.Add((0.02f, () => { Pic("Crossing"); log.AppendLine($"  crossing: {Radius():0.0} m from centre"); }));
+                p.Add((1.6f, () => { }));
+                p.Add((0.02f, () => { ZombieRush.Core.GameInput.SetTouchMove(Vector2.zero); log.AppendLine($"  walked out: {Radius():0.0} m from centre (fire line at {Vector3.ProjectOnPlane(fire.position - cG, Vector3.up).magnitude:0.0}) -> {(Radius() > sbG.radius + 0.5f ? "PASSED" : "STOPPED")}"); }));
+                // back in, zombies come for the player
+                p.Add((0.5f, () =>
+                {
+                    switcher.SetView(CharacterView.FirstPerson); Put(20f, true);
+                    if (phG != null) { phG.enabled = true; phG.FullHeal(); }   // zombies only hunt players on the PlayerHealth list (inside the base nothing hurts)
+                    var right = Vector3.Cross(Vector3.up, outDir);
+                    var kinds = new[] { "Wanderer", "Runner", "Horror", "Wanderer", "Ghoul" };
+                    for (int i = 0; i < kinds.Length; i++)
+                    {
+                        var pf = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Prefabs/Zombie_{kinds[i]}.prefab");
+                        if (pf == null) continue;
+                        var pos = cG + outDir * (36f + i) + right * ((i - 2) * 2.5f);
+                        if (Physics.Raycast(pos + Vector3.up * 20f, Vector3.down, out var hit, 40f, ~0, QueryTriggerInteraction.Ignore)) pos = hit.point;
+                        var z = Object.Instantiate(pf, pos, Quaternion.LookRotation(-outDir));
+                        var rz = z.GetComponent<ZombieRush.Zombie.ZombieSpawnRise>(); if (rz != null) rz.enabled = false;
+                        zs.Add(z);
+                    }
+                    log.AppendLine($"  {zs.Count} zombies spawned 36-40 m out beyond the gate");
+                }));
+                p.Add((10f, () => { }));
+                p.Add((0.02f, () =>
+                {
+                    Pic("Zombies_FP");
+                    var rs = zs.Where(z => z != null).Select(z => Vector3.ProjectOnPlane(z.transform.position - cG, Vector3.up).magnitude).OrderBy(r => r).ToList();
+                    log.AppendLine($"  zombies after 10 s: closest {(rs.Count > 0 ? rs[0] : 0f):0.0} m from centre (all: {string.Join(", ", rs.Select(r => r.ToString("0.0")))}), fire line at {Vector3.ProjectOnPlane(fire.position - cG, Vector3.up).magnitude:0.0}, safe radius {sbG.radius:0.0}");
+                }));
+                p.Add((0.6f, () => { switcher.SetView(CharacterView.ThirdPerson); Put(21f, true); }));
+                p.Add((0.02f, () => Pic("Zombies_TP")));
+                return p;
+            }
+
+            if (mode == "akhold")
+            {
+                // 2026-11-16: the AK held still (after it has settled) and during a quick look turn: how much the gun
+                // moves in view and how far each hand slides on it, first and third person.
+                int rifleI = System.Array.FindIndex(weapons.weapons, w => w != null && w.data != null && w.data.hasScope);
+                var rows = new List<(Vector3 gun, Vector3 lh, Vector3 rh, float gunYaw)>();
+                bool rec = false; float turn = 0f;
+                Transform gunB = null, lH = null, rH = null; Transform refT = null;
+                System.Action<ScriptableRenderContext, Camera> sample = (ctx, c) =>
+                {
+                    if (c != cam) return;
+                    if (turn > 0f) switcher.transform.Rotate(0f, 90f * Time.deltaTime, 0f);   // the look turn, like the mouse
+                    if (!rec || gunB == null || refT == null) return;
+                    var gl = gunB.InverseTransformPoint(lH != null ? lH.position : gunB.position);
+                    var gr = gunB.InverseTransformPoint(rH != null ? rH.position : gunB.position);
+                    Vector3 f = refT.InverseTransformDirection(gunB.forward);
+                    rows.Add((refT.InverseTransformPoint(gunB.position), gl, gr, Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg));
+                };
+                void Find(bool fp)
+                {
+                    gunB = lH = rH = null;
+                    var w = weapons.CurrentWeapon;
+                    if (fp)
+                    {
+                        refT = cam.transform;
+                        var vm = w.GetComponent<ZombieRush.Weapons.WeaponViewModel>();
+                        var rig = vm != null && vm.model != null ? vm.model.GetComponentInChildren<ZombieRush.Weapons.GunRig>(true) : null;
+                        gunB = rig != null ? rig.GunBone : null;
+                        var arms = cam.transform.GetComponentsInChildren<Transform>(false).FirstOrDefault(t => t.name.StartsWith("FirstPersonArms_") && t.gameObject.activeInHierarchy);
+                        if (arms != null) foreach (var t in arms.GetComponentsInChildren<Transform>()) { if (t.name == "LeftHand") lH = t; if (t.name == "RightHand") rH = t; }
+                    }
+                    else
+                    {
+                        refT = switcher.transform;
+                        var ar = Object.FindAnyObjectByType<WeaponAimRig>();
+                        var rig = ar != null && ar.HeldGun != null ? ar.HeldGun.GetComponentInChildren<ZombieRush.Weapons.GunRig>(true) : null;
+                        gunB = rig != null ? rig.GunBone : null;
+                        var an = ar != null ? ar.GetComponent<Animator>() : null;
+                        if (an != null) { lH = an.GetBoneTransform(HumanBodyBones.LeftHand); rH = an.GetBoneTransform(HumanBodyBones.RightHand); }
+                    }
+                    log.AppendLine($"    found gun bone {(gunB != null ? gunB.name : "NONE")}, left hand {(lH != null)}, right hand {(rH != null)}");
+                }
+                string Range(string what)
+                {
+                    if (rows.Count < 5) return $"    {what}: {rows.Count} frames";
+                    string R(System.Func<(Vector3 gun, Vector3 lh, Vector3 rh, float gunYaw), Vector3> sel)
+                    {
+                        var v = rows.Select(sel).ToList();
+                        return $"x {(v.Max(a => a.x) - v.Min(a => a.x)) * 1000:0} y {(v.Max(a => a.y) - v.Min(a => a.y)) * 1000:0} z {(v.Max(a => a.z) - v.Min(a => a.z)) * 1000:0}";
+                    }
+                    float jit = 0f; for (int k = 2; k < rows.Count; k++) jit += (rows[k].gun - 2f * rows[k - 1].gun + rows[k - 2].gun).magnitude * 1000f;
+                    var s = $"    {what}: {rows.Count} frames, gun moves {R(r => r.gun)} mm (shake {jit / (rows.Count - 2):0.00} mm/frame), gun turns {rows.Max(r => r.gunYaw) - rows.Min(r => r.gunYaw):0.0} deg, LEFT hand slides on gun {R(r => r.lh)} mm, RIGHT hand slides {R(r => r.rh)} mm";
+                    rows.Clear(); return s;
+                }
+                p.Add((0.6f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var z in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(z.gameObject);
+                    var ph = switcher.GetComponent<PlayerHealth>(); if (ph != null) ph.enabled = false;
+                    MoveToOpenSpot(switcher.transform, true);
+                    RenderPipelineManager.beginCameraRendering += sample;
+                }));
+                foreach (var view in new[] { CharacterView.FirstPerson, CharacterView.ThirdPerson })
+                {
+                    bool fp = view == CharacterView.FirstPerson;
+                    string v = fp ? "FP" : "TP";
+                    p.Add((2.5f, () => { switcher.SetView(view); weapons.Unlock(weapons.weapons[rifleI].data); weapons.SelectWeapon(rifleI); log.AppendLine($"  {v} AK:"); }));
+                    p.Add((3.0f, () => { Find(fp); rec = true; }));
+                    p.Add((0.02f, () => { rec = false; log.AppendLine(Range("standing still 3 s")); }));
+                    p.Add((1.0f, () => { rec = true; turn = 1f; }));
+                    p.Add((0.02f, () => { rec = false; turn = 0f; log.AppendLine(Range("turning 90 deg/s")); }));
+                    p.Add((0.6f, () => { Directory.CreateDirectory(Folder); ScreenCapture.CaptureScreenshot($"{Folder}/AkHold_{v}.png"); }));
+                }
+                p.Add((0.1f, () => RenderPipelineManager.beginCameraRendering -= sample));
+                return p;
+            }
+
+            if (mode == "hudui")
+            {
+                // 2026-11-17: simple side-feed messages, the phone HUD editor (Pause > CUSTOMIZE HUD) and the
+                // mobile performance trims (forced on in the editor for this run).
+                var was = ZombieRush.Core.GameSettings.Controls;
+                void HShot(string n) { Directory.CreateDirectory(Folder); ScreenCapture.CaptureScreenshot($"{Folder}/Hud_{n}.png"); }
+                var fi = typeof(ZombieRush.UI.HudEditor).GetField("instance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                System.Func<ZombieRush.UI.HudEditor> ed = () => fi.GetValue(null) as ZombieRush.UI.HudEditor;
+                System.Action<string, object[]> call = (m, a) => typeof(ZombieRush.UI.HudEditor).GetMethod(m, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance).Invoke(ed(), a);
+                PointerEventData Pe(Vector2 at) => new PointerEventData(UnityEngine.EventSystems.EventSystem.current) { position = at };
+                p.Add((1.0f, () =>
+                {
+                    MoveToOpenSpot(switcher.transform, true);
+                    ZombieRush.Core.GameSettings.Controls = ZombieRush.Core.ControlScheme.Touch;
+                    ZombieRush.Core.MobilePerformance.ForceInEditor = true;
+                    log.AppendLine("  " + ZombieRush.Core.MobilePerformance.Apply());
+                }));
+                p.Add((1.0f, () =>
+                {
+                    var lc = Object.FindAnyObjectByType<ZombieRush.Core.MobileLightCuller>();
+                    log.AppendLine($"  light culler: {(lc != null ? lc.LitCount : -1)} of {(lc != null ? lc.Managed : -1)} scene lights on");
+                    ZombieRush.Core.GameEvents.RaiseWaveAnnounced(3);
+                    ZombieRush.Core.GameEvents.RaiseNotice("SAFE BASE", "GEAR UP  ·  STEP OUT TO FIGHT");
+                    ZombieRush.UI.PickupToast.Show("+12 RIFLE AMMO");
+                    ZombieRush.Core.GameEvents.RaiseWaveCompleted(2, 8f);
+                }));
+                p.Add((0.6f, () => HShot("Feed")));
+                p.Add((0.5f, () => { if (ZombieRush.Core.GameManager.Instance.State == ZombieRush.Core.GameState.Playing) ZombieRush.Core.GameManager.Instance.TogglePause(); }));
+                p.Add((0.8f, () =>
+                {
+                    HShot("Pause");
+                    var feed = GameObject.Find("SideFeed");
+                    log.AppendLine($"  paused: state {ZombieRush.Core.GameManager.Instance.State}, timeScale {Time.timeScale}, feed lines active {(feed != null && feed.transform.Find("Lines") != null ? feed.transform.Find("Lines").gameObject.activeSelf.ToString() : "no feed")}, feed thinks playing {typeof(ZombieRush.UI.PickupToast).GetField("gamePlaying", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).GetValue(null)}, feeds {Object.FindObjectsByType<ZombieRush.UI.PickupToast>(FindObjectsSortMode.None).Length}, pause panel active {Object.FindAnyObjectByType<ZombieRush.UI.PauseMenuUI>(FindObjectsInactive.Include)?.panel?.gameObject.activeInHierarchy}");
+                }));
+                p.Add((0.3f, () =>
+                {
+                    var pm = Object.FindAnyObjectByType<ZombieRush.UI.PauseMenuUI>();
+                    typeof(ZombieRush.UI.PauseMenuUI).GetMethod("OpenHudEditor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(pm, null);
+                }));
+                p.Add((0.6f, () => HShot("Editor")));
+                p.Add((0.3f, () =>
+                {
+                    // drag FIRE 300 px left and 150 px up; make JUMP bigger
+                    var tc = ZombieRush.UI.TouchControlsUI.Instance;
+                    var fire = tc.Controls.Find(c => c.key == "Fire");
+                    var c0 = new Vector3[4]; fire.rt.GetWorldCorners(c0);
+                    Vector2 mid = RectTransformUtility.WorldToScreenPoint(null, (c0[0] + c0[2]) * 0.5f);
+                    call("OnPointerDown", new object[] { Pe(mid) });
+                    call("OnDrag", new object[] { Pe(mid + new Vector2(-300f, 150f)) });
+                    call("OnPointerUp", new object[] { Pe(mid + new Vector2(-300f, 150f)) });
+                    var jump = tc.Controls.Find(c => c.key == "Jump");
+                    jump.rt.GetWorldCorners(c0);
+                    call("OnPointerDown", new object[] { Pe(RectTransformUtility.WorldToScreenPoint(null, (c0[0] + c0[2]) * 0.5f)) });
+                    call("OnPointerUp", new object[] { Pe(Vector2.zero) });
+                    call("Resize", new object[] { 0.3f });
+                    log.AppendLine($"  edit: fire {fire.homePos} -> {fire.pos}, jump size {jump.size:0.00}");
+                }));
+                p.Add((0.5f, () => HShot("Edited")));
+                p.Add((0.2f, () =>
+                {
+                    call("Close", new object[] { true });
+                    log.AppendLine($"  saved: fire '{PlayerPrefs.GetString("zr.hud.Fire", "")}', jump '{PlayerPrefs.GetString("zr.hud.Jump", "")}', editor open {ZombieRush.UI.HudEditor.IsOpen}");
+                    ZombieRush.Core.GameManager.Instance.Resume();
+                }));
+                p.Add((0.8f, () => HShot("AfterEdit")));
+                p.Add((0.3f, () =>
+                {
+                    // leave the editor's layout as it was
+                    var tc = ZombieRush.UI.TouchControlsUI.Instance; tc.ResetAll(); tc.Save();
+                    ZombieRush.Core.GameSettings.Controls = was;
+                    ZombieRush.Core.MobilePerformance.ForceInEditor = false;
+                }));
+                return p;
+            }
+
+            if (mode == "touchui")
+            {
+                // 2026-11-17: the phone's on-screen controls (user: "buttons too large"), shown in the Game view
+                var was = ZombieRush.Core.GameSettings.Controls;
+                p.Add((1.0f, () => { MoveToOpenSpot(switcher.transform, true); ZombieRush.Core.GameSettings.Controls = ZombieRush.Core.ControlScheme.Touch; }));
+                p.Add((0.1f, () =>
+                {
+                    Directory.CreateDirectory(Folder);
+                    ScreenCapture.CaptureScreenshot($"{Folder}/TouchUI.png");
+                    log.AppendLine($"  screen {Screen.width}x{Screen.height}");
+                    foreach (var t in Object.FindObjectsByType<ZombieRush.UI.TouchControlsUI>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                        log.AppendLine($"  TouchControlsUI on '{t.name}' active {t.isActiveAndEnabled} scale {t.buttonScale} root '{(t.controlsRoot != null ? t.controlsRoot.name : "null")}' fire scale {(t.controlsRoot != null && t.controlsRoot.transform.Find("Fire") != null ? t.controlsRoot.transform.Find("Fire").localScale.x : -1f)}");
+                    foreach (var b in Object.FindObjectsByType<ZombieRush.UI.TouchButton>(FindObjectsSortMode.None))
+                    {
+                        var rt = (RectTransform)b.transform; var c = new Vector3[4]; rt.GetWorldCorners(c);
+                        var canvas = rt.GetComponentInParent<Canvas>().rootCanvas;
+                        Camera uc = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+                        Vector2 a = RectTransformUtility.WorldToScreenPoint(uc, c[0]), z = RectTransformUtility.WorldToScreenPoint(uc, c[2]);
+                        log.AppendLine($"  {b.name}: {(z.y - a.y) / Screen.height * 100f:0}% of screen height, centre at ({(a.x + z.x) * 0.5f / Screen.width * 100f:0}%, {(a.y + z.y) * 0.5f / Screen.height * 100f:0}%)");
+                    }
+                }));
+                p.Add((0.5f, () => ZombieRush.Core.GameSettings.Controls = was));
+                return p;
+            }
+
+            if (mode == "duck")
+            {
+                // 2026-11-16: crouching ducks the giant (Horror) zombie's swing (ZombieConfig highSwing);
+                // and no turret can be put down inside the safe base.
+                var ph = switcher.GetComponent<PlayerHealth>();
+                GameObject z = null;
+                float hp0 = 0f, lastHp = 0f;
+                p.Add((0.6f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var zz in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(zz.gameObject);
+                    MoveToOpenSpot(switcher.transform, true);
+                    switcher.SetView(CharacterView.ThirdPerson);
+                }));
+                foreach (bool crouch in new[] { false, true })
+                {
+                    string tag = crouch ? "crouched" : "standing";
+                    p.Add((0.8f, () =>
+                    {
+                        if (ZombieRush.Core.GameInput.TouchCrouchActive != crouch) ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Crouch);
+                        ph.Revive();
+                        hp0 = ph.CurrentHealth + ph.CurrentArmor; lastHp = hp0;
+                        var pf = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Zombie_Horror.prefab");
+                        Vector3 f = Vector3.ProjectOnPlane(switcher.transform.forward, Vector3.up).normalized;
+                        z = Object.Instantiate(pf, switcher.transform.position + f * 3f, Quaternion.LookRotation(-f, Vector3.up));
+                        var rz = z.GetComponent<ZombieRush.Zombie.ZombieSpawnRise>(); if (rz != null) rz.enabled = false;
+                        var ai = z.GetComponent<ZombieRush.Zombie.ZombieAI>(); if (ai != null) ai.alwaysHunt = true;
+                    }));
+                    for (int k = 0; k < 17; k++)
+                    {
+                        int kk = k;
+                        p.Add((0.3f, () =>
+                        {
+                            float hpNow = ph.CurrentHealth + ph.CurrentArmor;
+                            if (hpNow < lastHp - 0.5f)
+                            {
+                                var near = Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)
+                                    .Where(q => !q.IsDead && Vector3.Distance(q.transform.position, switcher.transform.position) < 4.5f)
+                                    .Select(q => $"{q.name} {Vector3.Distance(q.transform.position, switcher.transform.position):0.0}m");
+                                log.AppendLine($"    {tag} hit -{lastHp - hpNow:0} at step {kk}, crouching {switcher.GetComponent<PlayerController>().IsCrouching}, near: {string.Join(", ", near)}");
+                            }
+                            lastHp = hpNow;
+                            if (kk == 12) { Directory.CreateDirectory(Folder); ScreenCapture.CaptureScreenshot($"{Folder}/Duck_{tag}.png"); }
+                        }));
+                    }
+                    p.Add((0.5f, () =>
+                    {
+                        var cc = switcher.GetComponent<CharacterController>();
+                        log.AppendLine($"  {tag}: capsule height {(cc != null ? cc.height : -1f):0.00}, crouching {switcher.GetComponent<PlayerController>().IsCrouching}, 5 s next to a giant: health+armour lost {hp0 - (ph.CurrentHealth + ph.CurrentArmor):0}");
+                        if (z != null) Object.Destroy(z);
+                        foreach (var t in Object.FindObjectsByType<ZombieRush.Zombie.ToxicZone>(FindObjectsSortMode.None)) Object.Destroy(t.gameObject);
+                    }));
+                }
+                p.Add((0.3f, () => { if (ZombieRush.Core.GameInput.TouchCrouchActive) ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Crouch); }));
+                // turret: inside the base (centre, by a gate) and outside
+                foreach (var (where, r) in new[] { ("base centre", 0f), ("in a gate", 26f), ("outside", 34f) })
+                {
+                    p.Add((0.6f, () =>
+                    {
+                        var sb = ZombieRush.World.SafeBase.Instance;
+                        var cc = switcher.GetComponent<CharacterController>();
+                        if (cc != null) cc.enabled = false;
+                        switcher.transform.SetPositionAndRotation(sb.Center + Quaternion.Euler(0f, 14.5f, 0f) * Vector3.forward * r + Vector3.up * 0.2f,
+                            Quaternion.Euler(0f, 14.5f, 0f));
+                        if (cc != null) cc.enabled = true;
+                    }));
+                    p.Add((0.5f, () =>
+                    {
+                        var dep = ZombieRush.Weapons.TurretDeployer.Local;
+                        int before = Object.FindObjectsByType<ZombieRush.Weapons.Turret>(FindObjectsSortMode.None).Length;
+                        string got = "";
+                        System.Action<string, string> on = (a, b) => got = a;
+                        ZombieRush.Core.GameEvents.OnNotice += on;
+                        try
+                        {
+                            if (dep != null)
+                            {
+                                var f = typeof(ZombieRush.Weapons.TurretDeployer).GetField("readyAt", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                f?.SetValue(dep, 0f);
+                                dep.Use();
+                            }
+                        }
+                        finally { ZombieRush.Core.GameEvents.OnNotice -= on; }
+                        int after = Object.FindObjectsByType<ZombieRush.Weapons.Turret>(FindObjectsSortMode.None).Length;
+                        log.AppendLine($"  turret {where} ({r:0} m, base radius {ZombieRush.World.SafeBase.Instance.radius:0.0}): owned {dep?.Owned}, turrets {before} -> {after}, notice '{got}'");
+                    }));
+                }
+                return p;
+            }
+
+            if (mode == "irons")
+            {
+                // 2026-11-16: iron-sight aim (pistol, shotgun): right click raises the gun to the eye, sights on the
+                // middle of the screen; from first and third person; hip, aimed, and just after a shot while aimed.
+                p.Add((0.6f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var z in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(z.gameObject);
+                    var ph = switcher.GetComponent<PlayerHealth>(); if (ph != null) ph.enabled = false;
+                    MoveToOpenSpot(switcher.transform, true);
+                }));
+                void IShot(string name)
+                {
+                    Directory.CreateDirectory(Folder);
+                    ScreenCapture.CaptureScreenshot($"{Folder}/Irons_{name}.png");
+                    log.AppendLine($"  {name}: fov {cam.fieldOfView:0.0}, vmZoom {switcher.ViewmodelZoom:0.00}, aim {switcher.AimAmount:0.00}, scoped {switcher.Scoped}, atEye {switcher.ScopedAtEye}, throughScope {switcher.ThroughScope}");
+                }
+                foreach (var style in new[] { ZombieRush.Weapons.GunStyle.Pistol, ZombieRush.Weapons.GunStyle.Shotgun })
+                {
+                    int gi = System.Array.FindIndex(weapons.weapons, w => w != null && w.data != null && w.data.ironSights && (w.Style == ZombieRush.Weapons.GunStyle.Shotgun) == (style == ZombieRush.Weapons.GunStyle.Shotgun));
+                    if (gi < 0) continue;
+                    foreach (var view in new[] { CharacterView.FirstPerson, CharacterView.ThirdPerson })
+                    {
+                        string v = (view == CharacterView.FirstPerson ? "FP_" : "TP_") + style;
+                        p.Add((0.5f, () => switcher.SetView(view)));
+                        p.Add((1.0f, () => { weapons.Unlock(weapons.weapons[gi].data); weapons.SelectWeapon(gi); weapons.RefillAmmo(); }));
+                        p.Add((0.02f, () => IShot($"{v}_Hip")));
+                        p.Add((0.8f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Aim)));
+                        p.Add((0.02f, () => IShot($"{v}_Aimed")));
+                        p.Add((0.06f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Fire)));
+                        p.Add((0.02f, () => IShot($"{v}_AimedShot")));
+                        p.Add((0.6f, () => ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Fire)));
+                        p.Add((0.02f, () => IShot($"{v}_AimedSettled")));
+                        p.Add((0.6f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Aim)));   // aim off
+                    }
+                }
+                return p;
+            }
+
+            if (mode == "scope")
+            {
+                // 2026-11-16: the realistic scope (gun showing below the sight), the view kick, and no firing in the base.
+                var pc = switcher.GetComponent<PlayerController>();
+                p.Add((0.3f, () =>
+                {
+                    var sb0 = ZombieRush.World.SafeBase.Instance;
+                    var pos = startSpawn;
+                    log.AppendLine($"  start: game put the player at {pos:F1} facing {startSpawnYaw:0}, PlayerStart {(sb0 != null && sb0.playerStart != null ? sb0.playerStart.position.ToString("F1") : "none")}, {(sb0 != null ? Vector3.ProjectOnPlane(pos - sb0.Center, Vector3.up).magnitude : -1f):0.0} m from base centre, safe radius {(sb0 != null ? sb0.radius : 0f):0.0}");
+                    // back to that spot, first person, for a look
+                    switcher.SetView(CharacterView.FirstPerson);
+                    var cc0 = switcher.GetComponent<CharacterController>();
+                    if (cc0 != null) cc0.enabled = false;
+                    switcher.transform.SetPositionAndRotation(startSpawn, Quaternion.Euler(0f, startSpawnYaw, 0f));
+                    if (cc0 != null) cc0.enabled = true;
+                }));
+                p.Add((0.3f, () => { Directory.CreateDirectory(Folder); ScreenCapture.CaptureScreenshot($"{Folder}/Scope_Start.png"); }));
+                p.Add((0.6f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var z in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(z.gameObject);
+                    var ph = switcher.GetComponent<PlayerHealth>(); if (ph != null) ph.enabled = false;
+                    MoveToOpenSpot(switcher.transform, true);
+                }));
+                void Shot(string name, string note)
+                {
+                    Directory.CreateDirectory(Folder);
+                    ScreenCapture.CaptureScreenshot($"{Folder}/Scope_{name}.png");
+                    float kick = pc != null && pc.cameraPivot != null ? Mathf.DeltaAngle(pc.cameraPivot.localEulerAngles.x, pc.Pitch) : 0f;
+                    var w = weapons.CurrentWeapon;
+                    log.AppendLine($"  {name}: {note}; view kick {kick:0.00} deg up, mag {(w != null ? w.CurrentMagazine : -1)}, fov {cam.fieldOfView:0.0}, vmZoom {switcher.ViewmodelZoom:0.00}, scoped {switcher.Scoped}, atEye {switcher.ScopedAtEye}");
+                }
+                int rifle = System.Array.FindIndex(weapons.weapons, w => w != null && w.data != null && w.data.hasScope);
+                int shotgun = System.Array.FindIndex(weapons.weapons, w => w != null && w.Style == ZombieRush.Weapons.GunStyle.Shotgun);
+                foreach (var view in new[] { CharacterView.FirstPerson, CharacterView.ThirdPerson })
+                {
+                    string v = view == CharacterView.FirstPerson ? "FP" : "TP";
+                    p.Add((0.5f, () => switcher.SetView(view)));
+                    if (rifle >= 0)
+                    {
+                        // each step: the action, then the wait
+                        p.Add((0.9f, () => { weapons.Unlock(weapons.weapons[rifle].data); weapons.SelectWeapon(rifle); weapons.RefillAmmo(); }));
+                        p.Add((0.7f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Aim)));
+                        p.Add((0.02f, () => Shot($"{v}_Rifle_Scoped", "scoped, still")));
+                        p.Add((0.3f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Fire)));
+                        p.Add((0.02f, () => Shot($"{v}_Rifle_ScopedBurst", "scoped, 0.3 s into a burst")));
+                        p.Add((0.6f, () => ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Fire)));
+                        p.Add((0.02f, () => Shot($"{v}_Rifle_ScopedSettled", "scoped, 0.6 s after the burst")));
+                        p.Add((0.5f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Aim)));   // aim off
+                        p.Add((0.25f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Fire)));
+                        p.Add((0.02f, () => Shot($"{v}_Rifle_HipBurst", "hip, 0.25 s into a burst")));
+                        p.Add((0.3f, () => ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Fire)));
+                    }
+                    if (shotgun >= 0)
+                    {
+                        p.Add((0.9f, () => { weapons.Unlock(weapons.weapons[shotgun].data); weapons.SelectWeapon(shotgun); weapons.RefillAmmo(); }));
+                        p.Add((0.07f, () => ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Fire)));
+                        p.Add((0.02f, () => Shot($"{v}_Shotgun_Kick", "hip, 0.07 s after the shot")));
+                        p.Add((0.8f, () => ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Fire)));
+                        p.Add((0.02f, () => Shot($"{v}_Shotgun_Settled", "0.8 s after")));
+                    }
+                }
+                // no firing inside the safe base
+                p.Add((0.8f, () =>
+                {
+                    switcher.SetView(CharacterView.FirstPerson);
+                    var sb = ZombieRush.World.SafeBase.Instance;
+                    if (sb == null) { log.AppendLine("  base: no SafeBase"); return; }
+                    var cc = switcher.GetComponent<CharacterController>();
+                    if (cc != null) cc.enabled = false;
+                    switcher.transform.position = sb.Center + Vector3.up * 0.3f;
+                    if (cc != null) cc.enabled = true;
+                    weapons.SelectWeapon(0); weapons.RefillAmmo();
+                }));
+                int magBefore = 0;
+                p.Add((0.6f, () =>
+                {
+                    var sb = ZombieRush.World.SafeBase.Instance;
+                    magBefore = weapons.CurrentWeapon.CurrentMagazine;
+                    log.AppendLine($"  base: ring active {(sb != null && sb.ring != null && sb.ring.gameObject.activeInHierarchy)}, inside {(sb != null && sb.Contains(switcher.transform.position))}, gun {weapons.CurrentWeapon.name}, mag before {magBefore}");
+                    ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Fire);
+                }));
+                p.Add((0.02f, () => { Shot("Base_NoFire", "inside the base, trigger held 0.6 s"); log.AppendLine($"  base: shots fired {magBefore - weapons.CurrentWeapon.CurrentMagazine}"); }));
+                p.Add((0.1f, () => ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Fire)));
+                // at the wall: just inside it, and standing in a gate opening (both inside the base: no firing);
+                // then one step outside (firing again). Facing out, a shot of the wall.
+                foreach (var (tag, r, ang) in new[] { ("WallInside", 24.6f, 60f), ("Gate", 25.9f, 14.5f), ("Outside", 28.5f, 14.5f) })
+                {
+                    p.Add((0.5f, () =>
+                    {
+                        var sb2 = ZombieRush.World.SafeBase.Instance;
+                        var dir = Quaternion.Euler(0f, ang, 0f) * Vector3.forward;
+                        var at = sb2.Center + dir * r;
+                        var cc = switcher.GetComponent<CharacterController>();
+                        if (cc != null) cc.enabled = false;
+                        switcher.transform.SetPositionAndRotation(at + Vector3.up * 0.1f, Quaternion.LookRotation(tag == "WallInside" ? dir : -dir));
+                        if (cc != null) cc.enabled = true;
+                        weapons.RefillAmmo();
+                    }));
+                    p.Add((0.6f, () => { magBefore = weapons.CurrentWeapon.CurrentMagazine; ZombieRush.Core.GameInput.TouchPress(ZombieRush.Core.TouchAction.Fire); }));
+                    p.Add((0.02f, () => { Shot($"Edge_{tag}", "trigger held 0.6 s"); log.AppendLine($"  {tag}: {Vector3.ProjectOnPlane(switcher.transform.position - ZombieRush.World.SafeBase.Instance.Center, Vector3.up).magnitude:0.0} m from centre, inside base {ZombieRush.World.SafeBase.Instance.Contains(switcher.transform.position)}, shots fired {magBefore - weapons.CurrentWeapon.CurrentMagazine}"); }));
+                    p.Add((0.3f, () => ZombieRush.Core.GameInput.TouchRelease(ZombieRush.Core.TouchAction.Fire)));
+                }
+                return p;
+            }
+
             if (mode == "aim")
             {
                 // Crosshairs and scope, as the player sees them (Game view, HUD included): each gun in first and
@@ -1101,9 +2048,16 @@ namespace ZombieRush.EditorTools
                 {
                     int idx = i;
                     string g = weapons.weapons[idx].name;
-                    p.Add((0.9f, () => { weapons.Unlock(weapons.weapons[idx].data); weapons.SelectWeapon(idx); weapons.RefillAmmo(); }));
+                    p.Add((0.9f, () =>
+                    {
+                        int before = weapons.CurrentIndex;
+                        weapons.Unlock(weapons.weapons[idx].data); weapons.SelectWeapon(idx); weapons.RefillAmmo();
+                        log.AppendLine($"  select {g} (slot {idx}): was slot {before}, now slot {weapons.CurrentIndex} ({weapons.CurrentWeapon?.name}), unlocked {weapons.IsUnlocked(weapons.weapons[idx].data)}, controllers {Object.FindObjectsByType<PlayerWeaponController>(FindObjectsSortMode.None).Length}");
+                    }));
                     p.Add((0.05f, () =>
                     {
+                        log.AppendLine($"  {g} before shot: slot {weapons.CurrentIndex} ({weapons.CurrentWeapon?.name}), active guns: " +
+                                       string.Join(",", System.Linq.Enumerable.Select(System.Linq.Enumerable.Where(weapons.weapons, w => w != null && w.gameObject.activeInHierarchy), w => w.name)));
                         Shot(cam, $"FPG_{g}_Hold");
                         // the real Game view as well: it shows every camera the way the player sees it (the overlay included)
                         ScreenCapture.CaptureScreenshot($"{Folder}/FPG_{g}_Hold_Game.png");
@@ -1280,6 +2234,49 @@ namespace ZombieRush.EditorTools
                     p.Add((0.2f, () => { Side(z.transform, $"Yaku_{label}", 50f); Side(z.transform, $"Yaku_{label}_Front", 0f); LogZombie(z, $"Yaku_{label}"); }));
                 }
                 p.Add((0.1f, () => Object.Destroy(z)));
+                return p;
+            }
+
+            if (mode == "runlook")
+            {
+                // The legs while running, as the player sees them: 8 third-person frames across one stride, then
+                // 6 from the side, for the run (joystick 75%) and the sprint (full forward auto-sprints). No zombies.
+                int rifle = System.Array.FindIndex(weapons.weapons, w => w != null && w.name.Contains("Rifle"));
+                if (rifle < 0) rifle = weapons.weapons.Length - 1;
+                p.Add((0.6f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var z in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(z.gameObject);
+                    var ph = switcher.GetComponent<PlayerHealth>(); if (ph != null) ph.enabled = false;
+                    weapons.Unlock(weapons.weapons[rifle].data); weapons.SelectWeapon(rifle);
+                }));
+                foreach (var (label, dir) in new[] { ("Run", new Vector2(0f, 0.75f)), ("Sprint", new Vector2(0f, 1f)) })
+                {
+                    p.Add((0.3f, () => { MoveToOpenSpot(switcher.transform, true); ZombieRush.Core.GameInput.SetTouchMove(dir); }));
+                    p.Add((1.2f, () => { }));
+                    for (int k = 0; k < 8; k++) { int f = k; p.Add((0.085f, () => { Shot(cam, $"RunLook_{label}_TP{f}"); if (f == 0) LogBody(switcher.transform, $"RunLook_{label}"); })); }
+                    for (int k = 0; k < 6; k++) { int f = k; p.Add((0.11f, () => Side(switcher.transform, $"RunLook_{label}_Side{f}", 90f))); }
+                    p.Add((0.3f, () => ZombieRush.Core.GameInput.SetTouchMove(Vector2.zero)));
+                }
+                return p;
+            }
+
+            if (mode == "strafe")
+            {
+                // A, then D, held for 3 s each: does the body keep facing forward the whole time?
+                int rifle = System.Array.FindIndex(weapons.weapons, w => w != null && w.name.Contains("Rifle"));
+                if (rifle < 0) rifle = weapons.weapons.Length - 1;
+                p.Add((0.7f, () => { weapons.Unlock(weapons.weapons[rifle].data); weapons.SelectWeapon(rifle); }));
+                foreach (var (label, dir) in new[] { ("A", new Vector2(-1f, 0f)), ("D", new Vector2(1f, 0f)) })
+                {
+                    p.Add((0.2f, () => { MoveToOpenSpot(switcher.transform); ZombieRush.Core.GameInput.SetTouchMove(dir); }));
+                    foreach (float t in new[] { 0.3f, 0.7f, 1.0f, 1.0f })
+                    {
+                        float wait = t;
+                        p.Add((wait, () => { string n = $"Play_Strafe{label}_{Time.time:0.0}s"; Shot(cam, n); LogBody(switcher.transform, n); }));
+                    }
+                    p.Add((0.3f, () => ZombieRush.Core.GameInput.SetTouchMove(Vector2.zero)));
+                }
                 return p;
             }
 
@@ -1476,7 +2473,15 @@ namespace ZombieRush.EditorTools
                 upper = $" | upper w{a.GetLayerWeight(1):0.00} {(uc.Length > 0 ? uc[0].clip.name : "-")}";
             }
             log.AppendLine($"  {name}: state {state}, clips {top}{upper}, MoveX {a.GetFloat("MoveX"):0.00} MoveY {a.GetFloat("MoveY"):0.00} Grounded {a.GetBool("Grounded")} " +
-                           $"cc.grounded {(cc != null && cc.isGrounded)} vel {(cc != null ? cc.velocity.magnitude : 0f):0.00} gameState {(ZombieRush.Core.GameManager.Instance != null ? ZombieRush.Core.GameManager.Instance.State.ToString() : "none")}");
+                           $"cc.grounded {(cc != null && cc.isGrounded)} vel {(cc != null ? cc.velocity.magnitude : 0f):0.00} gameState {(ZombieRush.Core.GameManager.Instance != null ? ZombieRush.Core.GameManager.Instance.State.ToString() : "none")}" +
+                           $" | facing: model {Yaw(player, a.transform.forward):0} deg, hips {(a.isHuman ? Yaw(player, a.GetBoneTransform(HumanBodyBones.Hips).rotation * Quaternion.Inverse(a.transform.rotation) * a.transform.forward) : 0f):0} deg, chest {(a.isHuman && a.GetBoneTransform(HumanBodyBones.UpperChest) != null ? Yaw(player, a.GetBoneTransform(HumanBodyBones.UpperChest).rotation * Quaternion.Inverse(a.transform.rotation) * a.transform.forward) : 0f):0} deg, move dir {(cc != null && cc.velocity.sqrMagnitude > 0.1f ? Yaw(player, cc.velocity) : 0f):0} deg");
+        }
+
+        /// Signed yaw of a world direction from the player's facing (+ = to the right).
+        static float Yaw(Transform player, Vector3 dir)
+        {
+            dir.y = 0f;
+            return dir.sqrMagnitude < 1e-6f ? 0f : Vector3.SignedAngle(Vector3.ProjectOnPlane(player.forward, Vector3.up), dir, Vector3.up);
         }
 
         static void LogZombie(GameObject z, string name)

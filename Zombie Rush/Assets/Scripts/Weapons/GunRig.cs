@@ -15,6 +15,19 @@ namespace ZombieRush.Weapons
     [RequireComponent(typeof(Animator))]
     public class GunRig : MonoBehaviour
     {
+        static readonly System.Collections.Generic.Dictionary<Transform, GunRig> lookup = new System.Collections.Generic.Dictionary<Transform, GunRig>();
+
+        /// The GunRig under `root` (inactive children included), cached: the player scripts ask every frame.
+        public static GunRig Of(Transform root)
+        {
+            if (root == null) return null;
+            if (lookup.TryGetValue(root, out var r) && r != null && r.transform.IsChildOf(root)) return r;
+            r = root.GetComponentInChildren<GunRig>(true);
+            if (lookup.Count > 64) lookup.Clear();      // guns come and go rarely; keep it small
+            lookup[root] = r;
+            return r;
+        }
+
         [Tooltip("The weapon whose shots and reloads this gun shows. The body's copy keeps the same one.")]
         public WeaponBase source;
         public GunStyle style = GunStyle.Rifle;

@@ -445,7 +445,7 @@ namespace ZombieRush.EditorTools
             string msg = $"Base: '{building.name}' at the city centre ({centre.x:0}, {centre.z:0}), {size.x:0} x {size.z:0} m" +
                          $"{(hidden > 0 ? $", {hidden} props inside it hidden" : "")}{(oldCopy != null ? ", old edge base removed" : "")}.\n" +
                          $"Safe base: circle {safeRadius:0} m. Fight zone: full circle, starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion " +
-                         $"({zone.expandCost} coins), {steps} expansions to {zone.maxRadius:0} m (city reach {needed:0} m).\n" +
+                         $"({zone.ExpandCost} coins), {steps} expansions to {zone.maxRadius:0} m (city reach {needed:0} m).\n" +
                          (lamps > 0 ? $"{lamps} lamps added. " : "") + $"{gearCount} gear pickups inside, player starts inside.\n" + navNote;
             Debug.Log("Zombie Rush: " + msg);
             return msg;
@@ -499,7 +499,7 @@ namespace ZombieRush.EditorTools
 
         // ---------------------------------------------------------------- helpers
 
-        struct Room { public float floor, ceiling; public bool longX, hasDoor; public Vector3 doorLocal; }
+        internal struct Room { public float floor, ceiling; public bool longX, hasDoor; public Vector3 doorLocal; }
 
         static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
@@ -515,7 +515,7 @@ namespace ZombieRush.EditorTools
         }
 
         /// Mesh bounds of the building in its own local space (LOD0-ish, all meshes).
-        static Bounds LocalBounds(Transform root)
+        internal static Bounds LocalBounds(Transform root)
         {
             bool any = false;
             var b = new Bounds();
@@ -712,7 +712,7 @@ namespace ZombieRush.EditorTools
             return $"Building un-buried: moved {lift:+0.0;-0.0} m to the ground level around it, ground flattened under it and blended over {blend:0} m.\n";
         }
 
-        static Room MeasureRoom(Transform t, Bounds local)
+        internal static Room MeasureRoom(Transform t, Bounds local)
         {
             var room = new Room { longX = local.size.x * t.lossyScale.x >= local.size.z * t.lossyScale.z };
             Vector3 c = t.TransformPoint(local.center);
@@ -739,7 +739,7 @@ namespace ZombieRush.EditorTools
 
         /// A floor point inside the room. `along` runs the long axis (-0.5..0.5 of its length),
         /// `back` runs the short axis away from the door (positive = away from it).
-        static Vector3 RoomPoint(Transform t, Bounds local, Room room, float along, float back)
+        internal static Vector3 RoomPoint(Transform t, Bounds local, Room room, float along, float back)
         {
             Vector3 l = local.center;
             float doorSide = room.longX ? Mathf.Sign(room.doorLocal.z == 0 ? 1 : room.doorLocal.z)

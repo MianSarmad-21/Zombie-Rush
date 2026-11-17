@@ -68,7 +68,7 @@ namespace ZombieRush.Player
                 // First person: the hands grip the gun drawn in front of the camera.
                 var vm = current != null && view != null && !view.IsThirdPerson ? current.GetComponent<WeaponViewModel>() : null;
                 // a gun with body clips is placed by BodyGunPose from the body's hands, not the other way round
-                var vr = vm != null && vm.model != null ? vm.model.GetComponentInChildren<GunRig>(true) : null;
+                var vr = vm != null && vm.model != null ? GunRig.Of(vm.model) : null;
                 if (vr != null && vr.HasBodyClips) vm = null;
                 aimRig.FirstPersonGun = vm != null ? vm.model : null;
                 Vector3 vel = controller != null ? controller.velocity : Vector3.zero;

@@ -21,13 +21,12 @@ MonoBehaviour:
   magazineSize: 30
   maxReserveAmmo: 180
   reloadTime: 2.1
-  fireSounds:
-  - {fileID: 8300000, guid: 074bc98dc0f9e25429e095505bcf5496, type: 3}
-  - {fileID: 8300000, guid: c7116269849c2f54697e060011ac169a, type: 3}
-  reloadSound: {fileID: 0}
-  fireVolume: 0.7
-  overrideEyeOffset: 1
-  eyeOffset: {x: 0, y: 0.03, z: -0.06}
+  autoReload: 1
+  autoReloadDelay: 0.3
+  ammoPack: {fileID: 6477493698915313290, guid: 81629472b07f36c4d9b208a40c17bf1a, type: 3}
+  ammoName: RIFLE
+  tableAmmo: 60
+  dropAmmo: {x: 15, y: 30}
   crosshair: 0
   spreadBase: 0.3
   spreadPerShot: 0.45
@@ -38,3 +37,20 @@ MonoBehaviour:
   aimZoom: 0.8
   hasScope: 1
   scopeZoom: 2
+  scopeEyeHeight: 0.105
+  scopeEyeBack: -0.13
+  recoilUp: 1.2
+  recoilSide: 0.45
+  recoilAimScale: 0.7
+  gunKickBack: 0.03
+  gunKickPitch: 3
+  bodyKickPitch: 2.5
+  idleSteady: 0.85
+  fireSounds:
+  - {fileID: 8300000, guid: 074bc98dc0f9e25429e095505bcf5496, type: 3}
+  - {fileID: 8300000, guid: c7116269849c2f54697e060011ac169a, type: 3}
+  reloadSound: {fileID: 8300000, guid: 2754e8c083c98cf4fac4bfe0623b08f3, type: 3}
+  fireVolume: 0.7
+  overrideEyeOffset: 1
+  eyeOffset: {x: 0, y: 0.03, z: -0.06}
+  fpLift: {x: 0, y: 0, z: 0}

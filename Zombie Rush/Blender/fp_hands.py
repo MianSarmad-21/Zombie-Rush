@@ -282,11 +282,16 @@ for side in SIDES:
         p.z += 0.004 * (p.x / P["half_t"]) ** 2        # cupped palm: the edges sit toward the palm side
         return p
     rounded_box(side, (0.0, cu, cn), (P["half_t"], hu, hn), P["e"], 6, lambda p: [(H, 1.0)], GLOVE, palm_shape)
-    # knuckle pad over the back of the knuckles
-    rounded_box(side, (0.002, 0.084, P["n_back"] - 0.0015), (0.037, 0.012, 0.0055), 0.45, 3, lambda p: [(H, 1.0)], TRIM)
+    # knuckle pad over the back of the knuckles: narrower than the glove and bent with its back, so its
+    # ends stay inside the glove (a flat, full-width pad stood out as fins seen edge-on from the eye)
+    PAD_T = 0.032
+    def pad_shape(p, PAD_T=PAD_T):
+        p = p.copy(); p.z += 0.0065 * (p.x / PAD_T) ** 2
+        return p
+    rounded_box(side, (0.002, 0.084, P["n_back"] - 0.0005), (PAD_T, 0.012, 0.0045), 0.45, 3, lambda p: [(H, 1.0)], TRIM, pad_shape)
     # cuff over the sleeve's end, blending from the forearm to the hand
     sl = SLEEVE[side]
-    c0, c1 = -0.055, 0.014
+    c0, c1 = -0.035, 0.014                 # starts 1.7 cm inside the sleeve: longer, it poked through on bent wrists
     def cuff_w(p, H=H, side=side, c0=c0):
         w = max(0.0, min(1.0, (p.y - (c0 + 0.012)) / (-0.004 - (c0 + 0.012))))
         w = w * w * (3 - 2 * w)
@@ -322,6 +327,12 @@ me = bpy.data.meshes.new("FP_Hands")
 inv = AW.inverted()
 me.from_pydata([inv @ p for p in VERTS], [], FACES)
 me.update()
+# every part is closed: point all faces outward. The part builders wind faces for one hand's frame, and the
+# other hand's frame is mirrored, so its sleeve tube and hems faced inward; Unity culls those faces and the
+# black glove cuff showed through the sleeve. Face order is kept, so FMAT below still lines up.
+_bm = bmesh.new(); _bm.from_mesh(me)
+bmesh.ops.recalc_face_normals(_bm, faces=_bm.faces[:])
+_bm.to_mesh(me); _bm.free(); me.update()
 hands = bpy.data.objects.new("FP_Hands", me)
 bpy.context.scene.collection.objects.link(hands)
 hands.matrix_world = AW.copy()

@@ -21,7 +21,7 @@ namespace ZombieRush.Zombie
         public int maxCoins = 15;
 
         [Header("Ammo drop")]
-        [Range(0f, 1f)] public float ammoDropChance = 0.25f;
+        [Range(0f, 1f)] public float ammoDropChance = 0.08f;   // rare: ammo should not come too easily (base tables are the main supply)
         public int minAmmo = 4;
         public int maxAmmo = 10;
 

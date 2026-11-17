@@ -23,6 +23,8 @@ namespace ZombieRush.Data
         public float attackCooldown = 1.1f;
         [Tooltip("Seconds from the start of the swing until the damage lands (0 = at once). The player can still step out of reach meanwhile.")]
         public float attackHitDelay = 0f;
+        [Tooltip("A giant's swing goes over a crouched player's head: crouching when the hit lands dodges it.")]
+        public bool highSwing = false;
 
         [Header("Detection")]
         public float sightRange = 25f; // effectively "always sees the player" until real vision/sound checks are added

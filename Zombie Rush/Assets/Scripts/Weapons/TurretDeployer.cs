@@ -56,7 +56,9 @@ namespace ZombieRush.Weapons
 
             if (CooldownLeft > 0f) { Deny("TURRET RECHARGING", $"READY IN {Mathf.CeilToInt(CooldownLeft)}s"); return; }
             if (turretPrefab == null) { Debug.LogWarning("[Zombie Rush] TurretDeployer has no turret prefab - run Zombie Rush > Weapons > Install Guns + Turret."); return; }
+            if (InBase(transform.position)) { Deny("NO TURRETS IN THE BASE", "STEP OUTSIDE THE BASE TO DEPLOY"); return; }
             if (!FindSpot(out var spot)) { Deny("NO ROOM HERE", "FACE AN OPEN PIECE OF GROUND"); return; }
+            if (InBase(spot)) { Deny("NO TURRETS IN THE BASE", "STEP OUTSIDE THE BASE TO DEPLOY"); return; }
 
             Vector3 fwd = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
             var rot = Quaternion.LookRotation(fwd, Vector3.up);
@@ -93,6 +95,14 @@ namespace ZombieRush.Weapons
             GameEvents.RaiseNotice(title, subtitle);
             var lib = SoundManager.Library;
             if (lib != null) SoundManager.PlayUI(lib.denied, 0.8f);
+        }
+
+        /// Turrets are for the streets: none inside the safe base (its wall ring and a 1.5 m strip outside it,
+        /// so one can't be set in a gate to shoot from cover).
+        public static bool InBase(Vector3 p)
+        {
+            var b = ZombieRush.World.SafeBase.Instance;
+            return b != null && b.Contains(p, 1.5f);
         }
 
         void Prune() => active.RemoveAll(t => t == null || t.Expired);

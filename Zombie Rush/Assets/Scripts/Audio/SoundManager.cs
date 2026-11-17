@@ -9,6 +9,10 @@ namespace ZombieRush.Audio
     /// plays the menu / gameplay music. Game-flow sounds (waves, coins, player hurt)
     /// come from GameEvents; weapons, zombies and the turret call Play/PlayAt directly.
     ///
+    /// Gameplay music switches to the combat track while a wave is on and back between waves.
+    /// An ambience bed and a low-health heartbeat loop under the SFX slider; the local
+    /// player gets PlayerFootsteps when a level loads.
+    ///
     /// Volumes: Master + mute = AudioListener.volume (GameSettings), SFX and Music
     /// sliders scale the sources here.
     public class SoundManager : MonoBehaviour
@@ -26,7 +30,12 @@ namespace ZombieRush.Audio
         int next;
         AudioSource uiSource;
         AudioSource musicSource;
+        AudioSource ambienceSource;
+        AudioSource heartbeatSource;
         AudioClip musicTarget;
+        bool gameplay, combat, playerDown;
+        float healthShare = 1f;
+        float ambienceFade, heartbeatLevel;
         float musicFade = 1f; // 0..1, fades out then in when the track changes
         float lastHurt, lastCoin;
         int lastCoins = -1;
@@ -69,9 +78,18 @@ namespace ZombieRush.Audio
             musicSource.loop = true;
             musicSource.ignoreListenerPause = true;
 
+            ambienceSource = gameObject.AddComponent<AudioSource>();
+            ambienceSource.playOnAwake = false;
+            ambienceSource.loop = true;
+
+            heartbeatSource = gameObject.AddComponent<AudioSource>();
+            heartbeatSource.playOnAwake = false;
+            heartbeatSource.loop = true;
+
             GameSettings.Changed += ApplyVolumes;
             SceneManager.sceneLoaded += HandleSceneLoaded;
             GameEvents.OnWaveAnnounced += HandleWaveAnnounced;
+            GameEvents.OnWaveStarted += HandleWaveStarted;
             GameEvents.OnWaveCompleted += HandleWaveCompleted;
             GameEvents.OnCoinsChanged += HandleCoins;
             GameEvents.OnZoneChanged += HandleZone;
@@ -89,6 +107,7 @@ namespace ZombieRush.Audio
             GameSettings.Changed -= ApplyVolumes;
             SceneManager.sceneLoaded -= HandleSceneLoaded;
             GameEvents.OnWaveAnnounced -= HandleWaveAnnounced;
+            GameEvents.OnWaveStarted -= HandleWaveStarted;
             GameEvents.OnWaveCompleted -= HandleWaveCompleted;
             GameEvents.OnCoinsChanged -= HandleCoins;
             GameEvents.OnZoneChanged -= HandleZone;
@@ -131,6 +150,16 @@ namespace ZombieRush.Audio
         {
             if (clip == null || Instance == null) return;
             Instance.Emit(clip, clip, position, true, volume, 0.06f, maxDistance, 0);
+        }
+
+        /// 3D sound at a set pitch (the chest's lock ticks rise as it is forced). Returns nothing useful; kept for symmetry.
+        public static AudioSource PlayAtPitched(AudioClip clip, Vector3 position, float volume, float pitch, float maxDistance = 35f)
+        {
+            if (clip == null || Instance == null) return null;
+            Instance.Emit(clip, clip, position, true, volume, 0.03f, maxDistance, 0);
+            var src = Instance.pool[(Instance.next + Instance.pool.Length - 1) % Instance.pool.Length];
+            src.pitch = pitch * src.pitch;
+            return src;
         }
 
         public static void PlayUI(AudioClip clip, float volume = 0.8f)
@@ -194,16 +223,33 @@ namespace ZombieRush.Audio
             lastCoins = -1;
             lastZoneRadius = -1f;
             lastHealth = -1f;
-            if (library == null) return;
+            combat = false;
+            playerDown = false;
+            healthShare = 1f;
             // The gameplay scene is the one with a GameManager; everything else is menu.
-            bool gameplay = Object.FindAnyObjectByType<GameManager>() != null;
-            musicTarget = gameplay ? library.gameMusic : library.menuMusic;
+            gameplay = Object.FindAnyObjectByType<GameManager>() != null;
+            if (gameplay) AttachFootsteps();
+        }
+
+        /// Footsteps on the player this machine controls (a teammate's copy has PlayerController off).
+        static void AttachFootsteps()
+        {
+            foreach (var pc in Object.FindObjectsByType<ZombieRush.Player.PlayerController>(FindObjectsInactive.Exclude))
+                if (pc.enabled && !pc.TryGetComponent(out PlayerFootsteps _)) pc.gameObject.AddComponent<PlayerFootsteps>();
+        }
+
+        AudioClip MusicFor()
+        {
+            if (library == null) return null;
+            if (!gameplay) return library.menuMusic;
+            return combat && library.combatMusic != null ? library.combatMusic : library.gameMusic;
         }
 
         void Update()
         {
             // Fade out the old track, swap, fade in the new one. Unscaled: keeps working while paused.
             float step = Time.unscaledDeltaTime / MusicFade;
+            musicTarget = MusicFor();
             if (musicSource.clip != musicTarget)
             {
                 musicFade = Mathf.MoveTowards(musicFade, 0f, step);
@@ -218,6 +264,44 @@ namespace ZombieRush.Audio
             float level = library != null ? library.musicLevel : 0.5f;
             bool over = GameManager.Instance != null && GameManager.Instance.State == GameState.GameOver;
             musicSource.volume = musicFade * level * GameSettings.MusicVolume * (over ? 0.35f : 1f);
+
+            UpdateAmbience(step);
+            UpdateHeartbeat();
+        }
+
+        void UpdateAmbience(float step)
+        {
+            var clip = gameplay && library != null ? library.ambience : null;
+            if (ambienceSource.clip != clip)
+            {
+                ambienceFade = Mathf.MoveTowards(ambienceFade, 0f, step);
+                if (ambienceFade <= 0f || !ambienceSource.isPlaying)
+                {
+                    ambienceSource.clip = clip;
+                    if (clip != null) ambienceSource.Play(); else ambienceSource.Stop();
+                }
+            }
+            else ambienceFade = Mathf.MoveTowards(ambienceFade, 1f, step);
+            float level = library != null ? library.ambienceLevel : 0f;
+            ambienceSource.volume = ambienceFade * level * GameSettings.SfxVolume;
+        }
+
+        /// Fades in below the low-health line, louder and a little faster the lower health gets.
+        void UpdateHeartbeat()
+        {
+            var clip = library != null ? library.heartbeat : null;
+            float below = library != null ? Mathf.Max(0.01f, library.heartbeatBelow) : 0.3f;
+            float target = gameplay && !playerDown && clip != null && healthShare < below ? 1f - healthShare / below : 0f;
+            heartbeatLevel = Mathf.MoveTowards(heartbeatLevel, target, Time.unscaledDeltaTime * 1.5f);
+            if (heartbeatLevel <= 0f)
+            {
+                if (heartbeatSource.isPlaying) heartbeatSource.Stop();
+                return;
+            }
+            if (heartbeatSource.clip != clip) heartbeatSource.clip = clip;
+            if (!heartbeatSource.isPlaying) heartbeatSource.Play();
+            heartbeatSource.volume = Mathf.Lerp(0.35f, 1f, heartbeatLevel) * library.heartbeatVolume * GameSettings.SfxVolume;
+            heartbeatSource.pitch = 1f + 0.2f * heartbeatLevel;
         }
 
         // =====================================================================
@@ -225,7 +309,8 @@ namespace ZombieRush.Audio
         // =====================================================================
 
         void HandleWaveAnnounced(int wave) { if (library != null) PlayUI(library.waveStart, 0.9f); }
-        void HandleWaveCompleted(int wave, float breather) { if (library != null) PlayUI(library.waveCleared, 0.9f); }
+        void HandleWaveStarted(int wave) => combat = true;
+        void HandleWaveCompleted(int wave, float breather) { combat = false; if (library != null) PlayUI(library.waveCleared, 0.9f); }
         void HandleDenied() { if (library != null) PlayUI(library.denied, 0.8f); }
         void HandlePurchased(string id) { if (library != null) PlayUI(library.purchase, 0.9f); }
 
@@ -253,6 +338,8 @@ namespace ZombieRush.Audio
         {
             bool hurt = lastHealth >= 0f && current < lastHealth && current > 0f;
             lastHealth = current;
+            healthShare = max > 0f ? Mathf.Clamp01(current / max) : 1f;
+            playerDown = current <= 0f;
             if (hurt && library != null && Time.time - lastHurt > 0.35f)
             {
                 lastHurt = Time.time;
@@ -263,11 +350,13 @@ namespace ZombieRush.Audio
         void HandlePlayerDied()
         {
             lastHealth = -1f;
+            playerDown = true;
             if (library != null) Play(library.playerDeath, 1f, 0f);
         }
 
         void HandleGameState(GameState state)
         {
+            if (state == GameState.GameOver) combat = false;
             if (state == GameState.GameOver && library != null) PlayUI(library.gameOver, 1f);
         }
     }

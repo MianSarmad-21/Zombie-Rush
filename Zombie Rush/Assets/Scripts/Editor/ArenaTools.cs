@@ -143,7 +143,7 @@ namespace ZombieRush.EditorTools
             string summary =
                 $"Removed {removedFences} inner fence pieces; Zone A and Zone B are now one '{ArenaName}'.\n" +
                 $"Arena {bounds.size.x:0} x {bounds.size.z:0} m, centre ({center.x:0.0}, {center.z:0.0}).\n" +
-                $"Safe zone: starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion ({zone.expandCost} coins), " +
+                $"Safe zone: starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion ({zone.ExpandCost} coins), " +
                 $"max {maxRadius:0} m after {steps} expansions.\n" +
                 playerNote + "\n" +
                 (waves != null ? "Spawn pads move to the zone edge before every wave." : "");

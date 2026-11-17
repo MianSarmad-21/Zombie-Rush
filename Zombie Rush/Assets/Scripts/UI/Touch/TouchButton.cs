@@ -18,6 +18,8 @@ namespace ZombieRush.UI
         [Tooltip("Colour while a toggle (Crouch) is on.")]
         public Color toggledColor = new Color(0.25f, 0.84f, 0.91f, 0.95f);
         public float pressedScale = 0.9f;
+        /// Size when not pressed (TouchControlsUI.buttonScale shrinks the on-screen buttons).
+        [System.NonSerialized] public float restScale = 1f;
 
         const int NoPointer = int.MinValue;
         int pointerId = NoPointer;
@@ -54,7 +56,7 @@ namespace ZombieRush.UI
 
         void ApplyVisual(bool pressed)
         {
-            transform.localScale = Vector3.one * (pressed ? pressedScale : 1f);
+            transform.localScale = Vector3.one * restScale * (pressed ? pressedScale : 1f);
             if (visual == null) return;
 
             bool toggledOn = (action == TouchAction.Crouch && GameInput.TouchCrouchActive) || (action == TouchAction.Aim && GameInput.TouchAimActive);

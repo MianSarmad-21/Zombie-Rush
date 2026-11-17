@@ -31,18 +31,18 @@ def log(*a): print("[grip]", *a, flush=True)
 
 # swap in the current fingered body (Gun_Shotgun.blend may hold an older one)
 _old = bpy.data.objects.get("Player_Rig")
-if _old is None or "RightHandIndex1" not in _old.data.bones:
+if _old is None or "RightHandMiddle1" not in _old.data.bones:
     if _old is not None:
         for o in list(_old.children) + [_old]: bpy.data.objects.remove(o, do_unlink=True)
     for a in [a for a in bpy.data.actions if a.name.startswith("Body_")]: bpy.data.actions.remove(a)
     _before = set(bpy.data.objects)
-    bpy.ops.import_scene.fbx(filepath=PROJECT + "/Assets/Models/2026-11-08_WastelandSurvivor_Final/WastelandSurvivor.fbx")
+    bpy.ops.import_scene.fbx(filepath=PROJECT + "/Assets/Models/2026-11-14_ShadowOperative_Final/ShadowOperative.fbx")
     _new = [o for o in bpy.data.objects if o not in _before]
     _b = next(o for o in _new if o.type == "ARMATURE"); _b.name = "Player_Rig"
     _meshes = [o for o in _new if o.type == "MESH"]
     max((o for o in _meshes if not o.name.startswith("Backpack")), key=lambda o: len(o.data.vertices)).name = "Survivor_Mesh"   # the body, not the separate backpack
     for a in [x for x in bpy.data.actions if x.name.startswith("Player_Rig") or "|" in x.name]: bpy.data.actions.remove(a)
-    log("body swapped for the fingered WastelandSurvivor.fbx")
+    log("body swapped for the player body ShadowOperative.fbx")
 body = bpy.data.objects["Player_Rig"]
 gun = bpy.data.objects["Shotgun_Rig"]
 GUN = "Shotgun"
@@ -50,7 +50,7 @@ assert all(abs(body.matrix_world[i][j] - (1.0 if i == j else 0.0)) < 1e-4 for i 
 sc = bpy.context.scene
 sc.render.fps = 30
 # start from the rest pose: the import can leave an old clip's hip offset on the bones
-if body.animation_data: body.animation_data.action = None
+body.animation_data_create(); body.animation_data.action = None   # a clip-less body FBX imports without animation data
 for pb in body.pose.bones:
     pb.location = (0, 0, 0); pb.rotation_mode = "QUATERNION"; pb.rotation_quaternion = (1, 0, 0, 0); pb.scale = (1, 1, 1)
 
@@ -76,9 +76,9 @@ T = dict(
     clav_right=15.0,       # right collarbone forward into the stock (positive = forward on the right side)
     grip_at=(-0.17, -0.29, 0.06),   # wrist centre from the shoulder-joint midpoint (x + left, y - forward, z up); higher than the rifle: this stock drops, so its butt meets the shoulder
     gun_drop=0.0,          # lower the whole gun (m)
-    finger_t=0.010,        # half thickness of a finger (m) when touching a surface
-    palm_t=0.016,          # palm thickness from bone line to skin (m)
-    r_fingers_fwd=50.0,    # fingers angle forward round the wrist: keeps the wrist straight enough (about 37 deg) for this short arm
+    finger_t=0.013,        # half thickness of a finger (m) when touching a surface (Shadow Operative's gloved fingers)
+    palm_t=0.022,          # palm thickness from bone line to skin (m)
+    r_fingers_fwd=10.0,    # fingers angle forward round the wrist; 10 lets the five separate fingers close round the stock (the Survivor's finger block used 50)
     caps=(70.0, 65.0, 55.0),
     forearm_twist=0.6,     # share of the hand turn the forearm takes (the rest stays at the wrist); with the upper-arm roll this spreads the twist so no joint pinches
     tw_up=1.0, tw_fore=1.0, tw_wrist=1.0,   # how much each of shoulder / forearm / wrist resists twist (squared cost)
@@ -158,6 +158,7 @@ def from_gf(v, G=G0, point=True):
     return (G.translation + w) if point else w
 
 # ------------------------------------------------------------------ hand frames at rest
+FINGERS4 = ("Index", "Middle", "Ring", "Pinky")   # the player body has five 3-joint fingers
 def chain(side, f):
     return [f"{side}Hand{f}{k}" for k in (1, 2, 3)]
 def rest_pts(names):
@@ -178,13 +179,13 @@ def owned(groups, wmin):
 REST = {}
 for side in ("Right", "Left"):
     hb = body.data.bones[side + "Hand"]
-    ids = owned([side + "Hand"] + chain(side, "Index") + chain(side, "Thumb"), 0.3)
+    ids = owned([side + "Hand"] + sum((chain(side, f) for f in FINGERS4), []) + chain(side, "Thumb"), 0.3)
     Vh = REST_CO[ids]
     _, _, vt = np.linalg.svd(Vh - Vh.mean(0))
     nrm = Vector(vt[2].tolist())
     wrist = hb.head_local.copy()
     b = body.data.bones
-    fmid = (b[side + "HandIndex1"].head_local + b[side + "HandIndex3"].tail_local) * 0.5
+    fmid = (b[side + "HandMiddle1"].head_local + b[side + "HandMiddle3"].tail_local) * 0.5
     along = fmid - wrist; along = (along - nrm * along.dot(nrm)).normalized()
     tv = b[side + "HandThumb3"].tail_local - wrist
     thumb = (tv - along * tv.dot(along) - nrm * tv.dot(nrm)).normalized()
@@ -194,7 +195,7 @@ for side in ("Right", "Left"):
     tdir = (b[side + "HandThumb3"].tail_local - b[side + "HandThumb1"].head_local).normalized()
     tcurl = tdir.cross((palm * 0.8 - thumb * 0.5).normalized()).normalized()
     REST[side] = dict(ax=curl, d=along, n=palm, tcurl=tcurl, hand=hb.matrix_local.to_3x3(), head=wrist,
-                      knuckle=b[side + "HandIndex1"].head_local.copy())
+                      knuckle=(b[side + "HandMiddle1"].head_local + b[side + "HandRing1"].head_local) * 0.5)   # centre of the knuckle row
     log(f"{side} rest (mesh plane): along {tuple(round(x, 2) for x in along)}, palm {tuple(round(x, 2) for x in palm)}, thumb side {tuple(round(x, 2) for x in thumb)}")
 
 def frame3(a, b, c):
@@ -491,7 +492,7 @@ def pose_frame(frame, solve_fingers=True, cache={}):
 
 FINGERS, LOOSE = {}, {}
 def finger_names(side):
-    return chain(side, "Index") + chain(side, "Thumb")
+    return sum((chain(side, f) for f in FINGERS4), []) + chain(side, "Thumb")
 def get_locals(side):
     return {n: body.pose.bones[n].rotation_quaternion.copy() for n in finger_names(side)}
 def set_locals(d):
@@ -502,9 +503,13 @@ def set_locals(d):
 def solve_reference(G, frame):
     rr = grip_rho_fn(G)
     a1 = curl_to_contact(chain("Right", "Index"), lambda: live_curl_axis("Right"), rr, caps=T["caps"])
+    for _f in FINGERS4[1:]:
+        curl_to_contact(chain("Right", _f), lambda: live_curl_axis("Right"), rr, caps=T["caps"])
     thumb_right(G)
     gr = guard_rho_fn(G)
     a2 = curl_to_contact(chain("Left", "Index"), lambda: live_curl_axis("Left"), gr, caps=T["caps"])
+    for _f in FINGERS4[1:]:
+        curl_to_contact(chain("Left", _f), lambda: live_curl_axis("Left"), gr, caps=T["caps"])
     thumb_left(G)
     names = chain("Right", "Index"); ln = chain("Left", "Index")
     log("CONTACT right block rho " + str([round(rr(p), 2) for p in [pb_pt(n) for n in names] + [pb_pt(names[-1], tail=True)]])
@@ -539,8 +544,9 @@ def thumb_left(G):
 
 def loose_grab(side):
     out = []
-    for n, deg in zip(chain(side, "Index"), (35, 40, 30)):
-        rotate_bone_about(n, live_curl_axis(side), math.radians(deg)); out.append(deg)
+    for _f in FINGERS4:
+        for n, deg in zip(chain(side, _f), (35, 40, 30)):
+            rotate_bone_about(n, live_curl_axis(side), math.radians(deg)); out.append(deg)
     for n, deg in zip(chain(side, "Thumb"), (10, 20, 15)):
         rotate_bone_about(n, live_curl_axis(side, "Thumb"), math.radians(deg))
     return out
@@ -685,7 +691,7 @@ if RENDER:
     ]
     if "--textured" in argv:
         sc.display.shading.color_type = "TEXTURE"
-        albedo = PROJECT + "/Assets/Models/2026-11-08_WastelandSurvivor_Final/WastelandSurvivor_Albedo.png"
+        albedo = PROJECT + "/Assets/Models/2026-11-14_ShadowOperative_Final/ShadowOperative_Albedo.png"
         for im in bpy.data.images:
             if im.name.startswith("texture_0.png.") and not os.path.exists(bpy.path.abspath(im.filepath)):
                 im.filepath = albedo; im.reload()

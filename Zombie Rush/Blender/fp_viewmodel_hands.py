@@ -24,7 +24,7 @@ from mathutils import Vector, Quaternion, Matrix
 from mathutils.bvhtree import BVHTree
 
 PROJECT = "C:/Mian Sarmad/Unity/Zombie-Rush/Zombie Rush"
-SURV = PROJECT + "/Assets/Models/2026-11-08_WastelandSurvivor_Final/WastelandSurvivor.fbx"
+SURV = PROJECT + "/Assets/Models/2026-11-14_ShadowOperative_Final/ShadowOperative.fbx"   # the player body (Shadow Operative)
 OUT_DIR = PROJECT + "/Assets/Models/2026-11-10_FPArms"
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 GUN = argv[0] if argv else "Rifle"
@@ -42,7 +42,9 @@ def log(*a): print(f"[fpvm {time.time() - _T0:6.1f}s]", *a, flush=True)
 #   yaw      : muzzle turned left (toward the screen centre) ; pitch: muzzle up ; roll: top turned right
 #   sh_mid   : midpoint between the shoulder joints ; torso_yaw: + turns the chest left (right shoulder forward)
 #   pole_r/l : which way each elbow points (right, up, forward)
-COMMON = dict(k_upper=1.55, k_fore=1.12, fov=55.0, forearm_twist=0.6, reach_max=0.9, keep_fwd=0.30, keep_down=0.10,
+# k_upper / k_fore lengthen the body's upper arm / forearm for the view (the Survivor needed 1.55 / 1.12;
+# the Shadow Operative's upper arm is already long, its forearm short)
+COMMON = dict(k_upper=1.0, k_fore=1.35, fov=55.0, forearm_twist=0.6, reach_max=0.9, keep_fwd=0.30, keep_down=0.10,
               tw_up=1.0, tw_fore=1.0, tw_wrist=1.0)
 GUNS = {
     "Pistol": dict(at=(0.12, -0.17, 0.52), yaw=12.0, pitch=1.5, roll=-6.0,
@@ -53,7 +55,9 @@ GUNS = {
                   pole_r=(0.7, -1.0, -0.3), pole_l=(-0.4, -1.0, 0.0)),
     "Shotgun": dict(at=(0.13, -0.19, 0.34), yaw=5.0, pitch=1.0, roll=2.0,
                     sh_mid=(0.0, -0.22, 0.0), torso_yaw=-25.0,
-                    pole_r=(0.7, -1.0, -0.3), pole_l=(-0.4, -1.0, 0.0)),
+                    # right elbow up and out: the forearm comes in level, so the gauntlet's cuff is not bent open
+                    # toward the eye (was (0.7, -1.0, -0.3) with the built hands' short cuff)
+                    pole_r=(1.0, 0.8, -0.2), pole_l=(-0.4, -1.0, 0.0)),
 }
 T = dict(COMMON); T.update(GUNS[GUN])
 for _i, _a in enumerate(argv):
@@ -71,10 +75,12 @@ for _i, _a in enumerate(argv):
 #   close  : the fingers that close on the gun (and on the other hand)
 HOLDS = {
     "Pistol": {
-        "Right": dict(t=(0, 0.92, 0.40), n=(-0.97, 0, 0.25), palm=(0.045, 0.000, -0.030), palm_at=(0.0, 0.050), sink=0.004,
-                      trigger=(0.0, 0.016, 0.073), thumb="close", close=("Middle", "Ring", "Pinky")),
-        "Left": dict(t=(0, 0.85, 0.53), n=(0.96, 0, 0.26), palm=(-0.055, -0.016, -0.045), palm_at=(0.0, 0.050), sink=0.004,
-                     thumb=(-0.027, 0.012, 0.075), close=("Index", "Middle", "Ring", "Pinky")),
+        # right palm wraps the back of the grip so both thumbs lie forward along the left of the frame; a palm
+        # on the grip's right side with the thumb curled read from the eye as a round lump behind the slide
+        "Right": dict(t=(0, 0.92, 0.40), n=(-0.80, 0, 0.60), palm=(0.025, 0.005, -0.060), palm_at=(0.0, 0.050), sink=0.004,
+                      trigger=(0.0, 0.016, 0.073), thumb=(-0.020, 0.015, 0.030), close=("Middle", "Ring", "Pinky")),
+        "Left": dict(t=(0, 0.85, 0.53), n=(0.96, 0, 0.26), palm=(-0.050, -0.015, -0.010), palm_at=(0.0, 0.050), sink=0.004,
+                     thumb=(-0.026, 0.005, 0.065), close=("Index", "Middle", "Ring", "Pinky")),
     },
     "Rifle": {
         "Right": dict(t=(0, 0.96, 0.29), n=(-0.90, 0, 0.44), palm=(0.045, 0.035, -0.040), palm_at=(0.0, 0.050), sink=0.004,
@@ -161,6 +167,7 @@ for o in list(bpy.data.objects):
     if o.name.startswith("FP_"): bpy.data.objects.remove(o, do_unlink=True)
 before = set(bpy.data.objects)
 bpy.ops.import_scene.fbx(filepath=SURV)
+sc.render.fps = 30          # the FBX import sets the scene rate from the file (a clip-less body file says 24)
 new = [o for o in bpy.data.objects if o not in before]
 rig = next(o for o in new if o.type == "ARMATURE"); rig.name = "FP_Rig"
 meshes = [o for o in new if o.type == "MESH"]
@@ -216,11 +223,20 @@ for s in ("Right", "Left"):
 
 # new hands (bones + mesh + grip solver)
 HX = dict(globals())
-# hybrid: survivor arms/palms/thumbs + full-length fingers; survivor: its own stub fingers cut apart; procedural: built gloves
-HANDS = opt("--hands") or "procedural"
+# body (default): the player body's own arms and hands, as modelled (rolled sleeves, gauntlet gloves, five
+# rigged fingers); hybrid: survivor arms/palms/thumbs + full-length fingers; survivor: its own stub fingers
+# cut apart; procedural: built gloves and canvas sleeves
+HANDS = opt("--hands") or "body"
 HX["FULL_GLOVES"] = "--bare" not in argv
-exec(open(os.path.join(PROJECT, "Blender", {"hybrid": "fp_hybrid_hands.py", "survivor": "fp_survivor_hands.py",
+exec(open(os.path.join(PROJECT, "Blender", {"body": "fp_body_hands.py", "hybrid": "fp_hybrid_hands.py", "survivor": "fp_survivor_hands.py",
                                             "procedural": "fp_hands.py"}[HANDS]), encoding="utf-8").read(), HX)
+# body hands: on the rifle the gloved palm centre sits further from the wrist than the built hands' (the
+# handguard then crosses the palm at the finger roots instead of the glove cuff); --set L_palm_at=... still wins
+BODY_HOLD = {"Rifle": {"Left": {"palm_at": (0.0, 0.11)}}}
+if HANDS == "body":
+    for _s, _kv in BODY_HOLD.get(GUN, {}).items():
+        for _k, _v in _kv.items():
+            if f"{_s[0]}_{_k}" not in T: HOLD[_s][_k] = _v
 m2 = arms.modifiers.new("Armature", "ARMATURE"); m2.object = rig
 upd()
 # dress the hybrid arms: tactical gloves, glove strap and knuckle pad, jacket sleeves (fp_gloves.py); --bare keeps skin
@@ -464,6 +480,13 @@ def pose_row(row, cache):
         Mh = cam[side]
         solve_arm(P, side, Mh.translation.copy(), tuple(V3(T["pole_r" if side == "Right" else "pole_l"])), Mh.to_3x3().normalized())
         miss[side] = (P.fk()[side + "Hand"].translation - Mh.translation).length
+    if row["clip"] == "Idle" and row["frame"] == 1:
+        Mx = P.fk()
+        for side in ("Right", "Left"):
+            fore = (Mx[side + "Hand"].translation - Mx[side + "LowerArm"].translation).normalized()
+            hand_u = (Mx[side + "Hand"] @ HB2TUN[side]).col[1].to_3d().normalized()
+            log(f"WRIST {side}: bend {math.degrees(fore.angle(hand_u)):.0f} deg; forearm (right, up, fwd) "
+                f"{tuple(round(x, 2) for x in (fore.dot(RIGHT), fore.dot(UP), fore.dot(FWD)))}")
     angs = {"Right": HOLD_ANG["Right"], "Left": left_fingers(row, loc, w, cache)}
     for side, ang in angs.items():
         for d, a in ang.items():
@@ -523,7 +546,7 @@ if RENDER:
     sc.render.engine = "BLENDER_WORKBENCH"
     sh = sc.display.shading
     sh.light = "STUDIO"; sh.color_type = "MATERIAL" if HANDS == "procedural" or GLOVES else "TEXTURE"; sh.show_cavity = True
-    albedo = PROJECT + "/Assets/Models/2026-11-08_WastelandSurvivor_Final/WastelandSurvivor_Albedo.png"
+    albedo = PROJECT + "/Assets/Models/2026-11-14_ShadowOperative_Final/ShadowOperative_Albedo.png"
     for im in bpy.data.images:
         if not os.path.exists(bpy.path.abspath(im.filepath)) and os.path.exists(albedo) and "texture" in im.name.lower():
             im.filepath = albedo; im.reload()
@@ -578,6 +601,11 @@ if RENDER:
                 cu.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
                 cu.data.angle_y = math.radians(40)
                 shot(cu, os.path.join(RENDER, f"FP_{GUN}_{s}_{vname}.png"))
+            # from the eye, as the player sees it, with the other hand hidden
+            cu.location = (0, 0, 0)
+            cu.rotation_euler = tgt.normalized().to_track_quat("-Z", "Y").to_euler()
+            cu.data.angle_y = math.radians(22)
+            shot(cu, os.path.join(RENDER, f"FP_{GUN}_{s}_Eye.png"))
         arms.modifiers.remove(arms.modifiers["VM_Mask"])
         for s in ("Right", "Left"): arms.vertex_groups.remove(arms.vertex_groups["VM_" + s])
         upd()

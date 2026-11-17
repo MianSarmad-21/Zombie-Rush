@@ -34,5 +34,5 @@ MonoBehaviour:
   reloadTilt: 35
   blendTime: 0.2
   viewmodelNearClip: 0.18
-  bobHeight: 0.006
-  bobSide: 0.004
+  bobHeight: 0
+  bobSide: 0

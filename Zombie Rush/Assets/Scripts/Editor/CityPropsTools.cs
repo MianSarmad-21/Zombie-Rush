@@ -35,6 +35,8 @@ namespace ZombieRush.EditorTools
             public MatSpec(Color c, float m, float s, string t = "ZR_Grunge", Color e = default, bool cut = false, bool both = false) { color = c; metal = m; smooth = s; tex = t; emit = e; cutout = cut; twoSided = both || cut; }
         }
 
+        internal static bool HasMaterial(string name) => Mats.ContainsKey(name);
+
         static readonly Dictionary<string, MatSpec> Mats = new Dictionary<string, MatSpec>
         {
             { "ZR_BurntPaint", new MatSpec(new Color(0.16f, 0.14f, 0.13f), 0.3f, 0.2f) },
@@ -73,6 +75,7 @@ namespace ZombieRush.EditorTools
             { "ZR_SearchGlow", new MatSpec(new Color(1f, 0.97f, 0.9f), 0f, 0.6f, null, new Color(1f, 0.93f, 0.8f) * 6f) },
             { "ZR_Wire", new MatSpec(new Color(0.25f, 0.25f, 0.25f), 0.9f, 0.4f, null) },
             { "ZR_ArmyGreen", new MatSpec(new Color(0.20f, 0.26f, 0.15f), 0.4f, 0.3f) },
+            { "ZR_SteelPlate", new MatSpec(new Color(0.46f, 0.47f, 0.48f), 0.55f, 0.45f) },   // base workbench tops
             // leaf cards: see-through edges, both sides drawn
             { "ZR_Foliage", new MatSpec(new Color(0.95f, 1f, 0.92f), 0f, 0.15f, "ZR_LeafCluster", default, true) },
             { "ZR_FoliageDry", new MatSpec(new Color(1f, 0.97f, 0.9f), 0f, 0.1f, "ZR_LeafClusterDry", default, true) },
@@ -88,7 +91,7 @@ namespace ZombieRush.EditorTools
             { "ZR_DryGrassDark", new MatSpec(Color.white, 0f, 0.05f, "ZR_StalkStraw", default, false, true) },
         };
 
-        static Material EnsureMaterial(string name)
+        internal static Material EnsureMaterial(string name)
         {
             Directory.CreateDirectory(MatDir);
             string path = $"{MatDir}/{name}.mat";
@@ -139,7 +142,7 @@ namespace ZombieRush.EditorTools
             return m;
         }
 
-        static Material FireParticleMaterial()
+        internal static Material FireParticleMaterial()
         {
             string path = $"{MatDir}/ZR_FireParticle.mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);

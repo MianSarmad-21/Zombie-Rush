@@ -17,6 +17,7 @@ MonoBehaviour:
   matchPrefab: {fileID: 6368040064229392762, guid: 873eceb9d4e228144bf3fd0d599fd9dc, type: 3}
   networkPrefabs:
   - {fileID: 5280062581628689994, guid: 415583653b436af4890ab14b64950659, type: 3}
+  - {fileID: 100000001, guid: 57f22fe9a1f4ebf44a185d2ae7ed4d72, type: 3}
   - {fileID: 100000001, guid: 57272c24e542b6b49bd8c495d305ed5a, type: 3}
   - {fileID: 100000001, guid: 48a68082bfa67e74a95b12617275f215, type: 3}
   - {fileID: 100000001, guid: e2d0a1b42434ae54d8a647944ceb2016, type: 3}
@@ -24,5 +25,6 @@ MonoBehaviour:
   maxPlayers: 4
   directPort: 7777
   tickRate: 30
+  spawnSpacing: 1.6
   followSharpness: 14
   snapDistance: 4

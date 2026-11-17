@@ -4,7 +4,7 @@ exec()'d by zombie_anim.py after zr_anim_lib.py. Rig faces -Y (left = +X), t run
 Character: hunched, huge long arms, heavy. Breathes deep, lumbers with the knuckles low and the ground
 shaking on every step, charges like a gorilla, and attacks with a giant wind-up slash.
 Timing marks the game uses (30 fps):
-  Attack: the claw rips through in front at t = 0.52 of 48 frames -> 0.83 s (ZombieSetupTools Horror.HitDelay = 25/30)
+  Attack: a sharp claw slash, the claw rips through in front at t = 0.46 of 36 frames -> 0.55 s (ZombieSetupTools Horror.HitDelay)
 Ground speeds: Walk ~1.0 m/s, Run (charge) ~2.8 m/s, sped up or slowed by the setup to the game's.
 """
 import math
@@ -14,19 +14,43 @@ FOOT_R = REST_HAND_POS["RightFoot"]
 UC = N("UpperChest")
 
 
-def claw_z(self, side, curl=1.0, spread=0.0, thumb=0.6):
-    s = 1 if side == "Left" else -1
+# Model since 2026-11-15 ("Zombie 3", Plaguebound Brute): its talons are sculpted already curled and the palms
+# face down at rest. Each finger bends about its own curl axis (the normal of the plane its joints already
+# curl in), relative to that sculpted shape: curl CLAW_REST = as modelled, 1 = clenched, 0 = splayed open.
+# (A fixed world axis made the talons swing sideways, which looked like broken fingers.)
+CLAW_REST, CLAW_GAIN = 0.45, 0.7
+
+
+def _curl_axes():
+    axes = {}
+    for side in ("Left", "Right"):
+        fallback = Vector((0, 1 if side == "Left" else -1, 0))     # palm-down hand: curl toward -Z
+        for f, bones in FINGERS[side].items():
+            d1 = ML[bones[0]].to_3x3() @ Vector((0, 1, 0))
+            d3 = ML[bones[2]].to_3x3() @ Vector((0, 1, 0))
+            n = d1.cross(d3)
+            n = n.normalized() if n.length > 0.15 else fallback
+            if n.dot(fallback) < 0: n = -n
+            axes[(side, f)] = n
+    return axes
+
+
+CURL_AXIS = _curl_axes()
+
+
+def claw_n(self, side, curl=1.0, spread=0.0, thumb=0.6):
+    k = (curl - CLAW_REST) / (1 - CLAW_REST) * CLAW_GAIN
     for f, bones in FINGERS[side].items():
-        ang = (35, 50, 35) if f != "Thumb" else (20, 25, 20)
-        k = curl if f != "Thumb" else thumb * curl
+        ang = (30, 40, 30) if f != "Thumb" else (15, 20, 15)
+        kk = k if f != "Thumb" else thumb * k
+        n = CURL_AXIS[(side, f)]
         for b, a in zip(bones, ang):
             if b in self.q:
                 Rq = ML[b].to_3x3().to_quaternion()
-                d = Euler((0, 0, rad(-s * a * k)), 'XYZ').to_quaternion()
-                self.q[b] = Rq.inverted() @ d @ Rq
+                self.q[b] = Rq.inverted() @ Quaternion(n, rad(a * kk)) @ Rq
 
 
-Pose.claw = claw_z
+Pose.claw = claw_n
 
 
 def cp(P, pt):
@@ -138,45 +162,44 @@ def run(t, P):
          arms=charge_arms, headnod=-22, stomp=0.05)
 
 
-# ---------------- Attack: GIANT SLASH. Coils right (claw high over the right shoulder, left arm out for
-# balance), steps in with the left foot and rips the right claw diagonally across and down to the left
-# hip, the torso unwinding with it. HIT at t = 0.52 (25 of 48 frames = 0.83 s).
-SLASH_HIT = 0.52
+# ---------------- Attack: SHARP CLAW SLASH (36 frames). A quick cock-back (claw pulled up and back beside
+# the right shoulder, talons splayed, a snarl), a short held beat, then the claw whips across the front at
+# chest height and rips down to the left hip in a few frames, the talons snapping shut as they pass.
+# The left foot stamps in with the slash. HIT at t = 0.46 (frame 17 = 0.55 s; ZombieSetupTools Horror.HitDelay).
+SLASH_HIT = 0.46
 
 
 def attack(t, P):
-    coil = ease(seg(t, 0.0, 0.40))                      # wind-up
-    rip = ease(seg(t, 0.42, 0.62))                      # the slash itself (fast)
-    back = 1 - ease(seg(t, 0.72, 1.0))                  # recover
-    wind = coil * (1 - rip)
-    follow = rip * back
-    roar = pulse(t, 0.34, 0.06)
-    shake = pulse(t, SLASH_HIT + 0.03, 0.03)
-    # torso: twists right and leans back on the coil, unwinds hard left and folds forward on the rip
-    P.hips = V(0.04 * wind - 0.05 * follow, 0.08 * wind - 0.12 * follow, -0.08 + 0.03 * wind - 0.06 * follow - 0.02 * shake)
-    P.rot("Hips", 4 - 6 * wind + 8 * follow, 4 * wind - 6 * follow, -16 * wind + 26 * follow)
-    P.spine(HUNCH - 18 * wind + 12 * follow, 6 * wind - 10 * follow, -34 * wind + 52 * follow)
-    zhead(P, tilt=-6 * wind + 8 * follow, turn=18 * wind - 22 * follow, nod=-8 - 18 * wind - 10 * roar + 14 * follow)
-    # right claw: hang -> up and back over the right shoulder -> diagonal rip across to low left
+    cock = ease(seg(t, 0.0, 0.30))                      # fast wind-up
+    w = seg(t, 0.36, 0.50)
+    rip = w ** 1.7                                       # accelerating whip: slow out of the cock, very fast through
+    back = 1 - ease(seg(t, 0.66, 1.0))                  # recover
+    wind = cock * (1 - ease(w))
+    follow = ease(seg(t, 0.38, 0.54)) * back
+    snarl = pulse(t, 0.30, 0.05)
+    shake = pulse(t, SLASH_HIT + 0.02, 0.025)
+    # torso: twists right and rears on the cock, unwinds hard to the left and folds into the rip
+    P.hips = V(0.03 * wind - 0.05 * follow, 0.06 * wind - 0.12 * follow, -0.08 + 0.02 * wind - 0.05 * follow - 0.02 * shake)
+    P.rot("Hips", 4 - 4 * wind + 8 * follow, 3 * wind - 5 * follow, -18 * wind + 24 * follow)
+    P.spine(HUNCH - 10 * wind + 12 * follow, 4 * wind - 8 * follow, -36 * wind + 50 * follow)
+    zhead(P, tilt=-4 * wind + 6 * follow, turn=14 * wind - 18 * follow, nod=-10 - 12 * snarl + 10 * follow)
+    # right claw: hang -> cocked up and back -> whip across the front -> low by the left hip
     rest = hang("Right")
-    high = V(-0.46, 0.18, 2.02)
-    over = V(-0.40, -0.70, 1.86)                         # Bezier pull: the rip passes high in front first
-    low = V(0.48, -0.50, 0.84)                           # finishes by the left hip, the giant stays upright
-    if rip <= 0:
-        tgt = rest * (1 - coil) ** 2 + V(-0.70, 0.02, 1.50) * 2 * (1 - coil) * coil + high * coil * coil
-    else:
-        u = rip
-        arc = high * (1 - u) ** 2 + over * 2 * (1 - u) * u + low * u * u
-        tgt = vlerp(rest, arc, back)
+    cocked = V(-0.66, 0.22, 1.52)
+    ctrl = V(-0.32, -1.00, 1.42)                         # Bezier pull: the rip sweeps out in front at chest height
+    end = V(0.46, -0.48, 0.98)
+    arc = cocked if t < 0.36 else cocked * (1 - rip) ** 2 + ctrl * 2 * (1 - rip) * rip + end * rip * rip
+    tgt = vlerp(rest, cocked, cock) if t < 0.36 else vlerp(rest, arc, back)
     P.arm_ik("Right", cp(P, tgt), pole=(-0.8, 0.5, -0.6), roll=-18 - 24 * follow)
-    P.claw("Right", 0.15 + 0.85 * follow)               # fingers splayed for the rip, closing through it
-    # left arm: thrown out front-left for balance on the coil, swept back on the rip
+    # talons splayed wide through the cock and the whip, snapping shut just after they connect
+    P.claw("Right", lerp(lerp(CLAW_REST, 0.0, cock), 1.0, ease(seg(t, SLASH_HIT, SLASH_HIT + 0.10))) * back + CLAW_REST * (1 - back))
+    # left arm: out front-left for balance on the cock, swept back on the rip
     lft = vlerp(vlerp(hang("Left"), V(0.58, -0.52, 1.30), wind), V(0.52, 0.20, 0.92), follow)
     P.arm_ik("Left", cp(P, lft), roll=16)
     P.claw("Left", 0.8)
-    # big step in with the left foot as it rips, right heel lifts and pivots
-    lf = foot_path(t, [(0.0, (0.06, -0.02, 0)), (0.30, (0.06, -0.02, 0)), (0.50, (0.10, -0.42, 0)), (0.80, (0.10, -0.42, 0)), (0.98, (0.06, -0.02, 0))])
-    rf = foot_path(t, [(0.0, (-0.06, 0.04, 0)), (0.20, (-0.06, 0.04, 0)), (0.38, (-0.10, 0.14, 0)), (0.86, (-0.10, 0.14, 0)), (0.99, (-0.06, 0.04, 0))])
+    # left foot stamps in with the slash, the right heel lifts and pivots
+    lf = foot_path(t, [(0.0, (0.06, -0.02, 0)), (0.34, (0.06, -0.02, 0)), (0.48, (0.10, -0.38, 0)), (0.80, (0.10, -0.38, 0)), (0.98, (0.06, -0.02, 0))])
+    rf = foot_path(t, [(0.0, (-0.06, 0.04, 0)), (0.20, (-0.06, 0.04, 0)), (0.36, (-0.10, 0.14, 0)), (0.86, (-0.10, 0.14, 0)), (0.99, (-0.06, 0.04, 0))])
     feet(P, tuple(lf), tuple(rf), pl=0, pr=-14 * follow)
 
 
@@ -241,5 +264,5 @@ def rise(t, P):
 
 
 CLIPS = [("Idle", 70, idle, True, False), ("Walk", 36, walk, True, False), ("Run", 24, run, True, False),
-         ("Attack", 48, attack, False, False), ("Hit", 24, hit, False, False),
+         ("Attack", 36, attack, False, False), ("Hit", 24, hit, False, False),
          ("Death", 84, death, False, True), ("Rise", 80, rise, False, True)]

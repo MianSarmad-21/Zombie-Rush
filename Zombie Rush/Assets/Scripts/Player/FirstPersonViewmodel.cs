@@ -91,6 +91,62 @@ namespace ZombieRush.Player
             overlay.transform.SetPositionAndRotation(position, rotation);
             overlay.fieldOfView = fov;
             overlay.nearClipPlane = Mathf.Max(0.005f, nearClip);
+            FitLensMask();
+        }
+
+        // ---- scope lens mask: a depth-only disc in front of the arms-and-gun camera, the size of the scope's
+        // glass on screen. The gun and arms behind it are not drawn, so through the lens only the world shows
+        // (a real scope's tube hides the gun in front of the eye); round and below the eyepiece the gun shows.
+        Transform lensMask;
+        float lensFraction;   // lens radius as a share of half the screen height, 0 = off
+
+        /// Scope glass radius on screen (share of half the screen height); 0 turns the mask off.
+        public void SetLensMask(float fractionOfHalfHeight)
+        {
+            lensFraction = Mathf.Max(0f, fractionOfHalfHeight);
+            if (lensFraction > 0f && lensMask == null) BuildLensMask();
+            if (lensMask != null && lensMask.gameObject.activeSelf != lensFraction > 0f) lensMask.gameObject.SetActive(lensFraction > 0f);
+            FitLensMask();
+        }
+
+        void BuildLensMask()
+        {
+            if (overlay == null || layer < 0) return;
+            var shader = Resources.Load<Shader>("ZombieRush/ScopeDepthMask");
+            if (shader == null) shader = Shader.Find("ZombieRush/ScopeDepthMask");
+            if (shader == null) return;
+            const int n = 64;
+            var v = new Vector3[n + 1];
+            var tris = new int[n * 3];
+            v[0] = Vector3.zero;
+            for (int i = 0; i < n; i++)
+            {
+                float a = i * Mathf.PI * 2f / n;
+                v[i + 1] = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);
+                tris[i * 3] = 0; tris[i * 3 + 1] = i + 1; tris[i * 3 + 2] = (i + 1) % n + 1;
+            }
+            var mesh = new Mesh { name = "ScopeLensMask", vertices = v, triangles = tris };
+            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 4f);
+            var go = new GameObject("ScopeLensMask");
+            go.layer = layer;
+            go.transform.SetParent(overlay.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var r = go.AddComponent<MeshRenderer>();
+            r.sharedMaterial = new Material(shader) { name = "ScopeDepthMask (runtime)" };
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            lensMask = go.transform;
+        }
+
+        void FitLensMask()
+        {
+            if (lensMask == null || overlay == null || lensFraction <= 0f) return;
+            // just past the near clip, sized so it covers the glass exactly from the camera's point of view
+            float d = overlay.nearClipPlane * 1.5f;
+            float radius = d * Mathf.Tan(overlay.fieldOfView * 0.5f * Mathf.Deg2Rad) * lensFraction;
+            lensMask.localPosition = new Vector3(0f, 0f, d);
+            lensMask.localRotation = Quaternion.identity;
+            lensMask.localScale = new Vector3(radius, radius, 1f);
         }
     }
 }
