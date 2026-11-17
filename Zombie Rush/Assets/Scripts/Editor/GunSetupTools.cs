@@ -65,6 +65,7 @@ namespace ZombieRush.EditorTools
         public static string Run()
         {
             var sb = new StringBuilder();
+            sb.AppendLine(SharpTextures());
             var prefabs = new Dictionary<string, GameObject>();
             foreach (var (name, _, style) in Guns)
             {
@@ -74,6 +75,29 @@ namespace ZombieRush.EditorTools
             AssetDatabase.SaveAssets();
             sb.AppendLine(Install(prefabs));
             return sb.ToString();
+        }
+
+        /// Guns are seen up close and at a slant (first person): trilinear filtering with 8x anisotropy (the default
+        /// 1x blurred them along the barrel), and on Android the colour maps at 2048 in the finer ASTC 4x4.
+        static string SharpTextures()
+        {
+            int n = 0;
+            foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { ModelRoot }))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (path.Contains("_orig") || !(AssetImporter.GetAtPath(path) is TextureImporter ti)) continue;
+                bool albedo = path.Contains("_Albedo");
+                var a = ti.GetPlatformTextureSettings("Android");
+                var wantFmt = albedo ? TextureImporterFormat.ASTC_4x4 : TextureImporterFormat.ASTC_6x6;
+                int wantSize = albedo ? 2048 : 1024;
+                if (ti.anisoLevel == 8 && ti.filterMode == FilterMode.Trilinear && a.overridden && a.format == wantFmt && a.maxTextureSize == wantSize) continue;
+                ti.anisoLevel = 8; ti.filterMode = FilterMode.Trilinear;
+                a.overridden = true; a.format = wantFmt; a.maxTextureSize = wantSize; a.textureCompression = TextureImporterCompression.CompressedHQ;
+                ti.SetPlatformTextureSettings(a);
+                ti.SaveAndReimport();
+                n++;
+            }
+            return $"Gun textures: {n} set to trilinear, aniso 8 (Android colour maps ASTC 4x4 at 2048).";
         }
 
         // ------------------------------------------------------------ import + prefab
@@ -88,6 +112,10 @@ namespace ZombieRush.EditorTools
             m.SetFloat("_Smoothness", smooth);
             if (normal != null) { m.SetTexture("_BumpMap", normal); m.EnableKeyword("_NORMALMAP"); }
             if (ms != null) { m.SetTexture("_MetallicGlossMap", ms); m.EnableKeyword("_METALLICSPECGLOSSMAP"); m.SetFloat("_Smoothness", 1f); }
+            // ambient occlusion baked in Blender (Blender/gun_texture_enhance.py), next to the albedo when present
+            var aoPath = albedo != null ? AssetDatabase.GetAssetPath(albedo).Replace("_Albedo.png", "_Occlusion.png") : null;
+            var ao = aoPath != null && aoPath.EndsWith("_Occlusion.png") ? Tex(aoPath, false, false) : null;
+            if (ao != null) { m.SetTexture("_OcclusionMap", ao); m.SetFloat("_OcclusionStrength", 1f); m.EnableKeyword("_OCCLUSIONMAP"); }
             EditorUtility.SetDirty(m);
             return m;
         }
@@ -318,7 +346,7 @@ namespace ZombieRush.EditorTools
         public static string BodyCheck()
         {
             var sb = new StringBuilder();
-            var surv = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/2026-11-08_WastelandSurvivor_Final/WastelandSurvivor.fbx");
+            var surv = AssetDatabase.LoadAssetAtPath<GameObject>($"{MeshyBodyTools.Folder}/{MeshyBodyTools.Name}.fbx");
             var prox = AssetDatabase.LoadAssetAtPath<GameObject>($"{ModelRoot}/Pistol/Survivor_Pistol.fbx");
             var clips = AssetDatabase.LoadAllAssetsAtPath($"{ModelRoot}/Pistol/Survivor_Pistol.fbx").OfType<AnimationClip>().ToArray();
             var a = Object.Instantiate(surv); var b = Object.Instantiate(prox);
@@ -329,7 +357,7 @@ namespace ZombieRush.EditorTools
                 var ta = a.GetComponentsInChildren<Transform>(true).GroupBy(t => t.name).ToDictionary(g => g.Key, g => g.First());
                 var tb = b.GetComponentsInChildren<Transform>(true).GroupBy(t => t.name).ToDictionary(g => g.Key, g => g.First());
                 sb.AppendLine($"survivor root rot {a.transform.rotation.eulerAngles}, proxy root rot {b.transform.rotation.eulerAngles}, rest clip {(rest != null)}");
-                foreach (var n in new[] { "Armature.002", "Hips", "Chest", "UpperChest", "RightShoulder", "RightUpperArm", "RightLowerArm", "RightHand", "RightHandIndex1", "LeftHand", "Pistol_Rig", "Root", "Gun" })
+                foreach (var n in new[] { "ShadowOperative_Rig", "Hips", "Chest", "UpperChest", "RightShoulder", "RightUpperArm", "RightLowerArm", "RightHand", "RightHandIndex1", "LeftHand", "Pistol_Rig", "Root", "Gun" })
                 {
                     ta.TryGetValue(n, out var x); tb.TryGetValue(n, out var y);
                     string S(Transform t) => t == null ? "none" : $"lp {t.localPosition.ToString("F3")} lr {t.localRotation.eulerAngles.ToString("F1")} ls {t.localScale.ToString("F2")} wp {t.position.ToString("F3")}";

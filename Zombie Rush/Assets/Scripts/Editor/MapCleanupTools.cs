@@ -55,12 +55,31 @@ namespace ZombieRush.EditorTools
             if (mode == "mobileforwardplus") return NightLookTools.MobileForwardPlus();
             if (mode == "survival") return SurvivalLayoutTools.Build();
             if (mode == "guns") return GunSetupTools.Run();
+            if (mode == "basesurvey") return BaseFurnishTools.Survey();
+            if (mode == "compound") return BaseCompoundTools.Survey();
+            if (mode == "compound fix") return BaseCompoundTools.Fix();
+            if (mode == "hallprobe") return BaseCompoundTools.HallProbe();
+            if (mode == "hall") return BaseCompoundTools.HallSurvey();
+            if (mode == "gatefires") return BaseCompoundTools.GateFires();
+            if (mode == "base layout") return BaseCompoundTools.Layout();
+            if (mode == "doorprobe") return BaseCompoundTools.DoorProbe();
+            if (mode.StartsWith("hallviews")) return BaseCompoundTools.HallViews(mode.Substring(9).Trim());
+            if (mode.StartsWith("compoundviews")) return BaseCompoundTools.Views(mode.Length > 13 ? mode.Substring(13).Trim() : "Now");
+            if (mode == "basefurnish") return BaseFurnishTools.Build();
+            if (mode == "chests") return LootChestTools.Build();
             if (mode == "balance") return WaveBalance();
             if (mode == "fx") return ZombieRush.EditorTools.FxSetupTools.Run();
             if (mode == "net") return ZombieRush.EditorTools.NetSetupTools.Run();
             if (mode == "kitui") return ZombieRush.EditorTools.KitUIBuilder.Run();
             if (mode == "buildwin") return ZombieRush.EditorTools.BuildTools.Windows();
             if (mode == "buildandroid") return ZombieRush.EditorTools.BuildTools.Android();
+            if (mode == "buildsizes") return ZombieRush.EditorTools.BuildTools.LastBuildSizes();
+            if (mode == "inactive") return ZombieRush.EditorTools.BuildTools.InactiveSurvey();
+            if (mode == "resolve") { UnityEditor.PackageManager.Client.Resolve(); return "Package Manager: resolve requested (manifest re-read)."; }
+            if (mode == "matslots" || mode == "matslots fix") return ZombieRush.EditorTools.MaterialSlotTools.Run(mode.EndsWith("fix"));
+            if (mode == "toandroid")   // back to the project's main platform after a Windows build
+                return EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android)
+                    ? "Active platform: Android." : "FAILED to switch to Android.";
             if (mode == "dumpplayer")
             {
                 var pl = GameObject.Find("Player");
@@ -98,6 +117,8 @@ namespace ZombieRush.EditorTools
             if (mode == "gunctl") return string.Join(System.Environment.NewLine, Object.FindObjectsByType<ZombieRush.Weapons.GunRig>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                 .Select(r => { var an = r.GetComponent<Animator>(); return $"{r.name} under {r.transform.parent?.parent?.name}: ctrl {(an != null && an.runtimeAnimatorController != null ? an.runtimeAnimatorController.name : "NULL")}, prefab ctrl {(PrefabUtility.GetCorrespondingObjectFromSource(an) is Animator pa && pa.runtimeAnimatorController != null ? pa.runtimeAnimatorController.name : "NULL")}"; }));
             if (mode == "floatcheck") return FloatCheck();
+            if (mode == "antennas") return AntennaCheck(false);
+            if (mode == "antennas fix") return AntennaCheck(true);
             if (mode == "mossbuildings") return MossyBuildingsTools.Run(true);
             if (mode == "mossbuildings off") return MossyBuildingsTools.Run(false);
             if (mode == "survival config reset") return SurvivalLayoutTools.ResetConfig();
@@ -446,6 +467,73 @@ namespace ZombieRush.EditorTools
 
         /// Every placed prop (CityProps, BaseCompound, SurvivalLayout): how far its base sits above the
         /// terrain right under it and under the corners of its footprint. Lists the worst by kind.
+        /// Rooftop masts ("antenna..." and anything under "Towers") left hanging in the air where the
+        /// building under them was moved or removed (the user saw a lattice mast floating in the sky).
+        /// The support is the highest thing under the mast's footprint: a collider hit straight down or
+        /// another renderer's top. "antennas fix" sets each floating mast down on it and saves the scene.
+        static string AntennaCheck(bool fix)
+        {
+            var masts = Object.FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
+                .Where(t => t.name.StartsWith("antenna", System.StringComparison.OrdinalIgnoreCase)
+                            || (t.parent != null && t.parent.name == "Towers"))
+                .Where(t => t.parent == null || !t.parent.name.StartsWith("antenna", System.StringComparison.OrdinalIgnoreCase))
+                .Distinct().ToList();
+            var others = Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            var sb = new StringBuilder();
+            int floating = 0, moved = 0;
+            foreach (var m in masts)
+            {
+                var rs = m.GetComponentsInChildren<Renderer>().Where(r => !(r is ParticleSystemRenderer)).ToArray();
+                if (rs.Length == 0) continue;
+                var b = rs[0].bounds; foreach (var r in rs) b.Encapsulate(r.bounds);
+                var own = new HashSet<Transform>(m.GetComponentsInChildren<Transform>(true));
+                float support = float.NegativeInfinity; string on = "nothing";
+                var probes = new[] { b.center, b.center + new Vector3(b.extents.x * 0.6f, 0, 0), b.center - new Vector3(b.extents.x * 0.6f, 0, 0),
+                                     b.center + new Vector3(0, 0, b.extents.z * 0.6f), b.center - new Vector3(0, 0, b.extents.z * 0.6f) };
+                foreach (var p in probes)
+                    foreach (var h in Physics.RaycastAll(new Vector3(p.x, b.min.y + 0.3f, p.z), Vector3.down, 500f, ~0, QueryTriggerInteraction.Ignore))
+                        if (!own.Contains(h.collider.transform) && h.point.y > support) { support = h.point.y; on = h.collider.name; }
+                foreach (var r in others)
+                {
+                    if (own.Contains(r.transform) || r.bounds.max.y > b.min.y + 0.3f) continue;
+                    var rb = r.bounds;
+                    if (b.center.x < rb.min.x || b.center.x > rb.max.x || b.center.z < rb.min.z || b.center.z > rb.max.z) continue;
+                    if (rb.size.y < 2f || r.bounds.max.y <= support) continue;   // small clutter is no roof
+                    support = rb.max.y; on = r.name + " (top)";
+                }
+                float gap = b.min.y - support;
+                bool fl = gap > 0.25f;
+                if (fl) floating++;
+                string path = m.name; for (var p = m.parent; p != null; p = p.parent) path = p.name + "/" + path;
+                sb.AppendLine($"  {(fl ? "FLOATING" : "ok")} {path}: bottom {b.min.y:0.0} m, {b.size.y:0.0} m tall, at ({b.center.x:0}, {b.center.z:0}), on {on} at {support:0.0} -> gap {gap:0.00} m");
+                if (fix && fl && !float.IsInfinity(support))
+                {
+                    if (gap > 8f)
+                    {
+                        // its tall building is gone: a 10-20 m mast on a small house or the bare ground looks
+                        // wrong, so it is switched off (kept in the scene, can be switched back on)
+                        Undo.RecordObject(m.gameObject, "Hide orphan mast");
+                        m.gameObject.SetActive(false);
+                        sb.AppendLine($"    -> hidden (its building is gone)");
+                    }
+                    else
+                    {
+                        Undo.RecordObject(m, "Set mast down");
+                        m.position -= Vector3.up * gap;
+                        sb.AppendLine($"    -> set down {gap:0.00} m onto {on}");
+                    }
+                    moved++;
+                }
+            }
+            if (moved > 0)
+            {
+                var scene = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene();
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
+                UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene);
+            }
+            return $"Masts: {masts.Count}, floating {floating}{(fix ? $", set down {moved} (scene saved)" : "")}{System.Environment.NewLine}{sb}";
+        }
+
         static string FloatCheck()
         {
             var map = GameObject.Find(MapRoot);

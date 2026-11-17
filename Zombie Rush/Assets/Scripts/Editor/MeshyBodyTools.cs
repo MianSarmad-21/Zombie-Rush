@@ -17,15 +17,22 @@ namespace ZombieRush.EditorTools
     ///   - its own player controller built from the Meshy clips (see Slots), strafe/back clips sped up to the player's speed,
     ///   - prefab in Assets/Prefabs/Characters, scaled to `TargetHeight`, facing +Z,
     ///   - then PlayerViewTools.Run puts it on the Player with the aim rig.
+    /// The player body is the Shadow Operative (Blender/ShadowOperative_Rig.blend: Survivor bone names, five
+    /// 3-joint fingers per hand). Its FBX has no clips: the 25 locomotion clips come from the Wasteland
+    /// Survivor's FBX (`ClipSource`), retargeted through the humanoid avatars.
     /// Marker: Temp/ZR_RunMeshyBody (report: Temp/ZR_MeshyBody.log).
     static class MeshyBodyTools
     {
-        public const string Folder = "Assets/Models/2026-11-08_WastelandSurvivor_Final";
-        public const string Name = "WastelandSurvivor";
-        public const string PrefabPath = "Assets/Prefabs/Characters/WastelandSurvivor.prefab";
+        public const string Folder = "Assets/Models/2026-11-14_ShadowOperative_Final";
+        public const string Name = "ShadowOperative";
+        public const string PrefabPath = "Assets/Prefabs/Characters/ShadowOperative.prefab";
+        /// Humanoid clips used when the body's own FBX has none: the Operative's own movement set
+        /// (Blender/player_anim.py, armature only, same skeleton), imported on a copy of the body's avatar.
+        public const string ClipSource = "Assets/Models/2026-11-14_ShadowOperative_Final/ShadowOperative_Anims.fbx";
         /// The body's Animator controller (rebuilt by each body setup run).
         public static string ControllerPath => $"{Folder}/{Name}.controller";
         const float TargetHeight = 1.9f;
+        static readonly string[] FingerNames = { "Index", "Middle", "Ring", "Pinky" };
 
         // Meshy bone name -> Unity humanoid bone.
         static readonly (string bone, string human)[] BoneMap =
@@ -35,11 +42,17 @@ namespace ZombieRush.EditorTools
             ("RightShoulder", "RightShoulder"), ("RightUpperArm", "RightUpperArm"), ("RightLowerArm", "RightLowerArm"), ("RightHand", "RightHand"),
             ("LeftUpperLeg", "LeftUpperLeg"), ("LeftLowerLeg", "LeftLowerLeg"), ("LeftFoot", "LeftFoot"), ("LeftToes", "LeftToes"),
             ("RightUpperLeg", "RightUpperLeg"), ("RightLowerLeg", "RightLowerLeg"), ("RightFoot", "RightFoot"), ("RightToes", "RightToes"),
-            // Blender/survivor_fingers.py: a 3-joint thumb and a 3-joint chain for the (one-piece) finger block
+            // five 3-joint fingers per hand (Blender/ShadowOperative_Rig.blend)
             ("LeftHandThumb1", "Left Thumb Proximal"), ("LeftHandThumb2", "Left Thumb Intermediate"), ("LeftHandThumb3", "Left Thumb Distal"),
             ("LeftHandIndex1", "Left Index Proximal"), ("LeftHandIndex2", "Left Index Intermediate"), ("LeftHandIndex3", "Left Index Distal"),
+            ("LeftHandMiddle1", "Left Middle Proximal"), ("LeftHandMiddle2", "Left Middle Intermediate"), ("LeftHandMiddle3", "Left Middle Distal"),
+            ("LeftHandRing1", "Left Ring Proximal"), ("LeftHandRing2", "Left Ring Intermediate"), ("LeftHandRing3", "Left Ring Distal"),
+            ("LeftHandPinky1", "Left Little Proximal"), ("LeftHandPinky2", "Left Little Intermediate"), ("LeftHandPinky3", "Left Little Distal"),
             ("RightHandThumb1", "Right Thumb Proximal"), ("RightHandThumb2", "Right Thumb Intermediate"), ("RightHandThumb3", "Right Thumb Distal"),
             ("RightHandIndex1", "Right Index Proximal"), ("RightHandIndex2", "Right Index Intermediate"), ("RightHandIndex3", "Right Index Distal"),
+            ("RightHandMiddle1", "Right Middle Proximal"), ("RightHandMiddle2", "Right Middle Intermediate"), ("RightHandMiddle3", "Right Middle Distal"),
+            ("RightHandRing1", "Right Ring Proximal"), ("RightHandRing2", "Right Ring Intermediate"), ("RightHandRing3", "Right Ring Distal"),
+            ("RightHandPinky1", "Right Little Proximal"), ("RightHandPinky2", "Right Little Intermediate"), ("RightHandPinky3", "Right Little Distal"),
         };
 
         // Clips that cycle.
@@ -54,19 +67,39 @@ namespace ZombieRush.EditorTools
             { "Idle", "Idle_Aim" }, { "Walk", "Run" }, { "Run", "Sprint" },
             { "StrafeLeft", "Strafe_Left" }, { "StrafeRight", "Strafe_Right" },
             { "FwdLeft", "Run_FwdLeft" }, { "FwdRight", "Run_FwdRight" }, { "BackLeft", "Run_BackLeft" }, { "BackRight", "Run_BackRight" },
+            { "SlowWalk", "Walk" },
             { "CrouchIdle", "Crouch_Idle" }, { "CrouchWalk", "Crouch_Walk" },
             { "Air", "Fall" }, { "Die", "Death" }, { "Fire", "Fire" }, { "Reload", "Reload" }, { "Hit", "Hit_Reaction" },
         };
         // Slots that are simply left out when the model has no clip for them.
-        static readonly HashSet<string> Optional = new HashSet<string> { "FwdLeft", "FwdRight", "BackLeft", "BackRight" };
+        static readonly HashSet<string> Optional = new HashSet<string> { "FwdLeft", "FwdRight", "BackLeft", "BackRight", "SlowWalk" };
+        /// The slow walk clip's speed (Blender/player_anim.py GAITS["Walk"]: 1.5 m/s in game).
+        const float SlowWalkSpeed = 1.5f;
         // The player's normal move speed (PlayerController.walkSpeed), m/s.
         const float PlayerJogSpeed = 4f;
+        /// The player's sprint (PlayerController.sprintSpeed), m/s; the Sprint clip is made for it.
+        const float PlayerSprintSpeed = 6.5f;
         const string SurvivorClips = "Assets/Models/2026-11-05_Characters/ZR_Survivor/Animations";
 
         /// "Armature|Idle" -> "Idle".
         static string ClipName(string n) => n.Contains("|") ? n.Substring(n.LastIndexOf('|') + 1) : n;
 
-        [MenuItem("Zombie Rush/Player/Set Up Meshy Body (Wasteland Survivor)")]
+        /// Loop the cycles; every clip stays in place (the controller moves the player).
+        static void ConfigureClips(ModelImporter imp)
+        {
+            var clips = imp.defaultClipAnimations;
+            foreach (var c in clips)
+            {
+                bool loop = LoopClips.Contains(ClipName(c.name));
+                c.loopTime = loop; c.loopPose = loop;
+                c.lockRootRotation = true; c.keepOriginalOrientation = true;
+                c.lockRootHeightY = true; c.keepOriginalPositionY = true;
+                c.lockRootPositionXZ = true; c.keepOriginalPositionXZ = true;
+            }
+            imp.clipAnimations = clips;
+        }
+
+        [MenuItem("Zombie Rush/Player/Set Up Meshy Body (Shadow Operative)")]
         static void Menu() => Debug.Log("Zombie Rush: " + Run());
 
         public static string Run()
@@ -76,6 +109,7 @@ namespace ZombieRush.EditorTools
             AssetDatabase.Refresh();
             SetTexture($"{Folder}/{Name}_Normal.png", normal: true, srgb: false);
             SetTexture($"{Folder}/{Name}_MetalSmooth.png", normal: false, srgb: false);
+            SetTexture($"{Folder}/{Name}_Occlusion.png", normal: false, srgb: false);
             SetTexture($"{Folder}/{Name}_Albedo.png", normal: false, srgb: true);
 
             var imp = AssetImporter.GetAtPath(fbx) as ModelImporter;
@@ -99,21 +133,32 @@ namespace ZombieRush.EditorTools
             imp.materialImportMode = ModelImporterMaterialImportMode.None;
 
             // ---- Clips: loop the cycles, keep everything in place --------------------------------
-            var clips = imp.defaultClipAnimations;
-            foreach (var c in clips)
-            {
-                bool loop = LoopClips.Contains(ClipName(c.name));
-                c.loopTime = loop; c.loopPose = loop;
-                c.lockRootRotation = true; c.keepOriginalOrientation = true;
-                c.lockRootHeightY = true; c.keepOriginalPositionY = true;
-                c.lockRootPositionXZ = true; c.keepOriginalPositionXZ = true;
-            }
-            imp.clipAnimations = clips;
+            ConfigureClips(imp);
             imp.SaveAndReimport();
 
             var avatar = AssetDatabase.LoadAllAssetsAtPath(fbx).OfType<Avatar>().FirstOrDefault();
             if (avatar == null || !avatar.isValid || !avatar.isHuman) return report + "FAILED: humanoid avatar is not valid (see Console).";
             var meshyClips = AssetDatabase.LoadAllAssetsAtPath(fbx).OfType<AnimationClip>().Where(c => !c.name.StartsWith("__preview")).ToArray();
+            if (meshyClips.Length == 0)
+            {
+                // no clips of its own: the humanoid clips of the clip source play on this avatar
+                if (AssetImporter.GetAtPath(ClipSource) is ModelImporter src)
+                {
+                    // same skeleton as the body: humanoid on the body's own avatar
+                    src.animationType = ModelImporterAnimationType.Human;
+                    src.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
+                    src.sourceAvatar = avatar;
+                    // armature-only file: keep its rig node (it carries the axis conversion) so the hierarchy
+                    // matches the body's; without this Unity drops the lone root and the hips move on wrong axes
+                    src.preserveHierarchy = true;
+                    src.materialImportMode = ModelImporterMaterialImportMode.None;
+                    ConfigureClips(src);
+                    src.SaveAndReimport();
+                    meshyClips = AssetDatabase.LoadAllAssetsAtPath(ClipSource).OfType<AnimationClip>().Where(c => !c.name.StartsWith("__preview")).ToArray();
+                    report.AppendLine($"Clips: none in {Name}.fbx, using {meshyClips.Length} humanoid clips from {ClipSource}.");
+                }
+                else report.AppendLine($"Clips: none in {Name}.fbx and {ClipSource} is missing or not Humanoid.");
+            }
             report.AppendLine($"Avatar: humanoid, {hd.human.Length} bones. Clips: {string.Join(", ", meshyClips.Select(c => c.name))}.");
 
             // ---- Material ----------------------------------------------------------------------
@@ -147,11 +192,24 @@ namespace ZombieRush.EditorTools
                 EditorUtility.SetDirty(pc);
                 report.AppendLine($"Player jog speed set to {PlayerJogSpeed} m/s.");
             }
+            if (pc != null && !Mathf.Approximately(pc.sprintSpeed, PlayerSprintSpeed))
+            {
+                // the Operative's short legs can't sprint faster without lunging (stride ~3x leg length at 8 m/s)
+                Undo.RecordObject(pc, "Player sprint speed");
+                pc.sprintSpeed = PlayerSprintSpeed;
+                EditorUtility.SetDirty(pc);
+                report.AppendLine($"Player sprint speed set to {PlayerSprintSpeed} m/s.");
+            }
             float jog = pc != null ? pc.walkSpeed : 5f, sprint = pc != null ? pc.sprintSpeed : 8f, crouch = pc != null ? pc.crouchSpeed : 2.5f;
+            // sideways and backwards the controller moves slower (strafe/back factors); diagonals mix the two
+            float sf = pc != null ? pc.strafeSpeedFactor : 1f, bf = pc != null ? pc.backSpeedFactor : 1f;
+            float side = jog * sf, backSpd = jog * bf;
+            float diagF = jog * Mathf.Sqrt(0.5f + 0.5f * sf * sf), diagB = jog * Mathf.Sqrt(0.5f * bf * bf + 0.5f * sf * sf);
             var target = new Dictionary<string, float>
             {
-                { "Walk", jog }, { "Run", sprint }, { "StrafeLeft", jog }, { "StrafeRight", jog }, { "Back", jog }, { "CrouchWalk", crouch },
-                { "FwdLeft", jog }, { "FwdRight", jog }, { "BackLeft", jog }, { "BackRight", jog },
+                { "Walk", jog }, { "Run", sprint }, { "StrafeLeft", side }, { "StrafeRight", side }, { "Back", backSpd }, { "CrouchWalk", crouch },
+                { "FwdLeft", diagF }, { "FwdRight", diagF }, { "BackLeft", diagB }, { "BackRight", diagB },
+                { "SlowWalk", SlowWalkSpeed },
             };
             var speed = new Dictionary<string, float>();
             foreach (var kv in target)
@@ -164,6 +222,7 @@ namespace ZombieRush.EditorTools
             }
             var mask = AssetDatabase.LoadAssetAtPath<AvatarMask>(SurvivorRigTools.UpperBodyMaskPath);
             string ctrlPath = $"{Folder}/{Name}.controller";
+            if (slots.ContainsKey("SlowWalk")) speed["SlowWalkAt"] = SlowWalkSpeed / Mathf.Max(0.1f, jog);   // its place on the forward axis
             var ctrl = SurvivorRigTools.BuildController(ctrlPath, slots, mask, speed);
             AssetDatabase.DeleteAsset($"{Folder}/{Name}.overrideController"); // replaced by the controller above
             report.AppendLine($"Controller: {ctrlPath}, {slots.Count} slots, backward = {(back != null ? "Run_Back" : "Run reversed")}.");
@@ -411,18 +470,23 @@ namespace ZombieRush.EditorTools
                     rp[i] = temp.transform.InverseTransformPoint(r.position);
                 }
                 float floor = Mathf.Min(lp.Min(p => p.y), rp.Min(p => p.y));
-                float sum = 0f; int count = 0;
+                var speeds = new List<float>();
                 float step = clip.length / n;
                 for (int i = 0; i < n; i++)
                 {
-                    // The lower foot, when it is within 3 cm of the lowest point, is the planted one.
+                    // The lower foot, when it is within 7 mm of the lowest point, is the planted one, flat on the
+                    // ground (3 cm also caught heel-up and landing frames: runs with short ground contact read ~25% slow)
                     bool left = lp[i].y <= rp[i].y;
                     Vector3 a = left ? lp[i] : rp[i], b = left ? lp[i + 1] : rp[i + 1];
-                    if (a.y > floor + 0.03f) continue;
+                    if (a.y > floor + 0.007f) continue;
                     Vector3 d = b - a; d.y = 0f;
-                    sum += d.magnitude / step; count++;
+                    speeds.Add(d.magnitude / step);
                 }
-                return count > 0 ? sum / count * scale : 0f;
+                // the median: touch-down and toe-off frames (foot settling or lifting) dragged the mean ~10% low,
+                // so clips played too fast and the planted feet skated forward
+                if (speeds.Count == 0) return 0f;
+                speeds.Sort();
+                return speeds[speeds.Count / 2] * scale;
             }
             finally { Object.DestroyImmediate(temp); }
         }
@@ -447,9 +511,13 @@ namespace ZombieRush.EditorTools
                         Aim(B(side.Item1 + "LowerArm"), B(side.Item1 + "Hand"), side.Item2);
                         Aim(B(side.Item1 + "UpperLeg"), B(side.Item1 + "LowerLeg"), Vector3.down);
                         Aim(B(side.Item1 + "LowerLeg"), B(side.Item1 + "Foot"), Vector3.down);
-                        // the model's finger block is curled at rest: straight out along the arm in the reference pose
-                        Aim(B(side.Item1 + "HandIndex1"), B(side.Item1 + "HandIndex2"), side.Item2);
-                        Aim(B(side.Item1 + "HandIndex2"), B(side.Item1 + "HandIndex3"), side.Item2);
+                        // the hand and fingers are a little curled at rest: straight out along the arm in the reference pose
+                        Aim(B(side.Item1 + "Hand"), B(side.Item1 + "HandMiddle1"), side.Item2);
+                        foreach (var f in FingerNames)
+                        {
+                            Aim(B(side.Item1 + "Hand" + f + "1"), B(side.Item1 + "Hand" + f + "2"), side.Item2);
+                            Aim(B(side.Item1 + "Hand" + f + "2"), B(side.Item1 + "Hand" + f + "3"), side.Item2);
+                        }
                     }
                     report.AppendLine($"T-pose: arms were {before:0} degrees off horizontal, straightened.");
                 }
@@ -485,6 +553,9 @@ namespace ZombieRush.EditorTools
             mat.SetTexture("_MainTex", albedo);
             mat.SetColor("_BaseColor", Color.white);
             if (normal != null) { mat.SetTexture("_BumpMap", normal); mat.SetFloat("_BumpScale", 1f); mat.EnableKeyword("_NORMALMAP"); }
+            // ambient occlusion baked in Blender (Blender/body_texture_enhance.py): contact shading in folds and pouches
+            var ao = AssetDatabase.LoadAssetAtPath<Texture2D>($"{Folder}/{Name}_Occlusion.png");
+            if (ao != null) { mat.SetTexture("_OcclusionMap", ao); mat.SetFloat("_OcclusionStrength", 1f); mat.EnableKeyword("_OCCLUSIONMAP"); }
             if (ms != null)
             {
                 // R = metallic, A = smoothness (1 - Meshy roughness).

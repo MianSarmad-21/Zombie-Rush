@@ -24,7 +24,7 @@ from mathutils.bvhtree import BVHTree
 
 HERE = os.path.dirname(os.path.abspath(bpy.data.filepath)) if bpy.data.filepath else os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
-SURV = os.path.join(PROJECT, "Assets", "Models", "2026-11-08_WastelandSurvivor_Final", "WastelandSurvivor.fbx")
+SURV = os.path.join(PROJECT, "Assets", "Models", "2026-11-14_ShadowOperative_Final", "ShadowOperative.fbx")   # the player body
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 SHEETS = args[0] if args else None
 TUNE = {}
@@ -243,12 +243,12 @@ def hand_frame(side):
     # the thumb side by side, and the palm faces out of that plane. (The finger bones curve inside the
     # plane, so the bones alone do not tell which side the palm is.)
     h = side + "Hand"
-    ids = owned([h] + [side + "HandIndex%d" % i for i in (1, 2, 3)] + [side + "HandThumb%d" % i for i in (1, 2, 3)], 0.3)
+    ids = owned([h] + [side + "Hand%s%d" % (f, i) for f in ("Index", "Middle", "Ring", "Pinky") for i in (1, 2, 3)] + [side + "HandThumb%d" % i for i in (1, 2, 3)], 0.3)
     V = REST_CO[ids]
     _, _, vt = np.linalg.svd(V - V.mean(0))
     nrm = Vector(vt[2].tolist())
     wrist = HEAD[h]
-    fmid = (HEAD[side + "HandIndex1"] + TAIL[side + "HandIndex3"]) * 0.5
+    fmid = (HEAD[side + "HandMiddle1"] + TAIL[side + "HandMiddle3"]) * 0.5
     along = fmid - wrist
     along = (along - nrm * along.dot(nrm)).normalized()
     tv = TAIL[side + "HandThumb3"] - wrist
@@ -283,14 +283,20 @@ def hand_rot(side, along, palm):
 
 
 # ------------------------------------------------------------------ the pose
-FING = {s: [s + "HandIndex1", s + "HandIndex2", s + "HandIndex3"] for s in ("Left", "Right")}
+# the middle finger is solved against the gun (the centre of the hand, where the old one-piece finger block was);
+# curl() gives the index, ring and little fingers the same bends (same bone axes, so the same local turn)
+FING = {s: [s + "HandMiddle1", s + "HandMiddle2", s + "HandMiddle3"] for s in ("Left", "Right")}
+OTHER_FINGERS = {s: [[s + "Hand" + f + str(k) for k in (1, 2, 3)] for f in ("Index", "Ring", "Pinky")] for s in ("Left", "Right")}
+ALL_FINGER_BONES = {s: FING[s] + sum(OTHER_FINGERS[s], []) for s in ("Left", "Right")}
 THUMB = {s: [s + "HandThumb1", s + "HandThumb2", s + "HandThumb3"] for s in ("Left", "Right")}
 
 
 def curl(P, side, bones, axis, degs):
-    for b, d in zip(bones, degs):
-        local = (ML[b].to_3x3().inverted() @ axis).normalized()
-        P.q[b] = Quaternion(local, math.radians(d))
+    chains = [bones] + (OTHER_FINGERS[side] if bones == FING[side] else [])
+    for ch in chains:
+        for b, d in zip(ch, degs):
+            local = (ML[b].to_3x3().inverted() @ axis).normalized()
+            P.q[b] = Quaternion(local, math.radians(d))
 
 
 def wrap(P, side, bones, axis, targets, ratio, limit, step=2.0, touch=0.003):
@@ -392,7 +398,7 @@ th_ = M_["RightHandThumb3"].translation - M_["RightHandThumb1"].translation
 log("right thumb runs", gun_dir(th_.normalized()))
 
 # left hand: closes over the right fingers; needs the right hand's skin as a surface
-rh_ids = owned(["RightHand"] + FING["Right"] + THUMB["Right"], 0.3)
+rh_ids = owned(["RightHand"] + ALL_FINGER_BONES["Right"] + THUMB["Right"], 0.3)
 
 
 def right_hand_bvh():
@@ -413,7 +419,7 @@ def hand_mesh(pts):
 RBVH = BVHTree.FromPolygons(*hand_mesh(skin(P, rh_ids)))
 l_along = G(T("l_in", 0.25), -T("l_down", 0.70), T("l_fwd", 0.66))
 l_palm = G(T("l_palm_r", 0.92), T("l_palm_up", 0.25), 0)
-l_anchor = GP(T("l_x", -0.039), T("l_up", -0.065), T("l_back", 0.0))
+l_anchor = GP(T("l_x", -0.039), T("l_up", -0.035), T("l_back", 0.0))   # l_up -0.035: the Shadow Operative's bigger hand wraps over the right fingers (-0.065 for the Survivor)
 l_wrist, l_miss = place_hand(P, "Left", l_along, l_palm, l_anchor - l_along * HF["Left"]["wrist_to_palm"] * 0.55,
                              pole=(0.8, 0.2, -1.0), targets=[BVH, RBVH], approach=0.07)
 log("left wrist", tuple(round(x, 3) for x in l_wrist), "reach short by", round(l_miss, 3))
@@ -433,7 +439,7 @@ def wrist_bend(side):
 log("wrist bend: right", round(wrist_bend("Right")), "deg, left", round(wrist_bend("Left")), "deg")
 
 # how deep anything sinks into the gun
-hand_ids = owned([s + n for s in ("Left", "Right") for n in ("Hand", "HandIndex1", "HandIndex2", "HandIndex3", "HandThumb1", "HandThumb2", "HandThumb3")], 0.3)
+hand_ids = owned([s + "Hand" for s in ("Left", "Right")] + ALL_FINGER_BONES["Left"] + ALL_FINGER_BONES["Right"] + THUMB["Left"] + THUMB["Right"], 0.3)
 log("deepest point inside the gun (m)", round(-min(0.0, gap(skin(P, hand_ids))), 4))
 
 for n in BONES:
@@ -446,8 +452,8 @@ bpy.context.view_layer.update()
 # from its rest (pouch, magazine, slap, rack) with finger shapes for each moment. Only the arms,
 # hands and fingers are keyed: the game's spine aim keeps working underneath.
 HOLD = P
-ARM_BONES = [s + n for s in ("Left", "Right") for n in ("Shoulder", "UpperArm", "LowerArm", "Hand",
-                                                         "HandIndex1", "HandIndex2", "HandIndex3", "HandThumb1", "HandThumb2", "HandThumb3")]
+ARM_BONES = [s + n for s in ("Left", "Right") for n in ("Shoulder", "UpperArm", "LowerArm", "Hand", "HandThumb1", "HandThumb2", "HandThumb3")] \
+    + ALL_FINGER_BONES["Left"] + ALL_FINGER_BONES["Right"]
 LF_HOLD, LT_HOLD = list(l_f), list(l_t)
 RF_HOLD, RT_HOLD = list(r_f), list(r_t)
 OPEN, GRAB, FLAT, PINCH = [8, 6, 4], [55, 65, 45], [2, 2, 2], [35, 70, 50]

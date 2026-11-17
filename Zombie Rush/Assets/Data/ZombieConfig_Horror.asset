@@ -22,5 +22,6 @@ MonoBehaviour:
   attackLandTolerance: 0.3
   attackDamage: 22
   attackCooldown: 2.6
-  attackHitDelay: 0.8333333
+  attackHitDelay: 0.55
+  highSwing: 1
   sightRange: 40

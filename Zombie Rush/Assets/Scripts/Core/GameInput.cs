@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace ZombieRush.Core
 {
-    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause, Turret, ToggleView, Aim, ShoulderSwap } // append only: stored as ints in the scene
+    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause, Turret, ToggleView, Aim, ShoulderSwap, Interact } // append only: stored as ints in the scene
 
     /// The one place gameplay reads input from. Keyboard/mouse comes from the
     /// legacy Input Manager; the on-screen touch widgets write into this class.
@@ -17,7 +17,7 @@ namespace ZombieRush.Core
 
         static Vector2 touchMove;
         static Vector2 touchLookPixels;
-        static bool touchFireHeld, touchAimHeld;
+        static bool touchFireHeld, touchAimHeld, touchInteractHeld;
         static bool touchCrouchToggled;
         static bool reloadQueued, jumpQueued, swapQueued, expandQueued, pauseQueued, turretQueued, viewQueued, shoulderQueued;
 
@@ -48,12 +48,14 @@ namespace ZombieRush.Core
                 case TouchAction.ToggleView: viewQueued = true; break;
                 case TouchAction.Aim: touchAimHeld = !touchAimHeld; break;   // a toggle on touch: the fire thumb stays free
                 case TouchAction.ShoulderSwap: shoulderQueued = true; break;
+                case TouchAction.Interact: touchInteractHeld = true; break;
             }
         }
 
         public static void TouchRelease(TouchAction action)
         {
             if (action == TouchAction.Fire) touchFireHeld = false;
+            if (action == TouchAction.Interact) touchInteractHeld = false;
         }
 
         public static bool TouchCrouchActive => touchCrouchToggled;
@@ -67,6 +69,7 @@ namespace ZombieRush.Core
             touchLookPixels = Vector2.zero;
             touchFireHeld = false;
             touchAimHeld = false;
+            touchInteractHeld = false;
             ClearQueued();
         }
 
@@ -110,6 +113,10 @@ namespace ZombieRush.Core
 
         /// Aiming: the camera moves in and narrows its view (hold the right mouse button, or tap the touch aim button on/off).
         public static bool AimHeld => touchAimHeld || (MouseActive && Input.GetMouseButton(1));
+
+        /// Interact (open a loot chest): hold E, or hold the on-screen chest prompt on touch.
+        public static bool InteractHeld => touchInteractHeld || Input.GetKey(InteractKey);
+        public const KeyCode InteractKey = KeyCode.E;
 
         /// Keyboard sprint, or on touch: stick pushed (almost) fully forward.
         public static bool SprintHeld => Input.GetKey(KeyCode.LeftShift) || (touchMove.y > 0.8f && touchMove.sqrMagnitude > 0.9f);

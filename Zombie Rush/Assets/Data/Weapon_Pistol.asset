@@ -21,14 +21,12 @@ MonoBehaviour:
   magazineSize: 12
   maxReserveAmmo: 60
   reloadTime: 1.4
-  fireSounds:
-  - {fileID: 8300000, guid: ac60c97e875146c4e983f0658057f30f, type: 3}
-  - {fileID: 8300000, guid: 410fe04779748884888e98538f37a8b8, type: 3}
-  reloadSound: {fileID: 0}
-  fireVolume: 0.8
-  overrideEyeOffset: 0
-  eyeOffset: {x: 0, y: 0.09, z: 0.09}
-  fpLift: {x: 0.05, y: 0.11, z: 0}
+  autoReload: 1
+  autoReloadDelay: 0.3
+  ammoPack: {fileID: 8002823170823285628, guid: adb81d40248c38a479eecd980c56c32a, type: 3}
+  ammoName: PISTOL
+  tableAmmo: 24
+  dropAmmo: {x: 8, y: 14}
   crosshair: 1
   spreadBase: 0.25
   spreadPerShot: 0.9
@@ -39,3 +37,23 @@ MonoBehaviour:
   aimZoom: 0.85
   hasScope: 0
   scopeZoom: 2
+  scopeEyeHeight: 0.075
+  scopeEyeBack: 0.02
+  ironSights: 1
+  sightHeight: 0.021
+  sightForward: 0
+  recoilUp: 1.8
+  recoilSide: 0.5
+  recoilAimScale: 0.7
+  gunKickBack: 0.035
+  gunKickPitch: 5
+  bodyKickPitch: 3
+  idleSteady: 0.6
+  fireSounds:
+  - {fileID: 8300000, guid: ac60c97e875146c4e983f0658057f30f, type: 3}
+  - {fileID: 8300000, guid: 410fe04779748884888e98538f37a8b8, type: 3}
+  reloadSound: {fileID: 8300000, guid: 85c3651904f1d66408d64560b98f4258, type: 3}
+  fireVolume: 0.8
+  overrideEyeOffset: 0
+  eyeOffset: {x: 0, y: 0.09, z: 0.09}
+  fpLift: {x: 0.05, y: 0.11, z: 0}

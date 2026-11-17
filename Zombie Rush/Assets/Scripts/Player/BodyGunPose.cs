@@ -31,7 +31,7 @@ namespace ZombieRush.Player
             public GameObject go;
             public Dictionary<string, Transform> bones;
             public Dictionary<string, Quaternion> rest;
-            public Transform hand, gun, head;
+            public Transform hand, gun, head, rUpper, lUpper, lHand;
         }
 
         readonly Dictionary<GunRig, Proxy> proxies = new Dictionary<GunRig, Proxy>();
@@ -46,11 +46,20 @@ namespace ZombieRush.Player
         int anchorFrame = -1;
         FirstPersonViewmodel viewmodel;
         Vector3 lastRootPos;
-        float bobPhase, bobAmount;
+        float bobPhase, bobAmount, smoothSpeed, eyeRootY, eyeRootVel;
         WeaponBase listening;
+
+        /// The camera sits at the eyes: first person, or looking through a scope from third person.
+        bool EyeView => view != null && (view.FullyFirstPerson || view.ScopedAtEye);
+
+        float gunKick, gunKickRoll, kickR;   // first-person gun recoil, 0..1 (decays), and this shot's roll side
 
         /// True while the held gun is driven by body clips (the aim rig skips its arm IK).
         public bool Active { get; private set; }
+        /// Test numbers (captures): the torso bend this frame (deg), the steady move (m), the right hand
+        /// in the right shoulder's space of the body facing (m), the wanted vs. reached gun pitch.
+        [System.NonSerialized] public float DebugFix, DebugMove, DebugWantPitch, DebugGunPitch;
+        [System.NonSerialized] public Vector3 DebugHandFromShoulder;
 
         void Awake()
         {
@@ -104,6 +113,9 @@ namespace ZombieRush.Player
             p.bones.TryGetValue("RightHand", out p.hand);
             p.bones.TryGetValue("Gun", out p.gun);
             p.bones.TryGetValue("Head", out p.head);
+            p.bones.TryGetValue("RightUpperArm", out p.rUpper);
+            p.bones.TryGetValue("LeftUpperArm", out p.lUpper);
+            p.bones.TryGetValue("LeftHand", out p.lHand);
             if (rig.bodyRest != null) ClipSampler.Sample(p.go, rig.bodyRest, 0f);
             p.rest = new Dictionary<string, Quaternion>();
             if (rig.deltaBones != null)
@@ -117,14 +129,14 @@ namespace ZombieRush.Player
         {
             var cfg = aimRig != null ? aimRig.config : null;
             var gun = aimRig != null ? aimRig.HeldGun : null;
-            var rig = gun != null ? gun.GetComponentInChildren<GunRig>(true) : null;
+            var rig = gun != null ? GunRig.Of(gun) : null;
             Active = rig != null && rig.HasBodyClips && rightHand != null && aimRig.HoldWeight > 0.001f;
             Listen(Active && weapons != null ? weapons.CurrentWeapon : null);
             if (!Active)
             {
                 ShowFpArms(null);
                 eyeReady = false; headReady = false;
-                if (viewmodel != null) { viewmodel.Hidden = view != null && view.Scoped; viewmodel.SetOn(false); }
+                if (viewmodel != null) { viewmodel.Hidden = false; viewmodel.SetOn(false); }
                 return;
             }
 
@@ -133,6 +145,15 @@ namespace ZombieRush.Player
 
             // 1. the body clip at the gun's moment
             rig.Now(out int clip, out float t);
+            var held = weapons != null && weapons.CurrentWeapon != null ? weapons.CurrentWeapon.data : null;
+            if (clip == 0 && held != null && held.idleSteady > 0f)
+            {
+                // steady idle: only a small slice of the breathing loop, played forward and back (never a jump)
+                t = (1f - held.idleSteady) * (0.5f - 0.5f * Mathf.Cos(2f * Mathf.PI * t));
+            }
+            // shot kick (both views): decays here every frame
+            gunKick = Mathf.MoveTowards(gunKick, 0f, Time.deltaTime * 9f * Mathf.Max(0.25f, gunKick));
+            kickR = gunKick * gunKick * (3f - 2f * gunKick);
             var c = rig.bodyClips[clip] ?? rig.bodyClips[0];
             ClipSampler.Sample(p.go, c, t * c.length);
 
@@ -164,6 +185,8 @@ namespace ZombieRush.Player
                 Quaternion have = (rightHand.localToWorldMatrix * handToGun).rotation;
                 Quaternion fix = want * Quaternion.Inverse(have);
                 fix = Quaternion.RotateTowards(Quaternion.identity, fix, cfg != null ? cfg.aimBendMax : 50f);
+                DebugFix = Quaternion.Angle(Quaternion.identity, fix);
+                DebugWantPitch = -Mathf.Asin(Mathf.Clamp((want * Vector3.forward).y, -1f, 1f)) * Mathf.Rad2Deg;
                 // shared over the spine so the torso bends as one piece (the backpack rides the upper chest)
                 Vector3 share = cfg != null ? cfg.aimBendShare : new Vector3(0.3f, 0.3f, 0.4f);
                 float sx = spine != null ? share.x : 0f, sy = midChest != null ? share.y : 0f;
@@ -173,24 +196,37 @@ namespace ZombieRush.Player
                 chest.rotation = Quaternion.Slerp(Quaternion.identity, fix, w * sz) * chest.rotation;
             }
 
+            // 3a. third person shot kick: the upper body rocks back (arms and gun with it, so the hands stay on the gun)
+            if (chest != null && held != null && kickR > 0f && view != null && view.IsThirdPerson && !view.Scoped)
+            {
+                Vector3 side = aimRot * Vector3.right;
+                chest.rotation = Quaternion.AngleAxis(-held.bodyKickPitch * kickR * w, side) * chest.rotation;
+            }
+
             // 3b. steady: the gun stays where it sits from the (slowly following) head in Blender, the arms
             // soak up the walk's bounce
             SteadyHold(p, handToGun, cfg, w, aimRot);
 
             // 4. the gun on the hand
             Matrix4x4 target = rightHand.localToWorldMatrix * handToGun;
+            if (rUpper != null)
+            {
+                Vector3 f = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+                DebugHandFromShoulder = Quaternion.Inverse(Quaternion.LookRotation(f, Vector3.up)) * (rightHand.position - rUpper.position);
+                DebugGunPitch = -Mathf.Asin(Mathf.Clamp((target.rotation * (p.gun.rotation * Vector3.forward)).y, -1f, 1f)) * Mathf.Rad2Deg;
+            }
             Place(gun, rig, target);
-            bool fp = view != null && !view.IsThirdPerson;
+            bool fp = view != null && (!view.IsThirdPerson || view.Scoped);
 
             // 5. first person: the camera at the eyes. Before the camera's gun is placed: that gun is
             // the camera's child, so moving the camera afterwards would drag it off the hands.
-            bool armsFp = fp && rig.HasFirstPersonArms && eyeCamera != null && view.FullyFirstPerson && !view.Scoped;
+            bool armsFp = fp && rig.HasFirstPersonArms && eyeCamera != null && EyeView;
             MoveEye(fp, cfg, armsFp);
             var vm = fp && weapons != null && weapons.CurrentWeapon != null ? weapons.CurrentWeapon.GetComponent<WeaponViewModel>() : null;
             FpArms shown = null;
             if (vm != null && vm.model != null)
             {
-                var camRig = vm.model.GetComponentInChildren<GunRig>(true);
+                var camRig = GunRig.Of(vm.model);
                 if (camRig != null)
                 {
                     if (armsFp && viewmodel != null && viewmodel.Ready && (shown = GetFpArms(rig)) != null && shown.gun != null)
@@ -199,6 +235,8 @@ namespace ZombieRush.Player
                         UpdateArmsRoot(cfg);
                         var fc = rig.fpClips[clip] ?? rig.fpClips[0];
                         ClipSampler.Sample(shown.go, fc, t * fc.length);
+                        LineUpUnderScope(shown, camRig);
+                        KickArms();
                         Place(camRig.transform, camRig, shown.gun.localToWorldMatrix);
                     }
                     else Place(camRig.transform, camRig, target);
@@ -292,11 +330,95 @@ namespace ZombieRush.Player
             float k = cfg != null ? cfg.vmSway : 1.2f, max = cfg != null ? cfg.vmSwayMax : 3f;
             Quaternion want = Quaternion.Euler(Mathf.Clamp(-pitch * k / 100f, -max, max), Mathf.Clamp(-yaw * k / 100f, -max, max), 0f);
             sway = Quaternion.Slerp(sway, want, 1f - Mathf.Exp(-(cfg != null ? cfg.vmSwayFollow : 10f) * dt));
-            Vector2 bobSize = cfg != null ? cfg.vmBob : new Vector2(0.006f, 0.005f);
+            Vector2 bobSize = cfg != null ? cfg.vmBob : new Vector2(0.003f, 0.002f);
             Vector3 run = cfg != null ? cfg.vmRunOffset : Vector3.zero;
-            Vector3 bob = new Vector3(Mathf.Sin(bobPhase) * bobSize.x, -Mathf.Abs(Mathf.Sin(bobPhase)) * bobSize.y, 0f) * bobAmount;
-            armsRoot.localPosition = bob + run * bobAmount;
+            // a soft figure-eight: one sway left-right per stride, one smooth dip per step (the old |sin| dip had
+            // a sharp kink at every footfall, which read as the gun shaking)
+            Vector3 bob = new Vector3(Mathf.Sin(bobPhase) * bobSize.x, -(1f - Mathf.Cos(2f * bobPhase)) * 0.5f * bobSize.y, 0f) * bobAmount;
+            // recoil (added after the scope line-up, see KickArms): the gun punches back and the muzzle flips up
+            var data = weapons != null && weapons.CurrentWeapon != null ? weapons.CurrentWeapon.data : null;
+            float r = kickR;
+            kickPos = data != null ? new Vector3(0f, 0.002f * r, -data.gunKickBack * r) : Vector3.zero;
+            kickRot = data != null ? Quaternion.Euler(-data.gunKickPitch * r, 0f, gunKickRoll * 1.2f * r) : Quaternion.identity;
+            scopeBlend = data != null && data.AimsAtEye && view != null ? view.AimAmount : 0f;
+            armsRoot.localPosition = bob * (1f - 0.7f * scopeBlend) + run * bobAmount;
             armsRoot.localRotation = sway;
+        }
+
+        Vector3 kickPos;
+        Quaternion kickRot = Quaternion.identity;
+        float scopeBlend;
+        readonly Dictionary<GunRig, (Vector3 dir, Vector3 centre, Vector3 tip)> barrels = new Dictionary<GunRig, (Vector3, Vector3, Vector3)>();
+
+        /// Looking through a scope: the arms turn (about the eye) so the gun's barrel points straight along the
+        /// view, and shift so the gun sits centred under the eye, its centre line WeaponData.scopeEyeHeight below
+        /// it (the scope's height over the gun): the gun's top shows below the sight, as through a real scope.
+        /// Call after the arms clip is sampled (the gun bone is in this frame's pose).
+        void LineUpUnderScope(FpArms arms, GunRig camRig)
+        {
+            var data = weapons != null && weapons.CurrentWeapon != null ? weapons.CurrentWeapon.data : null;
+            if (scopeBlend <= 0f || data == null || arms.gun == null || camRig == null) return;
+            if (!barrels.TryGetValue(camRig, out var b)) barrels[camRig] = b = BarrelOf(camRig);
+            if (b.dir == Vector3.zero) return;
+            Transform cam = eyeCamera.transform;
+            Vector3 axis = cam.InverseTransformDirection(arms.gun.TransformDirection(b.dir));
+            Vector3 centre = cam.InverseTransformPoint(arms.gun.TransformPoint(b.centre));
+            Quaternion q = Quaternion.FromToRotation(axis, Vector3.forward);
+            Vector3 c2 = q * centre;
+            Vector3 t = new Vector3(-c2.x, -data.scopeEyeHeight - c2.y, -data.scopeEyeBack);
+            if (!data.hasScope && data.ironSights)
+            {
+                // iron sights: the gun lined up along the view with its FRONT SIGHT on the middle of the screen:
+                // the sight sits WeaponData.sightHeight above the bore at the muzzle (and the rear sight at the
+                // same height, the gun being straight), so the eye looks along the slide / barrel rib to it
+                Vector3 m = q * cam.InverseTransformPoint(arms.gun.TransformPoint(b.tip));
+                t = new Vector3(-m.x, -m.y - data.sightHeight, data.sightForward);
+            }
+            q = Quaternion.Slerp(Quaternion.identity, q, scopeBlend);
+            t *= scopeBlend;
+            // turning the holder about the eye (the camera's origin) turns everything under it the same way
+            armsRoot.localPosition = q * armsRoot.localPosition + t;
+            armsRoot.localRotation = q * armsRoot.localRotation;
+        }
+
+        /// The shot's kick on the arms' holder, about the eye, after any scope line-up.
+        void KickArms()
+        {
+            if (armsRoot == null) return;
+            armsRoot.localPosition = kickRot * armsRoot.localPosition + kickPos;
+            armsRoot.localRotation = kickRot * armsRoot.localRotation;
+        }
+
+        /// The gun's barrel line in its Gun bone's space: the bone axis along the gun's longest side (the mesh
+        /// bounds), pointing to the muzzle; and the middle of the gun.
+        static (Vector3 dir, Vector3 centre, Vector3 tip) BarrelOf(GunRig rig)
+        {
+            Transform bone = rig.GunBone;
+            if (bone == null) return (Vector3.zero, Vector3.zero, Vector3.zero);
+            bool any = false;
+            Vector3 min = Vector3.positiveInfinity, max = Vector3.negativeInfinity;
+            foreach (var r in rig.GetComponentsInChildren<Renderer>(true))
+            {
+                Mesh mesh = r is SkinnedMeshRenderer sk ? sk.sharedMesh : r.TryGetComponent(out MeshFilter mf) ? mf.sharedMesh : null;
+                if (mesh == null || r is ParticleSystemRenderer) continue;
+                Bounds mb = mesh.bounds;
+                Matrix4x4 toBone = bone.worldToLocalMatrix * r.transform.localToWorldMatrix;
+                for (int i = 0; i < 8; i++)
+                {
+                    Vector3 corner = mb.center + Vector3.Scale(mb.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                    Vector3 pt = toBone.MultiplyPoint3x4(corner);
+                    min = Vector3.Min(min, pt); max = Vector3.Max(max, pt);
+                    any = true;
+                }
+            }
+            if (!any) return (Vector3.zero, Vector3.zero, Vector3.zero);
+            Vector3 size = max - min, centre = (min + max) * 0.5f;
+            Vector3 dir = size.x >= size.y && size.x >= size.z ? Vector3.right : size.y >= size.z ? Vector3.up : Vector3.forward;
+            // the muzzle end: the WeaponViewModel's muzzle if there is one, else the end farther from the bone (the grip)
+            var vm = rig.GetComponentInParent<WeaponViewModel>();
+            Vector3 tip = vm != null && vm.muzzle != null ? bone.InverseTransformPoint(vm.muzzle.position) : centre * 2f;
+            if (Vector3.Dot(tip - centre, dir) < 0f) dir = -dir;
+            return (dir, centre, tip);
         }
 
         /// Where the gun points: the camera's view while aiming, level along the body's facing while carrying.
@@ -316,9 +438,22 @@ namespace ZombieRush.Player
             Transform root = AnchorSpace;
             float steady = (cfg != null ? cfg.holdSteady : 0.85f) * w;
             if (steady <= 0f) return;
-            // the copy faces +Z at the origin: its head-to-gun offset is in body-facing space
-            Vector3 rel = (p.gun.position - p.head.position) * transform.lossyScale.y;
-            Vector3 ideal = root.TransformPoint(headLocal) + aimRot * rel;
+            // the copy faces +Z at the origin: its offsets are in body-facing space.
+            // Looking up or down, the hold turns about the shoulder pocket (where a long gun's stock sits; between
+            // the shoulders for a pistol), not about the head: turned about the head, the stock swung into the face
+            // looking down and into the chest looking up. The pocket rides the body as it bends (the steady head
+            // point plus the body's own head-to-shoulder offset now).
+            float s = transform.lossyScale.y;
+            Vector3 pivClip = p.head.position, pivBody = head.position;
+            if (p.rUpper != null && p.lUpper != null && rUpper != null && lUpper != null)
+            {
+                // long gun (support hand far out from the trigger hand): the right shoulder; pistol: mostly the middle
+                float k = p.lHand != null && Vector3.Distance(p.lHand.position, p.hand.position) > 0.22f ? 1f : 0.3f;
+                pivClip = Vector3.Lerp((p.rUpper.position + p.lUpper.position) * 0.5f, p.rUpper.position, k);
+                pivBody = Vector3.Lerp((rUpper.position + lUpper.position) * 0.5f, rUpper.position, k);
+            }
+            Vector3 rel = (p.gun.position - pivClip) * s;
+            Vector3 ideal = root.TransformPoint(headLocal) + (pivBody - head.position) + aimRot * rel;
             // first person: the whole hold rides up into view (shoulders lifted, the arms keep their natural shape)
             var data = weapons != null && weapons.CurrentWeapon != null ? weapons.CurrentWeapon.data : null;
             if (data != null && data.fpLift != Vector3.zero && view != null && !view.IsThirdPerson && rShoulder != null && lShoulder != null)
@@ -328,8 +463,10 @@ namespace ZombieRush.Player
                 lShoulder.position += lift;
                 ideal += lift;
             }
+            if (data != null && kickR > 0f) ideal -= aimRot * Vector3.forward * (data.gunKickBack * 1.5f * kickR * w);   // shot: the gun punches back
             Vector3 raw = (rightHand.localToWorldMatrix * handToGun).GetPosition();
             Vector3 move = Vector3.ClampMagnitude((ideal - raw) * steady, cfg != null ? cfg.holdSteadyMax : 0.15f);
+            DebugMove = move.magnitude;
             if (move.sqrMagnitude < 1e-8f) return;
             Reach(rUpper, rLower, rightHand, rightHand.position + move);
             Reach(lUpper, lLower, leftHand, leftHand.position + move);
@@ -382,8 +519,8 @@ namespace ZombieRush.Player
                 viewmodel = FirstPersonViewmodel.For(eyeCamera);
                 ClaimFirstPersonObjects();
             }
-            if (viewmodel != null) viewmodel.Hidden = view != null && view.Scoped;   // the scope sight replaces the gun
-            if (fp && eyeCamera != null && head != null && view.FullyFirstPerson)
+            if (viewmodel != null) viewmodel.Hidden = false;   // scoped: the gun stays in view below the sight
+            if (fp && eyeCamera != null && head != null && EyeView)
             {
                 UpdateAnchor(cfg);
                 float dt = Mathf.Max(Time.deltaTime, 1e-4f);
@@ -393,16 +530,28 @@ namespace ZombieRush.Player
                 float s = transform.lossyScale.y;
                 Vector3 anchor = AnchorSpace.TransformPoint(headLocal);
 
-                // designed walk bob: two dips per stride, one sway left-right, growing with speed
+                // walk rhythm (drives the arms' gentle sway): the speed is smoothed, the stride follows the real
+                // run (2.4 m per stride at 4 m/s) and the rhythm is capped, so a sprint never turns it into a buzz
                 Transform player = view.transform;
                 Vector3 v = (player.position - lastRootPos) / dt; v.y = 0f;
                 lastRootPos = player.position;
-                float speed = eyeReady ? v.magnitude : 0f;
+                float rawSpeed = eyeReady ? v.magnitude : 0f;
+                smoothSpeed = Mathf.Lerp(smoothSpeed, rawSpeed, 1f - Mathf.Exp(-8f * dt));
+                float speed = smoothSpeed;
                 float full = cfg != null ? Mathf.Max(0.1f, cfg.bobFullSpeed) : 4f;
-                bobAmount = Mathf.MoveTowards(bobAmount, Mathf.Clamp01(speed / full), dt * 4f);
-                bobPhase += dt * speed / (cfg != null ? Mathf.Max(0.1f, cfg.strideLength) : 1.5f) * 2f * Mathf.PI;
-                Vector3 bob = Vector3.up * (Mathf.Sin(2f * bobPhase) * (cfg != null ? cfg.bobHeight : 0.006f) * bobAmount)
-                            + right * (Mathf.Sin(bobPhase) * (cfg != null ? cfg.bobSide : 0.004f) * bobAmount);
+                bobAmount = Mathf.MoveTowards(bobAmount, Mathf.Clamp01(speed / full), dt * 3f);
+                float strides = speed / (cfg != null ? Mathf.Max(0.1f, cfg.strideLength) : 2.4f);
+                bobPhase += dt * Mathf.Min(strides, cfg != null ? cfg.bobMaxRate : 1.6f) * 2f * Mathf.PI;
+                // IGI-steady eye: no camera bob by default (bobHeight/bobSide 0); when set, a smooth one
+                Vector3 bob = Vector3.up * (-(1f - Mathf.Cos(2f * bobPhase)) * 0.5f * (cfg != null ? cfg.bobHeight : 0f) * bobAmount)
+                            + right * (Mathf.Sin(bobPhase) * (cfg != null ? cfg.bobSide : 0f) * bobAmount);
+                // small bumps, kerbs and step-ups lift the controller in one frame: the eye glides up/down
+                // over them instead of jolting (big drops and jumps are followed at once)
+                float stepSmooth = cfg != null ? cfg.eyeStepSmooth : 0.08f;
+                float rootY = player.position.y;
+                if (!eyeReady || stepSmooth <= 0f || Mathf.Abs(rootY - eyeRootY) > 0.6f) { eyeRootY = rootY; eyeRootVel = 0f; }
+                else eyeRootY = Mathf.SmoothDamp(eyeRootY, rootY, ref eyeRootVel, stepSmooth, Mathf.Infinity, dt);
+                bob += Vector3.up * (eyeRootY - rootY);
                 Vector3 Spot(Vector3 off) => anchor + right * (off.x * s) + Vector3.up * (off.y * s) + fwd * (off.z * s) + bob;
 
                 Vector3 eyeOff = cfg != null ? cfg.eyeOffset : new Vector3(0f, 0.09f, 0.09f);
@@ -413,8 +562,7 @@ namespace ZombieRush.Player
                     // switcher this frame, crouch included), not the animated head, so it never shakes with
                     // the walk; the arms and gun hang off the camera and are drawn from the same spot
                     eyeCamera.transform.position += bob;
-                    float baseFov2 = view.config != null ? Mathf.Max(1f, view.config.firstPersonFov) : 72f;
-                    float zoom2 = eyeCamera.fieldOfView / baseFov2;
+                    float zoom2 = view.ViewmodelZoom;
                     viewmodel.Pose(eyeCamera.transform.position, eyeCamera.transform.rotation,
                                    (cfg != null ? cfg.viewmodelFov : 55f) * zoom2, cfg != null ? cfg.fpArmsNearClip : 0.03f);
                     viewmodel.SetOn(true);
@@ -422,8 +570,7 @@ namespace ZombieRush.Player
                 else if (viewmodel != null && viewmodel.Ready)
                 {
                     eyeCamera.transform.position = Spot(eyeOff);
-                    float baseFov = view.config != null ? Mathf.Max(1f, view.config.firstPersonFov) : 72f;
-                    float zoom = eyeCamera.fieldOfView / baseFov;   // the aim zoom PlayerViewSwitcher set this frame
+                    float zoom = view.ViewmodelZoom;   // the aim zoom PlayerViewSwitcher set this frame (not the scope's)
                     viewmodel.Pose(Spot(gunOff), eyeCamera.transform.rotation, (cfg != null ? cfg.viewmodelFov : 55f) * zoom, cfg != null ? cfg.viewmodelNearClip : 0.12f);
                     viewmodel.SetOn(true);
                 }
@@ -476,7 +623,9 @@ namespace ZombieRush.Player
 
         void OnFired()
         {
-            if (view == null || !view.IsThirdPerson || aimRig == null || aimRig.HeldGun == null) return;
+            gunKick = Mathf.Min(1f, gunKick + 0.85f);
+            gunKickRoll = Random.Range(-1f, 1f);
+            if (view == null || !view.IsThirdPerson || view.Scoped || aimRig == null || aimRig.HeldGun == null) return;
             foreach (var ps in aimRig.HeldGun.GetComponentsInChildren<ParticleSystem>(true))
                 if (ps.transform.parent == null || ps.transform.parent.GetComponent<ParticleSystem>() == null) ps.Play(true);
             foreach (var l in aimRig.HeldGun.GetComponentsInChildren<Light>(true)) StartCoroutine(Flash(l));

@@ -59,6 +59,8 @@ namespace ZombieRush.EditorTools
             public float Damage, Reach, HitDelay, Cooldown;
             /// Poison zombie: its own Spit clip, ZombieSpitter and ToxicBurst with Assets/Data/PoisonConfig.asset.
             public bool Poison;
+            /// Bursting zombie: BellyBurst (never claws; swells with its Attack clip when close, then bursts).
+            public bool Burst;
             /// Look under the night lighting (strong moonlight + post exposure wash pale textures to white):
             /// Tone darkens the base colour (1 = as painted), ColorBoost raises the colour texture's saturation
             /// (1 = as painted; above 1 writes <Name>_Albedo_Tuned.png and uses that).
@@ -71,14 +73,17 @@ namespace ZombieRush.EditorTools
         }
 
         /// 1: the normal zombie. Its own Blender clips (Blender/clips_wanderer.py): a limping shambler, bite lands at 0.65 s.
+        /// Model since 2026-11-15: Meshy "Graveyard Wanderer" (25k tris). Its colour texture is darker than the old
+        /// model's, so Tone 1 gives the same in-game brightness the old one had at 0.64.
         public static readonly Spec Wanderer = new Spec { Name = "Wanderer", Folder = "Assets/Models/2026-11-08_Wanderer_Final", Glow = 0f, OwnClips = true,
-            Damage = 8f, Cooldown = 1.5f, HitDelay = 0.65f,
+            Damage = 8f, Cooldown = 1.5f, HitDelay = 0.65f, Tone = 1f,
         };
         /// 2: the fast zombie with less health. Runs from far away, a little faster than the player's jog.
         /// Its own Blender clips (Blender/clips_runner.py): crouched prowl, sprint, leaping rake that lands at 0.65 s.
         public static readonly Spec Runner = new Spec
         {
-            Name = "Runner", Folder = "Assets/Models/2026-11-08_Runner_Final", Glow = 0f, OwnClips = true, HitDelay = 0.65f, Tint = new Color(1.0f, 0.86f, 0.80f),
+            // Model since 2026-11-15: Meshy hoodie zombie ("Zombie 2"); Tone matches the old model's in-game brightness.
+            Name = "Runner", Folder = "Assets/Models/2026-11-08_Runner_Final", Glow = 0f, OwnClips = true, HitDelay = 0.65f, Tint = new Color(1.0f, 0.86f, 0.80f), Tone = 0.82f,
             Height = 1.72f,   // measured in its crouched idle (a normal-sized man, hunched)
             MoveSpeed = 1f, ChaseSpeed = 4.2f, Health = 55f, RunDistance = 30f, MinWave = 2, Weight = 0.6f, MaxRate = 2.2f,
             Damage = 6f, Cooldown = 1.2f,
@@ -86,19 +91,34 @@ namespace ZombieRush.EditorTools
         /// 3: the giant. Its own Blender clips (Blender/clips_horror.py): stomping walk, charge, two-fisted overhead slam (impact at frame 25 of 30 fps).
         public static readonly Spec Horror = new Spec
         {
+            // Model since 2026-11-15: Meshy "Plaguebound Brute" ("Zombie 3"). Its texture is paler than the old one, but
+            // a Tone that matched the old brightness (0.42) read almost black in game, so it keeps the default 0.64.
             Name = "Horror", Folder = "Assets/Models/2026-11-08_Horror_Final", Glow = 0f, OwnClips = true, Height = 2.6f,
             MoveSpeed = 1.1f, ChaseSpeed = 2.6f, Health = 400f, RunDistance = 10f, MinWave = 3, Weight = 0.3f,
-            Damage = 22f, Reach = 0.75f, HitDelay = 25f / 30f, Cooldown = 2.6f,
+            // Attack since 2026-11-15: a sharp claw slash, 36 frames, the claw connects at frame 17 (0.55 s).
+            Damage = 22f, Reach = 0.75f, HitDelay = 0.55f, Cooldown = 2.6f,
         };
         /// 4: the poison zombie (Toxic Ghoul). Its own Blender clips (Blender/clips_ghoul.py): heavy waddle, claw
         /// that lands at 0.64 s, a spit from 6-15 m, and a belly that bursts into gas when it dies.
         public static readonly Spec Ghoul = new Spec
         {
-            Name = "Ghoul", DisplayName = "Toxic Ghoul", Folder = "Assets/Models/2026-11-09_Ghoul_Final", Glow = 0f, OwnClips = true, Poison = true, Height = 1.9f, ColorBoost = 1.15f, Tint = new Color(0.97f, 0.95f, 0.88f),
+            // Model since 2026-11-15: Meshy "Toxic Zombie Boss" ("Zombie 4"); Tone matches the old model's in-game brightness.
+            Name = "Ghoul", DisplayName = "Toxic Ghoul", Folder = "Assets/Models/2026-11-09_Ghoul_Final", Glow = 0f, OwnClips = true, Poison = true, Height = 1.9f, ColorBoost = 1.15f, Tint = new Color(0.97f, 0.95f, 0.88f), Tone = 0.95f,
             MoveSpeed = 0.8f, ChaseSpeed = 2.3f, Health = 140f, RunDistance = 5f, MinWave = 2, Weight = 0.45f,
             Damage = 10f, Reach = 0.5f, HitDelay = 0.64f, Cooldown = 1.6f,
         };
-        static readonly Dictionary<string, Spec> Specs = new Dictionary<string, Spec> { { "Wanderer", Wanderer }, { "Runner", Runner }, { "Horror", Horror }, { "Ghoul", Ghoul } };
+        /// 6: the Bloater ("Zombie 6", Meshy Plaguebelly Ghoul): a fat plague zombie that waddles at the player and
+        /// bursts when close (BellyBurst). Its own Blender clips (Blender/clips_bloater.py); Attack is the 1.2 s swell.
+        /// Shot dead it still bursts, hurting the zombies around it.
+        public static readonly Spec Bloater = new Spec
+        {
+            Name = "Bloater", Folder = "Assets/Models/2026-11-15_Bloater_Final", Glow = 0f, OwnClips = true, Burst = true, Height = 1.7f,
+            MoveSpeed = 0.8f, ChaseSpeed = 2.6f, Health = 70f, RunDistance = 10f, MinWave = 2, Weight = 0.45f, Tone = 0.6f,
+        };
+        static readonly Dictionary<string, Spec> Specs = new Dictionary<string, Spec> { { "Wanderer", Wanderer }, { "Runner", Runner }, { "Horror", Horror }, { "Ghoul", Ghoul }, { "Bloater", Bloater } };
+
+        [MenuItem("Zombie Rush/Zombies/Set Up Bloater (bursts)", priority = 24)]
+        static void BloaterMenu() => Debug.Log("Zombie Rush: " + Setup(Bloater));
         const string PoisonConfigPath = "Assets/Data/PoisonConfig.asset";
 
         [MenuItem("Zombie Rush/Zombies/Set Up Ghoul (poison)", priority = 23)]
@@ -405,6 +425,12 @@ namespace ZombieRush.EditorTools
                     if (burst == null) burst = root.AddComponent<ToxicBurst>();
                     burst.config = pc;
                     report.AppendLine($"  Poison: spits from {pc.spitMinRange}-{pc.spitMaxRange} m every {pc.spitCooldown} s, puddle {pc.puddleRadius} m, death cloud {pc.cloudRadius} m ({PoisonConfigPath}).");
+                }
+                if (spec.Burst)
+                {
+                    var bb = root.GetComponent<BellyBurst>();
+                    if (bb == null) bb = root.AddComponent<BellyBurst>();
+                    report.AppendLine($"  Burst: swells within {bb.triggerRange} m, bursts after {bb.fuseTime} s: {bb.damage} damage within {bb.radius} m ({bb.zombieDamage} to zombies).");
                 }
                 var glowFx = root.GetComponent<ZombieGlow>();
                 if (glowFx != null) { glowFx.intensity = spec.Glow; glowFx.pulse = 0.15f; }

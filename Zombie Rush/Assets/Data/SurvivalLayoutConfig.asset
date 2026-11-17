@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Data.SurvivalLayoutConfig
   seed: 909
-  wallOffset: 1.5
+  wallOffset: -1.17
   clearMargin: 2
   gates: 4
   gateWidth: 8

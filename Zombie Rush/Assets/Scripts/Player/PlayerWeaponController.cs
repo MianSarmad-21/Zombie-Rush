@@ -19,6 +19,8 @@ namespace ZombieRush.Player
 
         int currentIndex;
         float readyAt;
+        float nextNoFireNote;
+        PlayerController mover;
         bool[] unlocked;
         PlayerInventory inventory;
 
@@ -30,13 +32,13 @@ namespace ZombieRush.Player
         public WeaponBase CurrentWeapon => weapons != null && weapons.Length > 0 ? weapons[currentIndex] : null;
         /// Index of the gun in hand.
         public int CurrentIndex => currentIndex;
-
         [Tooltip("A teammate's copy (multiplayer): no input, no ammo pickups, no HUD events; the network picks the gun.")]
         public bool remote;
 
         void Awake()
         {
             inventory = GetComponent<PlayerInventory>();
+            mover = GetComponent<PlayerController>();
             if (weapons == null) weapons = new WeaponBase[0];
             unlocked = new bool[weapons.Length];
             for (int i = 0; i < weapons.Length; i++) unlocked[i] = i < Mathf.Max(1, startingWeapons);
@@ -68,11 +70,30 @@ namespace ZombieRush.Player
             {
                 // The gun is being drawn: no shooting or reloading until it is up.
                 bool ready = Time.time >= readyAt;
-                if (GameInput.FireHeld && ready) weapon.TryUse();
+                if (GameInput.FireHeld && ready)
+                {
+                    if (!World.SafeBase.FiringAllowedAt(transform.position))
+                    {
+                        // the safe base is a no-fire zone: a short reminder, not one every frame
+                        if (Time.time >= nextNoFireNote) { nextNoFireNote = Time.time + 2.5f; UI.PickupToast.Show("NO FIRING IN THE SAFE BASE", new Color(1f, 0.45f, 0.35f)); }
+                    }
+                    else if (weapon.TryUse()) Kick(weapon);
+                }
                 if (GameInput.ConsumeReload() && ready) weapon.TryReload();
             }
 
             RaiseAmmoStatus(force: false);
+        }
+
+        /// A shot's view kick: the camera climbs a little (and drifts a touch sideways), then settles back.
+        /// Less while aiming down the sights.
+        void Kick(WeaponBase weapon)
+        {
+            if (mover == null || weapon.data == null) return;
+            var view = PlayerViewSwitcher.Local;
+            float aim = view != null ? view.AimAmount : 0f;
+            float k = Mathf.Lerp(1f, weapon.data.recoilAimScale, aim);
+            mover.AddRecoil(weapon.data.recoilUp * k * Random.Range(0.85f, 1.15f), weapon.data.recoilSide * k * Random.Range(-1f, 1f));
         }
 
         public void SelectWeapon(int index)
@@ -80,6 +101,9 @@ namespace ZombieRush.Player
             if (index < 0 || index >= weapons.Length || index == currentIndex || !unlocked[index]) return;
             currentIndex = index;
             readyAt = Time.time + equipTime;
+            // Draw sound for this player's own switches; none on the level's first equip or on a teammate's copy.
+            var lib = Audio.SoundManager.Library;
+            if (!remote && lib != null && Time.timeSinceLevelLoad > 0.5f) Audio.SoundManager.Play(lib.weaponDraw, lib.weaponDrawVolume, 0.05f);
             UpdateWeaponVisibility();
             RaiseAmmoStatus(force: true);
         }
@@ -122,6 +146,19 @@ namespace ZombieRush.Player
             return changed;
         }
 
+        /// Adds reserve ammo for one gun the player has (an ammo box). Returns the rounds actually added:
+        /// 0 if the gun isn't theirs, uses no ammo, or is already full.
+        public int AddAmmo(WeaponData data, int amount)
+        {
+            int i = IndexOf(data);
+            if (i < 0 || !unlocked[i] || data.unlimitedUses || amount <= 0) return 0;
+            int before = inventory.GetReserveAmmo(data);
+            inventory.AddReserveAmmo(data, amount);
+            int added = inventory.GetReserveAmmo(data) - before;
+            if (added > 0) RaiseAmmoStatus(force: true);
+            return added;
+        }
+
         int IndexOf(WeaponData data)
         {
             for (int i = 0; i < weapons.Length; i++)
@@ -160,15 +197,23 @@ namespace ZombieRush.Player
                 if (weapons[i] != null) weapons[i].gameObject.SetActive(i == currentIndex);
         }
 
-        /// A zombie's ammo drop tops up reserve ammo for every weapon the player
-        /// is carrying, not just the equipped one.
+        /// A zombie that drops ammo (rarely - ZombieHealth.ammoDropChance) leaves an ammo pack on the ground for one of
+        /// the guns this player carries (the one in hand a little more often); walking over it picks it up.
         void HandleZombieKilled(ZombieKilledInfo info)
         {
             if (remote) return;
             if (info.Ammo <= 0) return;
-            foreach (var weapon in weapons)
-                if (weapon != null && weapon.data != null) inventory.AddReserveAmmo(weapon.data, info.Ammo);
-            RaiseAmmoStatus(force: false);
+            var choices = new System.Collections.Generic.List<WeaponData>();
+            for (int i = 0; i < weapons.Length; i++)
+            {
+                var d = weapons[i] != null ? weapons[i].data : null;
+                if (!unlocked[i] || d == null || d.unlimitedUses || d.ammoPack == null) continue;
+                choices.Add(d);
+                if (i == currentIndex) choices.Add(d);
+            }
+            if (choices.Count == 0) return;
+            var pick = choices[Random.Range(0, choices.Count)];
+            World.AmmoPickup.SpawnDrop(info.Position, pick, Random.Range(pick.dropAmmo.x, pick.dropAmmo.y + 1));
         }
     }
 }

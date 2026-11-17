@@ -19,34 +19,59 @@ namespace ZombieRush.Net
         Font font;
         bool busy;
 
+        static bool hooked, argsUsed;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() { instance = null; hooked = false; argsUsed = false; }
+
+        // AfterSceneLoad methods run ONCE per app launch, but the lobby lives in the level and dies with it:
+        // a RETRY / quit-to-menu / host reload loads the level again, so it must be made again on every load
+        // (without it no solo match starts after a retry -> no host -> no waves, no zombies).
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Boot()
+        {
+            if (!hooked)
+            {
+                hooked = true;
+                UnityEngine.SceneManagement.SceneManager.sceneLoaded += (_, __) => Make();
+            }
+            Make();
+        }
+
+        static void Make()
         {
             if (instance != null || GameManager.Instance == null) return;
             var go = new GameObject("NetLobbyUI");
             instance = go.AddComponent<NetLobbyUI>();
         }
 
-        void Start()
+        System.Collections.IEnumerator Start()
         {
             var any = FindAnyObjectByType<Text>();
             font = any != null ? any.font : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             Build();
             NetSession.Status += OnStatus;
 
-            // already running (the level was restarted inside a match): straight into play
-            if (NetSession.IsRunning) { EnterMatch(); return; }
-            if (!GameManager.StartInLobby) { Solo(); return; }
+            // a solo retry shuts the old local match down just before the reload: let it finish first,
+            // or it still looks "running" here and the new solo host can't start
+            var nm = Unity.Netcode.NetworkManager.Singleton;
+            for (int i = 0; i < 120 && nm != null && nm.ShutdownInProgress; i++) yield return null;
 
+            // already running (the level was restarted inside a match): straight into play
+            if (NetSession.IsRunning) { EnterMatch(); yield break; }
+            if (!GameManager.StartInLobby) { Solo(); yield break; }
+
+            if (argsUsed) yield break;   // the test switches act on the first launch only, not on every reload
+            argsUsed = true;
             var args = System.Environment.GetCommandLineArgs();
             foreach (var a in args) if (a.StartsWith("-zr")) { Application.runInBackground = true; break; }   // test runs: several windows at once
             for (int i = 0; i < args.Length; i++)
             {
-                if (args[i] == "-zrhost") { if (NetSession.StartDirectHost()) EnterMatch(); return; }
-                if (args[i] == "-zrsolo") { Solo(); return; }
-                if (args[i] == "-zrjoin" && i + 1 < args.Length) { if (NetSession.JoinDirect(args[i + 1])) EnterMatch(); StartTestShots(args); return; }
-                if (args[i] == "-zrrelayhost" && i + 1 < args.Length) { RelayHostTest(args[i + 1]); StartTestShots(args); return; }
-                if (args[i] == "-zrcodefile" && i + 1 < args.Length) { RelayJoinTest(args[i + 1]); StartTestShots(args); return; }
+                if (args[i] == "-zrhost") { if (NetSession.StartDirectHost()) EnterMatch(); yield break; }
+                if (args[i] == "-zrsolo") { Solo(); yield break; }
+                if (args[i] == "-zrjoin" && i + 1 < args.Length) { if (NetSession.JoinDirect(args[i + 1])) EnterMatch(); StartTestShots(args); yield break; }
+                if (args[i] == "-zrrelayhost" && i + 1 < args.Length) { RelayHostTest(args[i + 1]); StartTestShots(args); yield break; }
+                if (args[i] == "-zrcodefile" && i + 1 < args.Length) { RelayJoinTest(args[i + 1]); StartTestShots(args); yield break; }
             }
         }
 

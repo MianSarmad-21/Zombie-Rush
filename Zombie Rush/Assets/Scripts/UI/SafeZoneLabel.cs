@@ -49,6 +49,28 @@ namespace ZombieRush.UI
             if (Instance != null && Instance != this) { Destroy(gameObject); return; }
             Instance = this;
             if (title != null && config != null) title.text = config.text;
+            DrawOverFog();
+        }
+
+        /// The zone's fog curtain is a 140 m tall see-through ring round the whole zone. See-through things are
+        /// drawn far-to-near by their centres, and the ring's centre is nearer the camera than this label, so
+        /// the ring's far side was drawn after the label and fogged it out (user: "the safe zone text hides in
+        /// the fog"). The label now draws after the world's see-through effects; solid buildings in front still
+        /// hide it (depth test unchanged).
+        void DrawOverFog()
+        {
+            const int Queue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 150;
+            foreach (var canvas in GetComponentsInChildren<Canvas>(true))
+            {
+                canvas.overrideSorting = true;
+                canvas.sortingOrder = 500;
+            }
+            foreach (var g in GetComponentsInChildren<Graphic>(true))
+            {
+                var m = new Material(g.materialForRendering != null ? g.materialForRendering : Graphic.defaultGraphicMaterial)
+                        { renderQueue = Queue, name = "SafeZoneLabel (over fog)" };
+                g.material = m;
+            }
         }
 
         void OnDestroy()

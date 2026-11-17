@@ -58,13 +58,11 @@ MonoBehaviour:
   - {fileID: 8300000, guid: c57ba01b993777648be48eb9416d64d9, type: 3}
   - {fileID: 8300000, guid: a7f894ddaef28a246a461b23473b29bd, type: 3}
   - {fileID: 8300000, guid: b902c87692838b1438ce1774480f887b, type: 3}
-  bombBeep: {fileID: 8300000, guid: 8747f819ca720a04bbbc5b836e5bf7fe, type: 3}
-  explosion:
-  - {fileID: 8300000, guid: 447515ad409d495488ecb123dc0f5f84, type: 3}
-  - {fileID: 8300000, guid: 65436da683987b54f8de1f014003c09e, type: 3}
-  gooSpit: {fileID: 8300000, guid: 56cd680c03f776c46827562d9c1cbe7a, type: 3}
-  gooSplat: {fileID: 8300000, guid: df76288e8097c5f47a941d76f24a5da6, type: 3}
-  shriek: {fileID: 8300000, guid: 9173b527fa3c1ed4ba36b921da0282b7, type: 3}
+  bombBeep: {fileID: 0}
+  explosion: []
+  gooSpit: {fileID: 8300000, guid: 50e85d77aab481b409b5836a1befab1b, type: 3}
+  gooSplat: {fileID: 8300000, guid: 20378bc5f1a0f8f4c8c2c11ce020655a, type: 3}
+  shriek: {fileID: 0}
   playerHurt:
   - {fileID: 8300000, guid: 56548577c70f18d4ea748bec240cd52b, type: 3}
   - {fileID: 8300000, guid: b0229aaab1b7f4e44995eb6bd3d11b58, type: 3}
@@ -78,3 +76,30 @@ MonoBehaviour:
   purchase: {fileID: 8300000, guid: ca91583b2708a3747aa5a3ad3cc98e4e, type: 3}
   gameOver: {fileID: 8300000, guid: b24e6d1bb32a7b84b9af19ebca4b5c4a, type: 3}
   uiClick: {fileID: 8300000, guid: 193e0efb2f8fd304f883ded6a268a201, type: 3}
+  weaponDraw:
+  - {fileID: 8300000, guid: c8e4f17cceb0b4c448b38217b5e32cfb, type: 3}
+  - {fileID: 8300000, guid: 2dacd7858abd49f4da5e9cf2e5b418d2, type: 3}
+  - {fileID: 8300000, guid: 7b972662ac35f304f9321716ccbaa0c6, type: 3}
+  weaponDrawVolume: 0.5
+  footstepHard:
+  - {fileID: 8300000, guid: 28068d61e5d4b33418d3dd5048204e7c, type: 3}
+  - {fileID: 8300000, guid: 51b3808f199a21241a4a4623f7617b2b, type: 3}
+  - {fileID: 8300000, guid: 21411a1a7be8a7740bb516e849cc236d, type: 3}
+  - {fileID: 8300000, guid: f847d3b70a2f1f249b67bae69ede2e9c, type: 3}
+  - {fileID: 8300000, guid: 9a7012778d1a6634cbbe1bbca5f14d2b, type: 3}
+  footstepSoft:
+  - {fileID: 8300000, guid: 461f70fc891d5ff46aa6bcc957cb951f, type: 3}
+  - {fileID: 8300000, guid: 23b86eba66d927346b1953a39cb51777, type: 3}
+  - {fileID: 8300000, guid: 5a9be76f7af23f1488b1150d3d01e566, type: 3}
+  - {fileID: 8300000, guid: b794bcd6a7d20074a91f2928109059e5, type: 3}
+  - {fileID: 8300000, guid: e85e79ad99045b04d9fb7a7489c62514, type: 3}
+  footstepVolume: 0.3
+  strideWalk: 1.8
+  strideSprint: 2.6
+  crouchStepVolume: 0.5
+  heartbeat: {fileID: 8300000, guid: f4ea00e5c3e0f2c4dae7609e86297603, type: 3}
+  heartbeatBelow: 0.3
+  heartbeatVolume: 0.7
+  combatMusic: {fileID: 8300000, guid: 0986c830ee8c4d345ba4b727c2be0ee2, type: 3}
+  ambience: {fileID: 8300000, guid: 8d194c5fc62d10c44b14085986c41035, type: 3}
+  ambienceLevel: 0.3

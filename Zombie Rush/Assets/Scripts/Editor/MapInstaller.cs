@@ -180,7 +180,7 @@ namespace ZombieRush.EditorTools
                 $"switched off {disabled} of the game's own light/post FX object(s).\n" +
                 $"City {cityBounds.size.x:0} x {cityBounds.size.z:0} m{(terrain != null ? " on terrain" : "")}.\n" +
                 $"Safe zone centre ({spot.x:0}, {spot.y:0.0}, {spot.z:0}), open space ~{clearance:0} m around it. " +
-                $"Starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion ({zone.expandCost} coins), max {maxRadius:0} m.\n" +
+                $"Starts {zone.startRadius:0} m, +{zone.expandStep:0} m per expansion ({zone.ExpandCost} coins), max {maxRadius:0} m.\n" +
                 playerNote + (waves != null ? "\nSpawn pads move to the zone edge before every wave." : "");
             Debug.Log("Zombie Rush: " + summary);
             EditorUtility.DisplayDialog("Final map installed", summary +

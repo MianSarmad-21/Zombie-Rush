@@ -42,32 +42,40 @@ def log(*a):
 
 # ------------------------------------------------------------------ per gun: source, size, landmarks (Meshy units)
 # Meshy guns lie along X with the muzzle at -X, top +Z and the shooter's right at +Y.
+# 2026-11-15: the guns were replaced by new Meshy models (Meshy now exports them about half the old size:
+# +-0.48 units long). Each grip point was chosen so the new grip lands where the old gun's grip was in the
+# game (cross-sections compared), so the hand placements in grips.json still fit. Old specs: Backups/Guns_old_2026-11-15.
 SPECS = {
-    "Pistol": dict(
-        src="Meshy_AI_Rustborn_Sidearm_1108164531_texture_fbx", length=0.27, tris=9000,   # 1.3x real size: suits the survivor's big stylised hands
-        grip=(0.64, 0.0, -0.08), muzzle=(-0.95, 0.0, 0.29), left=(0.66, -0.14, -0.22),
+    "Pistol": dict(   # psitol new.zip (2026-11-16): Meshy "Shadowline Compact" (black Glock-like, flush magazine).
+        # Same outline as the old "Rustbound Sidearm" but ~7 % slimmer and the slide/muzzle 2.5 cm (Meshy units) lower;
+        # thin 0.77 keeps the in-game width the user accepted (old: thin 0.72). Old: grip (0.26, 0, 0.07), muzzle
+        # (-0.472, 0, 0.30), slide z > 0.225, magazine z < -0.205; Backups/Pistol_old_2026-11-16.
+        src=os.path.join(ROOT, "Guns", "Pistol"), length=0.27, tris=9000, thin=0.77,   # user: "too thick" -> slim
+        grip=(0.25, 0.0, 0.07), muzzle=(-0.472, 0.0, 0.27), left=(0.265, -0.07, 0.0),
         parts={
-            "Slide": lambda x, y, z: z > 0.20 and x < 0.92,
-            "Magazine": lambda x, y, z: z < -0.30 and x > 0.38,
+            "Slide": lambda x, y, z: z > 0.205 and x < 0.42,
+            "Magazine": lambda x, y, z: z < -0.29 and x > 0.15,
         },
-        mag_body=dict(center=(0.66, 0.0, -0.08), size=(0.20, 0.13, 0.50), tilt=17.0),
+        mag_body=dict(center=(0.29, 0.0, -0.03), size=(0.10, 0.065, 0.25), tilt=17.0),
     ),
-    "Shotgun": dict(
-        src="Meshy_AI_Rustbound_Double_Barr_1108165238_texture_fbx", length=1.05, tris=12000,
-        grip=(0.42, 0.0, -0.03), muzzle=(-0.95, 0.0, 0.11), left=(-0.12, 0.0, 0.05),
-        hinge=(0.12, 0.0, 0.03),
+    "Shotgun": dict(   # Shotgun.zip: Meshy "Rustbound Coach Gun" (side-by-side, hammers, taped fore-end)
+        src=os.path.join(ROOT, "Guns", "Shotgun"), length=0.90, tris=12000,
+        grip=(0.23, 0.0, -0.02), muzzle=(-0.478, 0.0, 0.09), left=(-0.148, 0.0, 0.025),
+        hinge=(-0.03, 0.0, 0.06),
         parts={
-            "Barrels": lambda x, y, z: (x < 0.0 and z > -0.02) or (0.0 <= x < 0.12 and z > 0.03),
+            "Barrels": lambda x, y, z: x < -0.12 or (x < -0.02 and z > 0.068),
         },
-        chambers=((0.12, 0.05, 0.11), (0.12, -0.05, 0.11)),
+        chambers=((-0.02, 0.018, 0.09), (-0.02, -0.018, 0.09)),
     ),
-    "Rifle": dict(
-        src="Meshy_AI_Scrap_Assault_Rifle_1108171140_texture_fbx", length=0.88, tris=12000,
-        grip=(0.32, 0.0, -0.10), muzzle=(-0.95, 0.0, 0.065), left=(-0.31, 0.0, 0.03),
+    "Rifle": dict(   # AK47 new.zip (2026-11-16): Meshy "Ironwood Rifle" (AK, orange wood, black metal). Same layout as the
+        # old Meshy "AK-47 rifle" within 3-4 mm (profiles compared); its centre line sits 4 mm to the -Y side.
+        # Old: grip (0.15, 0, -0.035), muzzle (-0.475, 0, 0.077), left (-0.135, 0, 0.04); Backups/Rifle_old_2026-11-16.
+        src=os.path.join(ROOT, "Guns", "Rifle"), length=0.88, tris=12000,
+        grip=(0.15, -0.004, -0.035), muzzle=(-0.475, -0.004, 0.081), left=(-0.135, -0.004, 0.043),
         parts={
-            "Magazine": lambda x, y, z: -0.11 < x < 0.15 and z < 0.0,
+            "Magazine": lambda x, y, z: -0.10 < x < 0.068 and z < 0.04,
         },
-        charge=(0.05, 0.08, 0.09),
+        charge=(0.02, 0.03, 0.085),
     ),
 }
 spec = SPECS[NAME]
@@ -98,13 +106,16 @@ S = spec["length"] / float(co[:, 0].max() - co[:, 0].min())
 GRIP = Vector(spec["grip"])
 
 
+THIN = spec.get("thin", 1.0)      # width (side to side) factor
+
+
 def W(p):
     """Meshy coordinates -> game coordinates: muzzle -Y, top +Z, origin on the right-hand grip, metres."""
     v = Vector(p) - GRIP
-    return Vector((-v.y, v.x, v.z)) * S
+    return Vector((-v.y * THIN, v.x, v.z)) * S
 
 
-T = Matrix.Scale(S, 4) @ Matrix.Rotation(math.radians(90), 4, "Z") @ Matrix.Translation(-GRIP)
+T = Matrix.Diagonal((THIN, 1, 1, 1)) @ Matrix.Scale(S, 4) @ Matrix.Rotation(math.radians(90), 4, "Z") @ Matrix.Translation(-GRIP)
 # (rotation +90 about Z sends -X to -Y and +Y (shooter's right) to -X)
 tris = sum(len(p.vertices) - 2 for p in gun.data.polygons)
 if tris > spec["tris"]:
@@ -176,7 +187,7 @@ if "mag_body" in spec:   # pistol: the magazine's hidden body inside the grip, s
     mb = spec["mag_body"]
     rot = Matrix.Rotation(math.radians(-mb["tilt"]), 3, "X")   # grip leans back
     sz = Vector(mb["size"]) * S
-    extras["MagBody"] = box_obj("MagBody", W(mb["center"]), (sz.y, sz.x, sz.z), dark_mat("Gun_DarkMetal", (0.05, 0.05, 0.055)), rot)
+    extras["MagBody"] = box_obj("MagBody", W(mb["center"]), (sz.y * THIN, sz.x, sz.z), dark_mat("Gun_DarkMetal", (0.05, 0.05, 0.055)), rot)
 if "chambers" in spec:   # shotgun: two fired shells in the chambers and two fresh ones for the hand
     back = Vector((0, 1, 0))   # out of the breech, towards the shooter
     for i, ch in enumerate(spec["chambers"]):

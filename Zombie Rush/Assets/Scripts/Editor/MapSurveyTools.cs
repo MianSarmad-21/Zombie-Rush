@@ -156,7 +156,7 @@ namespace ZombieRush.EditorTools
             sbj.Append($"  \"picture\": {{\"file\": \"Survey.png\", \"size\": {Size}, \"originX\": {origin.x:0.##}, \"originZ\": {origin.z:0.##}, \"pixelsPerMetre\": {ppm:0.####}, \"note\": \"pixel x = (worldX - originX) * ppm, pixel y from the BOTTOM = (worldZ - originZ) * ppm\"}},\n");
             sbj.Append($"  \"world\": {{\"min\": {V(world.min)}, \"max\": {V(world.max)}}},\n");
             sbj.Append($"  \"terrains\": [{string.Join(", ", terrains.Select(t => $"{{\"name\": \"{t.name}\", \"pos\": {V(t.transform.position)}, \"size\": {V(t.terrainData.size)}}}"))}],\n");
-            sbj.Append($"  \"zone\": {{\"arcCenter\": {V(arc)}, \"forward\": {V(fwd)}, \"startRadius\": {zone.startRadius}, \"maxRadius\": {zone.maxRadius}, \"expandStep\": {zone.expandStep}, \"expandCost\": {zone.expandCost}, \"backOffset\": {zone.backOffset}, \"halfCircle\": {(zone.halfCircle ? "true" : "false")}, \"playerBase\": {(zone.playerBase != null ? V(zone.playerBase.position) : "null")}}},\n");
+            sbj.Append($"  \"zone\": {{\"arcCenter\": {V(arc)}, \"forward\": {V(fwd)}, \"startRadius\": {zone.startRadius}, \"maxRadius\": {zone.maxRadius}, \"expandStep\": {zone.expandStep}, \"expandCost\": {zone.ExpandCost}, \"backOffset\": {zone.backOffset}, \"halfCircle\": {(zone.halfCircle ? "true" : "false")}, \"playerBase\": {(zone.playerBase != null ? V(zone.playerBase.position) : "null")}}},\n");
             if (safe != null)
                 sbj.Append($"  \"safeBase\": {{\"pos\": {V(safe.Center)}, \"radius\": {safe.radius}, \"backOffset\": {safe.backOffset}, \"building\": \"{(safe.building != null ? PathOf(safe.building, null) : "")}\"}},\n");
             sbj.Append($"  \"navMeshTriangles\": {navTris},\n");

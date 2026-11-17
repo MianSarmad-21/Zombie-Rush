@@ -15,7 +15,7 @@ namespace ZombieRush.Data
         public Vector3 shoulderOffset = new Vector3(0.5f, 0.25f, -2.4f);
         [Tooltip("Look up/down limits in third person, degrees (down is negative).")]
         public float pitchMin = -55f;
-        public float pitchMax = 60f;
+        public float pitchMax = 50f;
         [Tooltip("Camera boom by look angle, like third-person shooters: looking up pulls the camera in and down " +
                  "(it would hit the ground), looking down lifts it and moves it back a little. Distance is a share of " +
                  "the normal one at the pitch limit; height is metres added at the limit.")]
@@ -23,6 +23,9 @@ namespace ZombieRush.Data
         public float lookUpHeight = -0.15f;
         [Range(1f, 1.6f)] public float lookDownDistance = 1.0f;
         public float lookDownHeight = 0.25f;
+        [Tooltip("Metres the camera moves further out over the shoulder at the look-down limit, so the gun (held on " +
+                 "that side) stays in view instead of hiding under the body.")]
+        public float lookDownSide = 0.3f;
         [Tooltip("Third-person camera trails the player's movement by this many seconds (0 = rigid).")]
         public float followLag = 0.12f;
         [Tooltip("Furthest the trailing camera may fall behind, metres.")]

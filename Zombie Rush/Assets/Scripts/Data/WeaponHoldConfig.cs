@@ -100,13 +100,17 @@ namespace ZombieRush.Data
         public float viewmodelFov = 55f;
         [Tooltip("Near clip of the arms-and-gun camera, metres: cuts the shoulders and collar right at the camera (seen from inside when a gun's camera spot sits behind the eyes); hands and guns are further out.")]
         public float viewmodelNearClip = 0.18f;
-        [Tooltip("Designed first-person walk bob at running speed, metres: up-down and side-to-side.")]
-        public float bobHeight = 0.006f;
-        public float bobSide = 0.004f;
-        [Tooltip("Metres covered per full stride (two steps): sets the bob's rhythm.")]
-        public float strideLength = 1.5f;
+        [Tooltip("First-person camera bob at running speed, metres: up-down and side-to-side. 0 = IGI-steady eye (the arms still sway, see vmBob).")]
+        public float bobHeight = 0f;
+        public float bobSide = 0f;
+        [Tooltip("Metres covered per full stride (two steps): sets the walk rhythm of the arms' sway. The run clip covers 2.4 m per stride at 4 m/s.")]
+        public float strideLength = 2.4f;
+        [Tooltip("Most strides per second the sway follows (a sprint stays a calm sway, not a buzz).")]
+        public float bobMaxRate = 1.6f;
         [Tooltip("Speed (m/s) at which the bob reaches full size.")]
         public float bobFullSpeed = 4f;
+        [Tooltip("Seconds the first-person eye takes to glide over a kerb, bump or step-up (the controller lifts in one frame). 0 = rigid.")]
+        public float eyeStepSmooth = 0.08f;
         [Tooltip("Seconds for the upper body to blend in or out of aiming the gun along the view.")]
         public float bodyAimBlendTime = 0.15f;
         [Tooltip("How the turn that lines the gun up with the view is shared over the spine, chest and upper chest " +
@@ -132,7 +136,7 @@ namespace ZombieRush.Data
         [Tooltip("How quickly the arms catch up with the view (higher = snappier).")]
         public float vmSwayFollow = 10f;
         [Tooltip("Arms bob while walking (side, up), metres at full walk speed.")]
-        public Vector2 vmBob = new Vector2(0.006f, 0.005f);
+        public Vector2 vmBob = new Vector2(0.003f, 0.002f);
         [Tooltip("Arms drop back and down while running, metres at full speed.")]
         public Vector3 vmRunOffset = new Vector3(0f, -0.01f, -0.015f);
     }

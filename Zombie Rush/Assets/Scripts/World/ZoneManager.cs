@@ -27,8 +27,39 @@ namespace ZombieRush.World
         [Tooltip("Metres from the PlayerBase back to the straight edge.")]
         public float backOffset = 10f;
 
-        [Header("Cost")]
-        public int expandCost = 20;
+        [Header("Cost (a shared fund)")]
+        [Tooltip("Each expansion costs about the coins the whole team earns over this many waves.")]
+        public int wavesPerExpansion = 5;
+        [Tooltip("Share of those coins it costs (0.9 = a team that collects most of its coins can expand right after the 5th wave).")]
+        [Range(0.3f, 1.5f)] public float costShare = 0.9f;
+        [Tooltip("Average coins a zombie kill gives (ZombieHealth min/max coins, 5-15).")]
+        public float coinsPerKill = 10f;
+
+        /// Coins paid into the next expansion so far (every player pays in with P; the zone grows when it is full).
+        public int Fund { get; private set; }
+        /// Expansions bought so far.
+        public int Expansions => Mathf.Max(0, Mathf.RoundToInt((CurrentRadius - startRadius) / Mathf.Max(0.01f, expandStep)));
+
+        /// Price of the next expansion: the coins the squad's zombies are worth over the next `wavesPerExpansion`
+        /// waves (expansion k pays for waves 5k+1..5k+5), times costShare. More players = more zombies = a bigger
+        /// price, so a squad of four pays it together in the same ~5 waves a solo player does alone.
+        public int ExpandCost
+        {
+            get
+            {
+                var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>();
+                int baseN = wm != null ? wm.baseZombiesPerWave : 5, extra = wm != null ? wm.extraZombiesPerWave : 2;
+                int players = Mathf.Max(1, PlayerHealth.All.Count);
+                float mult = Difficulty.ZombieCountMultiplier(players);
+                int first = Expansions * wavesPerExpansion + 1;
+                float zombies = 0f;
+                for (int w = first; w < first + wavesPerExpansion; w++) zombies += Mathf.Ceil((baseN + (w - 1) * extra) * mult);
+                return Mathf.Max(10, Mathf.RoundToInt(zombies * coinsPerKill * costShare / 10f) * 10);
+            }
+        }
+
+        /// Coins still needed for the next expansion.
+        public int Remaining => Mathf.Max(0, ExpandCost - Fund);
 
         [Header("Visual")]
         public Transform boundaryVisual; // ZoneBoundaryFX wall, or a plain cylinder scaled to match the current radius
@@ -91,6 +122,14 @@ namespace ZombieRush.World
         void DeployPlayer()
         {
             if (player == null) return;
+            // the base's start point inside the hall (the clear-spot search from above lands outside: the roof is in the way)
+            if (SafeBase.Instance != null && SafeBase.Instance.playerStart != null)
+            {
+                if (playerController != null) playerController.enabled = false;   // off first: its own capsule isn't "in the way"
+                if (SafeBase.Instance.TryGetStart(out var startPos, out var startRot)) player.SetPositionAndRotation(startPos, startRot);
+                if (playerController != null) playerController.enabled = true;
+                return;
+            }
             var at = playerBase != null ? playerBase.position : center;
             if (!ArenaGround.TryFindClearSpot(at, at.y, startRadius * 0.8f, out var spot))
             {
@@ -124,23 +163,39 @@ namespace ZombieRush.World
             if (playerController != null) playerController.enabled = true;
         }
 
+        /// P: this player pays all their coins (up to what is still needed) into the zone fund.
         public void ExpandZone()
         {
             if (!CanExpand) return;
-
-            if (PlayerCurrency.Instance == null || !PlayerCurrency.Instance.TrySpendCoins(expandCost))
+            var wallet = PlayerCurrency.Instance;
+            int give = wallet != null ? Mathf.Min(wallet.Coins, Remaining) : 0;
+            if (give <= 0 || !wallet.TrySpendCoins(give))
             {
                 GameEvents.RaiseZoneExpandFailed();
                 return;
             }
+            int left = Remaining - give;
+            if (left > 0) UI.PickupToast.Show($"+{give} TO THE ZONE  ·  {left} LEFT", new Color(1f, 0.82f, 0.35f));
 
-            // a joined player: the host grows the zone for everyone
+            // a joined player: the host holds the fund and grows the zone for everyone
             if (ZombieRush.Net.NetSession.IsRunning && !ZombieRush.Net.NetSession.IsServer)
             {
-                if (ZombieRush.Net.MatchNet.Instance != null) ZombieRush.Net.MatchNet.Instance.RequestExpand();
+                if (ZombieRush.Net.MatchNet.Instance != null) ZombieRush.Net.MatchNet.Instance.RequestContribute(give);
                 return;
             }
-            ExpandPaid();
+            Contribute(give);
+        }
+
+        /// Host / solo: coins paid into the fund; the zone grows each time the fund covers the price.
+        public void Contribute(int coins)
+        {
+            Fund += Mathf.Max(0, coins);
+            while (CanExpand && Fund >= ExpandCost)
+            {
+                Fund -= ExpandCost;
+                ExpandPaid();
+            }
+            RaiseChanged();
         }
 
         /// Grows the zone one step (already paid for).
@@ -152,6 +207,18 @@ namespace ZombieRush.World
             RaiseChanged();
         }
 
+        /// A joined player's machine: the host's fund.
+        public void SetNetFund(int fund)
+        {
+            if (fund == Fund) return;
+            Fund = fund;
+            RaiseChanged();
+        }
+
+        void OnEnable() => GameEvents.OnWaveAnnounced += HandleWave;
+        void OnDisable() => GameEvents.OnWaveAnnounced -= HandleWave;
+        void HandleWave(int wave) => RaiseChanged();   // squad size may have changed the price
+
         /// A joined player's machine: the zone size the host has.
         public void SetNetRadius(float radius)
         {
@@ -161,7 +228,7 @@ namespace ZombieRush.World
             RaiseChanged();
         }
 
-        void RaiseChanged() => GameEvents.RaiseZoneChanged(CurrentRadius, maxRadius, expandCost);
+        void RaiseChanged() => GameEvents.RaiseZoneChanged(CurrentRadius, maxRadius, Remaining);   // the HUD shows what is still needed
 
         void ApplyVisual(bool animate = false)
         {

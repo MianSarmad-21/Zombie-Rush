@@ -84,6 +84,10 @@ namespace ZombieRush.EditorTools
             {
                 for (int i = ac.layers.Length - 1; i >= 0; i--) ac.RemoveLayer(i);
                 foreach (var p in ac.parameters) ac.RemoveParameter(p);
+                // RemoveLayer leaves the old blend trees inside the file: every rebuild added ~10 orphans
+                // (146 by 2026-11-16), each with stale playback rates. Clear them out.
+                foreach (var o in AssetDatabase.LoadAllAssetsAtPath(path))
+                    if (o is BlendTree) Object.DestroyImmediate(o, true);
                 ac.AddLayer("Base Layer");
             }
             else ac = AnimatorController.CreateAnimatorControllerAtPath(path);
@@ -107,6 +111,11 @@ namespace ZombieRush.EditorTools
             const float D = 0.7071f;
             foreach (var (key, x, y) in new[] { ("FwdLeft", -D, D), ("FwdRight", D, D), ("BackLeft", -D, -D), ("BackRight", D, -D) })
                 if (c.TryGetValue(key, out var diag) && diag != null) moves.Add((diag, x, y, S(key)));
+            // Optional slow walk between standing and the jog (a half-pushed stick), so slow movement is a real walk
+            // instead of the standing pose blended with the run (mushy, sliding legs). Its place on the forward axis
+            // is its speed as a share of the jog (the MoveY the body animator feeds at that speed).
+            if (c.TryGetValue("SlowWalk", out var slow) && slow != null && speed != null && speed.TryGetValue("SlowWalkAt", out var at))
+                moves.Add((slow, 0f, at, S("SlowWalk")));
             Directional(tree, moves.ToArray());
             var crouch = ac.CreateBlendTreeInController("Crouch", out var ctree, 0);
             Directional(ctree, (c["CrouchIdle"], 0f, 0f, 1f), (c["CrouchWalk"], 0f, 1f, S("CrouchWalk")), (c["CrouchWalk"], 0f, -1f, -S("CrouchWalk")),

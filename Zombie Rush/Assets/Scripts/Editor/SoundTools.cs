@@ -16,7 +16,7 @@ namespace ZombieRush.EditorTools
     /// ("zombie_groan_03", "Pistol Shot", "reload", ...). Slots you filled by hand are
     /// never changed. Also gives each WeaponData its own fire sound when one matches
     /// (pistol / rifle / shotgun). Re-run after importing a new sound pack.
-    /// Import settings for Assets/Audio: music streams from disk (a decompressed 2-minute
+    /// Import settings for Assets/Audio: music and ambience stream from disk (a decompressed 2-minute
     /// track would cost ~40 MB of RAM on a phone); short effects load decompressed so they
     /// play with no delay.
     class AudioImportRules : AssetPostprocessor
@@ -26,7 +26,7 @@ namespace ZombieRush.EditorTools
             if (!assetPath.StartsWith("Assets/Audio/")) return;
             var importer = (AudioImporter)assetImporter;
             var s = importer.defaultSampleSettings;
-            if (assetPath.Contains("/Music/"))
+            if (assetPath.Contains("/Music/") || assetPath.Contains("/Ambience/"))
             {
                 s.loadType = AudioClipLoadType.Streaming;
                 s.compressionFormat = AudioCompressionFormat.Vorbis;
@@ -50,7 +50,13 @@ namespace ZombieRush.EditorTools
         static readonly Dictionary<string, string[][]> Rules = new Dictionary<string, string[][]>
         {
             ["menuMusic"] = R("menu music", "main menu", "menu theme", "title music", "menu"),
-            ["gameMusic"] = R("battle music", "combat music", "horror music", "action music", "game music", "gameplay music", "ambient music", "music"),
+            ["gameMusic"] = R("game music", "gameplay music", "calm music", "ambient music", "horror music", "music"),
+            ["combatMusic"] = R("combat music", "battle music", "action music", "wave music"),
+            ["ambience"] = R("ambience", "ambient loop", "night loop", "wind loop"),
+            ["weaponDraw"] = R("weapon draw", "gun draw", "draw"),
+            ["footstepHard"] = R("footstep hard", "footstep concrete", "footstep stone", "footstep"),
+            ["footstepSoft"] = R("footstep soft", "footstep grass", "footstep dirt"),
+            ["heartbeat"] = R("heartbeat", "heart beat"),
             ["gunshot"] = R("pistol shot", "pistol fire", "handgun", "gunshot", "gun shot", "shot"),
             ["reload"] = R("reload"),
             ["emptyClick"] = R("empty", "dry fire", "dryfire", "out of ammo"),
@@ -170,7 +176,9 @@ namespace ZombieRush.EditorTools
                 case "playerHurt": case "playerDeath": return new[] { "zombie", "monster", "creature" };
                 case "bulletImpact": return new[] { "zombie", "metal", "wood", "glass", "concrete" };
                 case "turretShot": return new[] { "reload", "deploy" };
-                case "menuMusic": case "gameMusic": return new[] { "sfx", "stinger", "jingle" };
+                case "menuMusic": case "gameMusic": case "combatMusic": return new[] { "sfx", "stinger", "jingle" };
+                case "footstepHard": return new[] { "soft", "grass", "dirt", "zombie" };
+                case "weaponDraw": return new[] { "music", "card" };
                 case "uiClick": return new[] { "gun", "trigger", "empty", "dry" };
                 default: return null;
             }

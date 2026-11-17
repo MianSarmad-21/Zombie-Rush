@@ -67,6 +67,16 @@ namespace ZombieRush.Waves
             if (Instance != null && Instance != this) { Destroy(gameObject); return; }
             Instance = this;
             pool = new ZombiePool(HandleZombieDied);
+            // The pads are only spawn positions now: the old flat pulsing discs are hidden, the ground breaks
+            // open where each zombie actually surfaces instead (SpawnBreachEffect, on every machine).
+            if (spawnPoints != null)
+                foreach (var pad in spawnPoints)
+                {
+                    if (pad == null) continue;
+                    foreach (var r in pad.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
+                    foreach (var c in pad.GetComponentsInChildren<Collider>(true)) c.enabled = false;
+                    foreach (var p in pad.GetComponentsInChildren<ZombieRush.Zombie.SpawnPointPulse>(true)) p.enabled = false;
+                }
         }
 
         void OnDestroy()
@@ -234,6 +244,10 @@ namespace ZombieRush.Waves
         {
             if (spawnPoints == null || spawnPoints.Length == 0) return;
             var shape = new ZoneShape(center, radius, halfForward);
+            // Random every wave, wave 1 included: a random turn of the ring (full circle), and every pad at a
+            // random place inside its own slice and a random depth into the zone. (The half circle used to get
+            // offset 0 and the middle of each slice, so the pads stood on the same 5 spots wave after wave
+            // until the zone grew.)
             float offset = shape.Half ? 0f : Random.value;
             float slice = 1f / spawnPoints.Length;
             var player = PlayerPosition(center);
@@ -242,6 +256,7 @@ namespace ZombieRush.Waves
             {
                 var pad = spawnPoints[i];
                 if (pad == null) continue;
+                float inSlice = Random.Range(0.12f, 0.88f), depth = Random.Range(0.7f, 1f);
 
                 for (int attempt = 0; attempt < 36; attempt++)
                 {
@@ -249,8 +264,8 @@ namespace ZombieRush.Waves
                     float t, r;
                     if (attempt < 12)
                     {
-                        t = offset + (i + 0.5f) * slice + (attempt % 3 - 1) * slice * 0.25f;
-                        r = Mathf.Max(3f, radius - (attempt / 3) * 3f);
+                        t = offset + (i + inSlice) * slice + (attempt % 3 - 1) * slice * 0.2f;
+                        r = Mathf.Max(3f, radius * depth - (attempt / 3) * 3f);
                     }
                     else
                     {

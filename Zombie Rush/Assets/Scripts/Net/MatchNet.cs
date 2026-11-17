@@ -34,7 +34,11 @@ namespace ZombieRush.Net
             else
             {
                 zoneRadius.OnValueChanged += (_, r) => ApplyZone(r);
+                zoneFund.OnValueChanged += (_, f) => { var z = World.ZoneManager.Instance; if (z != null) z.SetNetFund(f); };
+                { var z0 = World.ZoneManager.Instance; if (z0 != null) z0.SetNetFund(zoneFund.Value); }
                 ApplyZone(zoneRadius.Value);
+                takenPickups.OnListChanged += OnTakenPickupsChanged;
+                foreach (int id in takenPickups) World.BasePickup.MarkTaken(id);   // guns already gone from the tables
                 // late join: catch up with the match
                 if (battleStarted.Value) GameEvents.RaiseBattleStarted();
                 if (wave.Value > 0)
@@ -49,6 +53,7 @@ namespace ZombieRush.Net
         public override void OnNetworkDespawn()
         {
             if (Instance == this) Instance = null;
+            takenPickups.OnListChanged -= OnTakenPickupsChanged;
             GameEvents.OnWaveAnnounced -= ServerWaveAnnounced;
             GameEvents.OnWaveStarted -= ServerWaveStarted;
             GameEvents.OnWaveCompleted -= ServerWaveCompleted;
@@ -57,7 +62,12 @@ namespace ZombieRush.Net
             GameEvents.OnZoneChanged -= ServerZoneChanged;
         }
 
-        void ServerZoneChanged(float radius, float max, int cost) => zoneRadius.Value = radius;
+        void ServerZoneChanged(float radius, float max, int cost)
+        {
+            zoneRadius.Value = radius;
+            var zm = World.ZoneManager.Instance;
+            if (zm != null) zoneFund.Value = zm.Fund;
+        }
 
         static void ApplyZone(float r)
         {
@@ -76,19 +86,42 @@ namespace ZombieRush.Net
         {
             var dep = Weapons.TurretDeployer.Local;
             if (dep == null || dep.turretPrefab == null) return;
+            if (Weapons.TurretDeployer.InBase(spot)) return;   // no turrets inside the safe base (checked on the host too)
             ulong who = p.Receive.SenderClientId;
             if (!turrets.TryGetValue(who, out var list)) turrets[who] = list = new System.Collections.Generic.List<Weapons.Turret>();
             Weapons.TurretDeployer.Place(dep.turretPrefab, spot, rot, list, dep.maxActive);
         }
 
-        /// A joined player paid for a bigger zone: the host grows it for everyone.
-        public void RequestExpand() => ExpandRpc();
+        /// Guns taken from the base tables (BasePickup ids), kept by the host so late joiners see them gone too.
+        readonly NetworkList<int> takenPickups = new NetworkList<int>();
+
+        /// This player took a gun from a table: it goes from the table for everyone.
+        public void ReportPickupTaken(int id) => PickupTakenRpc(id);
 
         [Rpc(SendTo.Server)]
-        void ExpandRpc()
+        void PickupTakenRpc(int id)
+        {
+            if (takenPickups.Contains(id)) return;
+            takenPickups.Add(id);
+            World.BasePickup.MarkTaken(id);
+        }
+
+        void OnTakenPickupsChanged(NetworkListEvent<int> e)
+        {
+            if (e.Type == NetworkListEvent<int>.EventType.Add) World.BasePickup.MarkTaken(e.Value);
+        }
+
+        /// The shared zone fund (coins paid in toward the next expansion), kept by the host.
+        readonly NetworkVariable<int> zoneFund = new NetworkVariable<int>();
+
+        /// A joined player paid coins into the zone fund: the host adds them and grows the zone for everyone.
+        public void RequestContribute(int coins) => ContributeRpc(coins);
+
+        [Rpc(SendTo.Server)]
+        void ContributeRpc(int coins)
         {
             var zm = World.ZoneManager.Instance;
-            if (zm != null) zm.ExpandPaid();
+            if (zm != null) zm.Contribute(Mathf.Clamp(coins, 0, 100000));
         }
 
         void Update()

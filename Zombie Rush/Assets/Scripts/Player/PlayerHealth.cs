@@ -24,6 +24,8 @@ namespace ZombieRush.Player
         public float CurrentHealth { get; private set; }
         public float CurrentArmor { get; private set; }
         public bool IsDead { get; private set; }
+        /// Counts lives: goes up each time the player is revived (the base's armour vest is one per life).
+        public int Life { get; private set; }
 
         /// Inside the safe base: zombies can't reach or hurt this player.
         public bool InSafeBase => SafeBase.Instance != null && SafeBase.Instance.Contains(transform.position);
@@ -76,13 +78,15 @@ namespace ZombieRush.Player
         {
             if (!IsDead) return;
             IsDead = false;
+            Life++;
             CurrentHealth = maxHealth;
             var sb = SafeBase.Instance;
             if (sb != null)
             {
                 var cc = GetComponent<CharacterController>();
-                if (cc != null) cc.enabled = false;
-                transform.position = sb.Center + Vector3.up * 0.1f;
+                if (cc != null) cc.enabled = false;   // off first: its own capsule isn't "in the way"
+                if (sb.TryGetStart(out var p, out var rot)) transform.SetPositionAndRotation(p, rot);
+                else transform.position = sb.Center + Vector3.up * 0.1f;
                 if (cc != null) cc.enabled = true;
             }
             RaiseHealth();

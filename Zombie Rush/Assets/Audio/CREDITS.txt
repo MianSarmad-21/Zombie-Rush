@@ -20,3 +20,21 @@ Impacts, UI, turret, jingles, coin, reload (all other SFX) - Kenney (www.kenney.
 Music:
   Music/menu_music.ogg  - "Chill Main Menu music", https://opengameart.org/node/3976
   Music/game_music.ogg  - "Dark Cavern Ambient" (track 002), https://opengameart.org/node/131394
+  Music/combat_music.ogg - "Post-Apocalyptic Night" by MintoDog (plays during waves),
+    https://opengameart.org/content/post-apocalyptic-morning-afternoon-and-night
+
+Added 2026-11-13 (all CC0; reloads were cut and re-timed to the reload animations):
+  SFX/Weapons/reload_pistol.wav  - "Handgun Reload Sound Effect" by zer0_sol,
+    https://opengameart.org/content/handgun-reload-sound-effect
+  SFX/Weapons/reload_rifle.wav   - "Gun reload sounds" by SpringySpringo (assault rifle reload),
+    https://opengameart.org/content/gun-reload-sounds
+  SFX/Weapons/reload_shotgun.wav - "Shotgun Reload Sound effects" by zer0_sol (shells), the snap shut
+    from "Gun reload sounds" by SpringySpringo, the latch and falling shells from Kenney (RPG Audio, Impact Sounds),
+    https://opengameart.org/content/shotgun-reload-sound-effects
+  SFX/Weapons/weapon_draw_*.wav  - Kenney RPG Audio (cloth, metal click, belt, latch), www.kenney.nl
+  SFX/Player/footstep_*.wav      - Kenney Impact Sounds (concrete and grass footsteps), www.kenney.nl
+  SFX/Player/heartbeat.wav       - "Heartbeat sounds" by bart, https://opengameart.org/content/heartbeat-sounds
+  Ambience/night_ambience.ogg    - "wind1" by Luke.RUSTLTD, https://opengameart.org/content/wind1
+    and "Crickets Ambient Noise - loopable" by Wolfgang_,
+    https://opengameart.org/content/crickets-ambient-noise-loopable
+  SFX/Zombies/goo_spit.wav, goo_splat.wav - moved out of _Archive (same sources as before).
