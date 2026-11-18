@@ -67,6 +67,7 @@ namespace ZombieRush.Zombie
         const float RetargetInterval = 0.4f;
 
         float attackTimer;
+        const float SwingRecovery = 0.45f;   // seconds a swing keeps its attack slot after the hit lands
         bool hitPending;        // swing started, damage not landed yet (config.attackHitDelay > 0)
         float hitPendingTimer;
         float gravityVelocity;
@@ -159,9 +160,14 @@ namespace ZombieRush.Zombie
             blockedTimer = 0f;
             speedRatio = 1f;
             flankSide = Random.value < 0.5f ? 1f : -1f;   // half go round each way
+            lane = Random.Range(-1f, 1f);                  // its own side of the approach (a horde, not a queue)
+            pace = 1f + Random.Range(-cfg.paceVariation, cfg.paceVariation);
             flankTimer = 0f;
             targetRadius = DefaultTargetRadius;
             nextProbeTime = 0f;
+            knockVelocity = Vector3.zero;
+            staggerTimer = 0f;
+            staggerReadyAt = 0f;
             repathTimer = Random.value * RepathInterval;
             pathCorner = -1;
             RouteNote = "";
@@ -184,7 +190,7 @@ namespace ZombieRush.Zombie
                 d.y = 0f;
                 float sqr = d.sqrMagnitude;
                 if (sqr < anySqr) { anySqr = sqr; nearestAny = p; }
-                if (safeBase != null && safeBase.Contains(p.transform.position)) continue;
+                if (p.Protected) continue;   // just stepped back in: still hunted until the base protects them
                 if (sqr < bestSqr) { bestSqr = sqr; best = p; }
             }
 
@@ -199,7 +205,10 @@ namespace ZombieRush.Zombie
         void Update()
         {
             if (health.IsDead) return;
-            if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
+            if (!GameManager.IsWorldRunning) return;
+
+            if (staggerTimer > 0f) staggerTimer -= Time.deltaTime;
+            ApplyKnock();
 
             if (hitPending)
             {
@@ -229,7 +238,7 @@ namespace ZombieRush.Zombie
                 return;
             }
 
-            targetPosition = guarding ? guardPoint : player.position;
+            targetPosition = guarding ? guardPoint : player.position + (CrowdSpreading ? FlankOffset(player.position) : Vector3.zero);
             Vector3 toPlayer = targetPosition - transform.position;
             toPlayer.y = 0f;
             float sqrDistance = toPlayer.sqrMagnitude;
@@ -270,14 +279,18 @@ namespace ZombieRush.Zombie
                 ApplyGravityOnly();
                 health.Anim.SetSpeed(0f);
 
-                if (attackTimer <= 0f)
+                if (staggerTimer > 0f) attackTimer = Mathf.Max(attackTimer, staggerTimer);   // reeling from a hit: no swing yet
+                // Only a few swing at one player at a time; the others wait their turn close by.
+                if (attackTimer <= 0f && !AttackSlots.TryTake(playerHealth, cfg.attackHitDelay + SwingRecovery))
+                    attackTimer = Random.Range(0.25f, 0.5f);
+                else if (attackTimer <= 0f)
                 {
                     health.Anim.TriggerAttack();
                     var lib = SoundManager.Library;
                     if (lib != null) SoundManager.PlayAt(lib.zombieAttack, transform.position + Vector3.up * 1.5f, 0.9f, 20f, 3);
                     attackTimer = cfg.attackCooldown;
                     if (cfg.attackHitDelay > 0f) { hitPending = true; hitPendingTimer = cfg.attackHitDelay; }
-                    else if (playerHealth != null && !(cfg.highSwing && Ducked(playerHealth))) playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
+                    else if (playerHealth != null && !(cfg.highSwing && Ducked(playerHealth))) playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier, transform.position);
                 }
                 return;
             }
@@ -286,7 +299,9 @@ namespace ZombieRush.Zombie
             float distance = Mathf.Sqrt(sqrDistance);
             isRunning = cfg.runDistance <= 0f || distance <= cfg.runDistance + (isRunning ? RunDistanceMargin : 0f);
             bool running = isRunning;
-            float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * speedMultiplier;
+            float speed = (running ? cfg.chaseSpeed : cfg.moveSpeed) * speedMultiplier
+                          * (staggerTimer > 0f ? FeelConfig.Current.staggerSlow : 1f)    // reeling from a hit
+                          * (CrowdSpreading ? pace : 1f);                                // its own pace
 
             // how fast it really moves (others in the way, a wall): the legs follow that, never running on the spot
             Vector3 realV = controller.velocity; realV.y = 0f;
@@ -298,6 +313,12 @@ namespace ZombieRush.Zombie
 
             Vector3 desired = PathDirection(toPlayer / distance, distance);
             Vector3 moveDir = ComputeMoveDirection(desired);
+            if (CrowdSpreading)
+            {
+                // step away from neighbours: keeps a horde loose instead of a column
+                Vector3 apart = Separation();
+                if (apart.sqrMagnitude > 1e-4f) moveDir = (moveDir + apart * cfg.personalSpaceWeight).normalized;
+            }
             if (crowded && blockedTimer > 0.35f)
             {
                 // boxed out next to the player: circle round to an open side (swap sides if that one stays blocked)
@@ -322,6 +343,31 @@ namespace ZombieRush.Zombie
             KeepOutOfSafeBase();
         }
 
+        // ---- hit reactions: a shot shoves the zombie back and slows it for a moment (FeelConfig)
+        Vector3 knockVelocity;
+        float staggerTimer, staggerReadyAt;
+
+        /// A hit pushed this zombie (`push`, m/s, flat) and may stagger it for `stagger` seconds. A zombie that
+        /// was just staggered can be pushed but not slowed again for a moment, so fast guns can't stun-lock it.
+        public void Knock(Vector3 push, float stagger)
+        {
+            var feel = FeelConfig.Current;
+            push.y = 0f;
+            knockVelocity = Vector3.ClampMagnitude(knockVelocity + push, feel.maxKnock);
+            if (stagger > 0f && Time.time >= staggerReadyAt)
+            {
+                staggerTimer = Mathf.Max(staggerTimer, stagger);
+                staggerReadyAt = Time.time + stagger + feel.staggerCooldown;
+            }
+        }
+
+        void ApplyKnock()
+        {
+            if (knockVelocity.sqrMagnitude < 0.0004f) { knockVelocity = Vector3.zero; return; }
+            if (controller.enabled) { controller.Move(knockVelocity * Time.deltaTime); KeepOutOfSafeBase(); }
+            knockVelocity *= Mathf.Exp(-FeelConfig.Current.knockDecay * Time.deltaTime);
+        }
+
         /// Lands a delayed swing (attackHitDelay): hurts the player only if they are still
         /// within reach. Returns true if it hit. Called on the timer.
         public bool LandPendingHit()
@@ -334,7 +380,7 @@ namespace ZombieRush.Zombie
             float reach = CentreReach(cfg.attackReach + cfg.attackLandTolerance);
             if (d.sqrMagnitude > reach * reach) return false;
             if (cfg.highSwing && Ducked(playerHealth)) return false;   // a giant's swing passes over a crouched player
-            playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier);
+            playerHealth.TakeDamage(cfg.attackDamage * difficultyMultiplier, transform.position);
             return true;
         }
 
@@ -409,7 +455,9 @@ namespace ZombieRush.Zombie
                 repathTimer = RepathInterval + Random.value * 0.2f;
                 pathCorner = -1;
                 if (!ArenaNavMesh.TrySnap(transform.position, out var from)) RouteNote = "zombie off walk map";
-                else if (!ArenaNavMesh.TrySnap(targetPosition, out var to, 3f)) RouteNote = "target off walk map";
+                else if (!ArenaNavMesh.TrySnap(targetPosition, out var to, 3f)
+                         && !(player != null && !guarding && ArenaNavMesh.TrySnap(player.position, out to, 3f)))   // its side spot is off the map: the player then
+                    RouteNote = "target off walk map";
                 else if (!NavMesh.CalculatePath(from, to, NavMesh.AllAreas, path) || path.status == NavMeshPathStatus.PathInvalid) RouteNote = "no path";
                 else if (path.corners.Length <= 1) RouteNote = "path has no corners";
                 else
@@ -439,6 +487,45 @@ namespace ZombieRush.Zombie
         }
 
         static float FlatDistance(Vector3 a, Vector3 b) => new Vector2(a.x - b.x, a.z - b.z).magnitude;
+
+        // ---- crowd: zombies fan out on the way in and keep a little apart, so a group reads as a horde
+        /// Off = the old behaviour (every zombie on the exact shortest route): tests use it to compare.
+        public static bool CrowdSpreading = true;
+        float lane;   // -1..1: which side of the player it heads for while far off
+        float pace;   // its own speed factor
+
+        /// Where this zombie heads for while far off, relative to the player: a spot on its own side of the player
+        /// (the line from the player to it, turned by up to approachAngle), up to approachSpread metres out. As it closes
+        /// in the spot shrinks to the player, so a group spirals in from several sides instead of one file.
+        Vector3 FlankOffset(Vector3 target)
+        {
+            Vector3 fromTarget = transform.position - target; fromTarget.y = 0f;
+            float d = fromTarget.magnitude;
+            if (d < 0.01f) return Vector3.zero;
+            float k = Mathf.InverseLerp(cfg.approachNear, Mathf.Max(cfg.approachNear + 0.1f, cfg.approachFar), d);
+            Vector3 slot = Quaternion.AngleAxis(lane * cfg.approachAngle, Vector3.up) * (fromTarget / d);
+            return slot * (Mathf.Min(cfg.approachSpread, d * 0.5f) * k);
+        }
+
+        /// A push away from zombies closer than personalSpace (stronger the closer they are).
+        Vector3 Separation()
+        {
+            float r = cfg.personalSpace;
+            if (r <= 0f) return Vector3.zero;
+            Vector3 pos = transform.position, push = Vector3.zero;
+            var all = ZombieHealth.Active;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var z = all[i];
+                if (z == null || z == health || z.IsDead) continue;
+                Vector3 d = pos - z.transform.position; d.y = 0f;
+                float sq = d.sqrMagnitude;
+                if (sq >= r * r || sq < 1e-6f) continue;
+                float dist = Mathf.Sqrt(sq);
+                push += d / dist * (1f - dist / r);
+            }
+            return push;
+        }
 
         bool IsRealObstacle(Collider col)
         {

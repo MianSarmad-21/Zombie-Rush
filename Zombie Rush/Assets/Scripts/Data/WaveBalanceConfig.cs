@@ -26,6 +26,14 @@ namespace ZombieRush.Data
         [Tooltip("Most zombie speed can grow to (times base).")]
         public float zombieSpeedMax = 1.3f;
 
+        [Header("Crowd attacks")]
+        [Tooltip("Zombies that may swing at one player at the same moment on wave 1; the rest crowd round and wait their turn.")]
+        public int attackersBase = 2;
+        [Tooltip("One more attacker allowed every this many waves.")]
+        public int wavesPerExtraAttacker = 4;
+        [Tooltip("Most zombies that may swing at one player at once.")]
+        public int attackersMax = 4;
+
         [Header("Player")]
         [Tooltip("Extra max health per wave (health points). The player is healed to full at each wave start.")]
         public float playerHealthPerWave = 6f;
@@ -42,6 +50,8 @@ namespace ZombieRush.Data
         public float ZombieDamage(int wave) => Grow(wave, zombieDamagePerWave, zombieDamageMax);
         public float ZombieSpeed(int wave) => Grow(wave, zombieSpeedPerWave, zombieSpeedMax);
         public float PlayerDamage(int wave) => Grow(wave, playerDamagePerWave, playerDamageMax);
+        public int MaxAttackers(int wave) =>
+            Mathf.Clamp(attackersBase + Mathf.Max(0, wave - 1) / Mathf.Max(1, wavesPerExtraAttacker), 1, Mathf.Max(1, attackersMax));
         public float PlayerMaxHealth(float baseHealth, int wave) =>
             Mathf.Min(Mathf.Max(baseHealth, playerHealthMax), baseHealth + Mathf.Max(0, wave - 1) * playerHealthPerWave);
 

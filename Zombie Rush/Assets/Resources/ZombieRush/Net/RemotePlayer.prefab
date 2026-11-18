@@ -17459,6 +17459,7 @@ GameObject:
   - component: {fileID: 1747323239543498558}
   - component: {fileID: 795364640623106685}
   - component: {fileID: 5948313710681965877}
+  - component: {fileID: 2681447410457114254}
   m_Layer: 0
   m_Name: RemotePlayer
   m_TagString: Player
@@ -17625,6 +17626,18 @@ MonoBehaviour:
   bodyAnimator: {fileID: 44198079317141684}
   aimRig: {fileID: 7319976180454942280}
   viewMode: {fileID: 3405654252378211243}
+--- !u!114 &2681447410457114254
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4845084184732867134}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a96343c376930654696057c1c0efe4e4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Weapons.GrenadeThrower
 --- !u!1 &4940374013194494109
 GameObject:
   m_ObjectHideFlags: 0

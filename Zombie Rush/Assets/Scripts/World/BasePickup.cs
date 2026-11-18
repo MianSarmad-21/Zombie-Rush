@@ -30,8 +30,11 @@ namespace ZombieRush.World
         [Header("Base tables")]
         [Tooltip("Network id, the same on every machine (set by Base Furnish). -1 = not synced.")]
         public int id = -1;
-        [Tooltip("Gone for good once a player takes it (a gun on a table).")]
+        [Tooltip("A gun on a table: taken, it leaves the table for the whole squad and comes back after regrabDelay, " +
+                 "so every player can take one (a player who already has the gun leaves it there).")]
         public bool takeOnce;
+        [Tooltip("Seconds until a taken table gun is back on the table (0 = gone for good).")]
+        public float regrabDelay = 3f;
         [Tooltip("Each player can take it once per life; it never disappears (the armour vest).")]
         public bool oncePerLife;
         [Tooltip("The model shown while it can be taken.")]
@@ -77,15 +80,29 @@ namespace ZombieRush.World
             if (byId.TryGetValue(id, out var p) && p != null) p.Take();
         }
 
+        /// The id's pickup comes back after a short while (its regrabDelay), or 0 if it is gone for good.
+        public static float RegrabDelayOf(int id) => byId.TryGetValue(id, out var p) && p != null ? p.regrabDelay : 0f;
+
+        float backAt = -1f;
+
         void Take()
         {
             taken = true;
+            backAt = takeOnce && regrabDelay > 0f ? Time.time + regrabDelay : -1f;
             if (display != null) display.SetActive(false);
             if (trigger != null) trigger.enabled = false;
         }
 
         void Update()
         {
+            if (taken && backAt > 0f && Time.time >= backAt)
+            {
+                // back on the table for the players who don't have this gun yet
+                taken = false;
+                backAt = -1f;
+                if (display != null) display.SetActive(true);
+                if (trigger != null) trigger.enabled = true;
+            }
             bool ready = Ready;
             if (display != null && !taken && display.activeSelf != ready) display.SetActive(ready);
             if (icon != null)
@@ -127,7 +144,9 @@ namespace ZombieRush.World
             if (kind == PickupKind.Weapon) GameEvents.RaiseNotice(label, gained);
             else UI.PickupToast.Show(gained, kind == PickupKind.Armor ? new Color(0.55f, 0.8f, 1f) : (Color?)null);
             var lib = Audio.SoundManager.Library;
-            if (lib != null) Audio.SoundManager.Play(lib.pickup, 0.8f);
+            if (lib != null)
+                Audio.SoundManager.Play(kind == PickupKind.Weapon ? lib.WeaponPickup : kind == PickupKind.Ammo ? lib.AmmoPickup : lib.GearPickup,
+                                        kind == PickupKind.Weapon ? 0.95f : 0.85f, 0.03f);
         }
 
         /// What the player got (for the on-screen message), or null if they didn't need it.

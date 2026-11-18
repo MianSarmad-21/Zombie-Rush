@@ -24,6 +24,9 @@ namespace ZombieRush.World
         public bool showRing = false;
         [Tooltip("Players can't shoot while inside the base (they can't be hurt there either).")]
         public bool noFiringInside = true;
+        [Tooltip("Seconds after stepping back in before the base protects a player: no peeking out the door to shoot and " +
+                 "ducking back in to dodge every hit. Zombies keep after the player until then.")]
+        public float reentryGrace = 1.5f;
         [Tooltip("Where players start (and come back after falling): inside the hall, facing the door. Set by the compound tool.")]
         public Transform playerStart;
 
@@ -111,7 +114,7 @@ namespace ZombieRush.World
 
         void Update()
         {
-            if (!BattleStarted)
+            if (!BattleStarted && !ZombieRush.Effects.IntroCutscene.Playing)   // the intro walks the player about: not a start
             {
                 foreach (var p in PlayerHealth.All)
                     if (p != null && !p.IsDead && !Contains(p.transform.position))

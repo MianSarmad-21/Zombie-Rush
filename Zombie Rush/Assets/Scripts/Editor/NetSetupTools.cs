@@ -48,6 +48,7 @@ namespace ZombieRush.EditorTools
             var netGo = new GameObject("NetPlayer");
             netGo.AddComponent<NetworkObject>();
             netGo.AddComponent<NetPlayer>();
+            netGo.AddComponent<GrenadeNet>();   // grenade throws and blasts for teammates
             var netPrefab = PrefabUtility.SaveAsPrefabAsset(netGo, netPath);
             Object.DestroyImmediate(netGo);
 

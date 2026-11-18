@@ -17,6 +17,7 @@ MonoBehaviour:
   damage: 25
   fireRate: 6
   range: 100
+  headshotMultiplier: 2
   unlimitedUses: 0
   magazineSize: 12
   maxReserveAmmo: 60
@@ -48,6 +49,9 @@ MonoBehaviour:
   gunKickBack: 0.035
   gunKickPitch: 5
   bodyKickPitch: 3
+  shakePerShot: 0.14
+  fovKick: 0.9
+  tracerEvery: 1
   idleSteady: 0.6
   fireSounds:
   - {fileID: 8300000, guid: ac60c97e875146c4e983f0658057f30f, type: 3}

@@ -15,6 +15,8 @@ namespace ZombieRush.Data
         public float damage = 25f;
         public float fireRate = 8f; // rounds per second
         public float range = 100f;
+        [Tooltip("Damage times this when the shot hits a zombie's head.")]
+        public float headshotMultiplier = 2f;
 
         [Header("Ammo")]
         public bool unlimitedUses = false;
@@ -87,6 +89,14 @@ namespace ZombieRush.Data
         public float gunKickPitch = 2f;
         [Tooltip("Third person: the upper body rocks back this many degrees per shot.")]
         public float bodyKickPitch = 2f;
+
+        [Header("Feel (per shot)")]
+        [Tooltip("Camera shake per shot (0-1; it adds up over a burst and settles quickly).")]
+        public float shakePerShot = 0.08f;
+        [Tooltip("Field of view kicked outward per shot, degrees (springs back at once; less while aiming).")]
+        public float fovKick = 0.6f;
+        [Tooltip("A tracer flies every this many shots (0 = never).")]
+        public int tracerEvery = 2;
 
         [Header("Steady hold")]
         [Tooltip("Standing still, how much of the idle clip's breathing is kept out (0 = all of it plays, 0.85 = only a small, smooth slice).")]

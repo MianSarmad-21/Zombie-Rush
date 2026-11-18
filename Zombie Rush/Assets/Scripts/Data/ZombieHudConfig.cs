@@ -61,6 +61,9 @@ namespace ZombieRush.Data
         public Color hitColor = new Color(0.97f, 0.95f, 0.90f, 1f);
         [Tooltip("The shot that kills.")]
         public Color killColor = new Color(0.96f, 0.72f, 0.24f, 1f);
+        [Tooltip("A shot to the head that does not kill.")]
+        public Color headshotColor = new Color(1f, 0.36f, 0.26f, 1f);
+        public int headshotFontSize = 40;
 
         [Header("Pools")]
         public int maxBars = 30;

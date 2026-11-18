@@ -114,6 +114,11 @@ namespace ZombieRush.Player
         /// True while crouched (drives the third-person body's crouch animation).
         public bool IsCrouching => isCrouching;
 
+        /// True while sprinting forward (the camera widens a little).
+        public bool IsSprinting { get; private set; }
+
+        bool wasGrounded = true;
+
         /// Look up/down angle, degrees (down is positive).
         public float Pitch => pitch;
 
@@ -138,7 +143,7 @@ namespace ZombieRush.Player
         /// Ignored inside the safe base, where nothing can touch the player.
         public void ApplySlow(float multiplier, float duration)
         {
-            if (health != null && (health.IsDead || health.InSafeBase)) return;
+            if (health != null && (health.IsDead || health.Protected)) return;
             if (slowTimer <= 0f || multiplier <= slowMultiplier) slowMultiplier = multiplier;
             slowTimer = Mathf.Max(slowTimer, duration);
             if (health != null && health == PlayerHealth.Instance) GameEvents.RaisePlayerSlowed(1f - slowMultiplier, slowTimer);
@@ -196,6 +201,7 @@ namespace ZombieRush.Player
             Vector2 input = GameInput.Move;
             if (GameInput.FireHeld) sprintBlockedUntil = Time.time + sprintBlockAfterFire;
             bool sprinting = GameInput.SprintHeld && !isCrouching && input.y > 0f && Time.time >= sprintBlockedUntil;
+            IsSprinting = sprinting && planarVelocity.sqrMagnitude > walkSpeed * walkSpeed * 0.8f;
             bool jumpPressed = GameInput.ConsumeJump(); // always consumed so a mid-air tap doesn't fire on landing
 
             if (slowTimer > 0f) slowTimer -= Time.deltaTime;
@@ -207,6 +213,7 @@ namespace ZombieRush.Player
 
             if (controller.isGrounded)
             {
+                if (!wasGrounded) Land(-verticalVelocity);
                 verticalVelocity = -1f;
                 if (jumpPressed && !isCrouching)
                     verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
@@ -222,6 +229,17 @@ namespace ZombieRush.Player
             planarVelocity = Vector3.MoveTowards(planarVelocity, targetPlanar, rate * Time.deltaTime);
             Vector3 velocity = planarVelocity + Vector3.up * verticalVelocity;
             controller.Move(velocity * Time.deltaTime);
+            wasGrounded = controller.isGrounded;
+        }
+
+        /// Touched down at `fallSpeed` m/s: a hard landing dips the view (and jolts it), harder ones more.
+        void Land(float fallSpeed)
+        {
+            var feel = ZombieRush.Data.FeelConfig.Current;
+            if (fallSpeed < feel.landingMinSpeed) return;
+            float k = Mathf.Clamp01((fallSpeed - feel.landingMinSpeed) / 8f) * 0.7f + 0.3f;
+            AddRecoil(-feel.landingDip * k, 0f);   // a negative kick: the view drops, then springs back
+            CameraShake.Add(0.15f * k);
         }
     }
 }

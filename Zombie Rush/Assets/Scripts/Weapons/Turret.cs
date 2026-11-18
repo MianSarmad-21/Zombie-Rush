@@ -187,7 +187,7 @@ namespace ZombieRush.Weapons
         void UpdateCombat()
         {
             if (Mirror) { yaw = net.Yaw; return; }
-            if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
+            if (!GameManager.IsWorldRunning) return;
 
             retargetTimer -= Time.deltaTime;
             if (retargetTimer <= 0f || target == null || target.IsDead || !target.isActiveAndEnabled)

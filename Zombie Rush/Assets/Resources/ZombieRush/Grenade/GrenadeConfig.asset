@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 77056afaf9972de4a94fadecb7de920c, type: 3}
+  m_Name: GrenadeConfig
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Data.GrenadeConfig
+  maxCarry: 3
+  startCount: 0
+  fuse: 3.5
+  explodeInHand: 1
+  minHold: 0.25
+  throwSpeed: 17
+  throwLift: 3.5
+  throwTime: 0.45
+  releaseAt: 0.38
+  bounciness: 0.32
+  friction: 0.7
+  rollDrag: 1.2
+  showArc: 1
+  arcColor: {r: 1, g: 0.82, b: 0.35, a: 0.75}
+  arcWidth: 0.035
+  arcSeconds: 2.2
+  radius: 7
+  zombieDamage: 320
+  playerDamage: 120
+  edgeDamage: 0.25
+  friendlyFire: 0
+  wallsBlock: 1
+  cameraShake: 1.1
+  shakeRange: 30
+  haptics: {x: 160, y: 255}
+  shockwaveColor: {r: 1, g: 0.7, b: 0.35, a: 0.8}
+  scorchSize: 3.2
+  chestChance: 0.33
+  pickupAmount: 1
+  pickupLifetime: 45
+  pinPull: {fileID: 8300000, guid: a2e078a7d022d9b42aa53eb6225d2f5d, type: 3}
+  spoon: {fileID: 8300000, guid: 19d84a59ab1503e428ae28b02e9bf571, type: 3}
+  throwSwing: {fileID: 8300000, guid: 7996f8e5d9e986a4b8e77aa924fa80f6, type: 3}
+  bounce:
+  - {fileID: 8300000, guid: b4a2c38b81948f14aa3655e64189dc83, type: 3}
+  - {fileID: 8300000, guid: 5598308136f02fb4bb6f45f85c64e85b, type: 3}
+  - {fileID: 8300000, guid: e2686b281cf298f49a52caeb1911ade0, type: 3}
+  explode:
+  - {fileID: 8300000, guid: 8b96addd00c8786438b1da90c65844b2, type: 3}
+  - {fileID: 8300000, guid: c43833f66cd77dc4c8ac01c90c78c7bd, type: 3}
+  - {fileID: 8300000, guid: f7849b2a463e3e249840b55dbb854885, type: 3}
+  explodeVolume: 1
+  explodeDistance: 90
+  projectilePrefab: {fileID: 7937696736843851610, guid: 510649b6affb779458867e93a4d17782, type: 3}
+  pickupPrefab: {fileID: 640580588470776974, guid: e17b933691e98d644908cf2f80dd26b8, type: 3}
+  heldPrefab: {fileID: 1531635937663958689, guid: 8ca1f2ad1b9e2be48a28570c5d1201e1, type: 3}
+  fpHoldPosition: {x: 0.17, y: -0.15, z: 0.36}
+  fpHoldEuler: {x: -20, y: 25, z: -10}
+  fpGunDip: 32

@@ -96,14 +96,16 @@ namespace ZombieRush.Player
             mover.AddRecoil(weapon.data.recoilUp * k * Random.Range(0.85f, 1.15f), weapon.data.recoilSide * k * Random.Range(-1f, 1f));
         }
 
-        public void SelectWeapon(int index)
+        public void SelectWeapon(int index) => SelectWeapon(index, drawSound: true);
+
+        public void SelectWeapon(int index, bool drawSound)
         {
             if (index < 0 || index >= weapons.Length || index == currentIndex || !unlocked[index]) return;
             currentIndex = index;
             readyAt = Time.time + equipTime;
             // Draw sound for this player's own switches; none on the level's first equip or on a teammate's copy.
             var lib = Audio.SoundManager.Library;
-            if (!remote && lib != null && Time.timeSinceLevelLoad > 0.5f) Audio.SoundManager.Play(lib.weaponDraw, lib.weaponDrawVolume, 0.05f);
+            if (drawSound && !remote && lib != null && Time.timeSinceLevelLoad > 0.5f) Audio.SoundManager.Play(lib.weaponDraw, lib.weaponDrawVolume, 0.05f);
             UpdateWeaponVisibility();
             RaiseAmmoStatus(force: true);
         }
@@ -126,7 +128,7 @@ namespace ZombieRush.Player
             int i = IndexOf(data);
             if (i < 0 || unlocked[i]) return false;
             unlocked[i] = true;
-            SelectWeapon(i);
+            SelectWeapon(i, drawSound: false);   // the pickup plays its own grab-and-rack sound
             return true;
         }
 

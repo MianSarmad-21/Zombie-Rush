@@ -25,6 +25,17 @@ namespace ZombieRush.Player
 
         /// The local player's switcher (HUD reads it).
         public static PlayerViewSwitcher Local { get; private set; }
+
+        static float fovKick;   // degrees the view is kicked outward by recent shots; springs back
+        float sprintWiden;      // 0..1, eased in while sprinting
+        PlayerController mover;
+
+        /// A shot kicks the field of view outward by `degrees` (FeelConfig caps and settles it).
+        public static void KickFov(float degrees)
+        {
+            if (degrees <= 0f) return;
+            fovKick = Mathf.Min(ZombieRush.Data.FeelConfig.Current.fovKickMax, fovKick + degrees);
+        }
         public static event Action<CharacterView> Changed;
 
         CharacterView view;
@@ -177,7 +188,12 @@ namespace ZombieRush.Player
             float aimScale = hasScope
                 ? 2f * Mathf.Atan(Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad) / Mathf.Max(1f, gunData.scopeZoom)) * Mathf.Rad2Deg / Mathf.Max(1f, fov)
                 : gunData != null ? gunData.aimZoom : config != null ? config.aimFovScale : 0.8f;
-            playerCamera.fieldOfView = fov * Mathf.Lerp(1f, aimScale, aim);
+            var feel = ZombieRush.Data.FeelConfig.Current;
+            fovKick = Mathf.MoveTowards(fovKick, 0f, feel.fovKickRecovery * dt);
+            if (mover == null) mover = GetComponent<PlayerController>();
+            sprintWiden = Mathf.MoveTowards(sprintWiden, mover != null && mover.IsSprinting && aim < 0.01f ? 1f : 0f, dt * 4f);
+            float widen = feel.sprintFov * sprintWiden * sprintWiden * (3f - 2f * sprintWiden);
+            playerCamera.fieldOfView = fov * Mathf.Lerp(1f, aimScale, aim) + fovKick * (1f - 0.75f * aim) + widen;   // shot kick (less while aiming), sprint widen
             float baseFov = config != null ? Mathf.Max(1f, config.firstPersonFov) : 72f;
             ViewmodelZoom = fov * Mathf.Lerp(1f, hasScope ? gunData.aimZoom : aimScale, aim) / baseFov;
             bool wantGuns = view == CharacterView.FirstPerson || ScopedAtEye;

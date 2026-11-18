@@ -87,6 +87,15 @@ namespace ZombieRush.World
 
         void SetStage(Stage s) { stage = s; stageTime = 0f; }
 
+        /// Left unopened too long (ChestSpawner): it sinks away, the same on every machine.
+        public void Expire()
+        {
+            if (stage != Stage.Locked) return;
+            if (ChestPrompt.Target == this) ChestPrompt.Hide(this);
+            Progress = 0f;
+            SetStage(Stage.Sinking);
+        }
+
         // ---------------------------------------------------------------- 1. hold to open, the lock rattles
 
         void UpdateLocked(float dt)
@@ -233,6 +242,18 @@ namespace ZombieRush.World
                 }
                 if (go == null) continue;
                 ChestLootFlight.Launch(go, start, land, 0.55f + i * 0.08f, 1.1f + i * 0.15f);
+            }
+
+            // a frag grenade too, in about one chest in three (GrenadeConfig.chestChance). Rolled after the other loot,
+            // so their rolls (the same on every machine, seeded from the chest's spot) don't change.
+            var grenadeCfg = GrenadeConfig.Get();
+            if (grenadeCfg != null && rng.NextDouble() < grenadeCfg.chestChance)
+            {
+                Vector3 gdir = Quaternion.Euler(0f, 85f, 0f) * transform.forward;
+                Vector3 gland = transform.position + gdir * 1.5f;
+                if (Physics.Raycast(gland + Vector3.up * 2f, Vector3.down, out var ghit, 5f, ~0, QueryTriggerInteraction.Ignore)) gland = ghit.point;
+                var grenade = GrenadePickup.Spawn(transform.position);
+                if (grenade != null) ChestLootFlight.Launch(grenade, start, gland, 0.55f + kinds.Count * 0.08f, 1.1f + kinds.Count * 0.15f);
             }
         }
 

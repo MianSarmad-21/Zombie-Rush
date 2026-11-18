@@ -27,12 +27,26 @@ namespace ZombieRush.Player
         /// Counts lives: goes up each time the player is revived (the base's armour vest is one per life).
         public int Life { get; private set; }
 
-        /// Inside the safe base: zombies can't reach or hurt this player.
+        /// Inside the safe base (not necessarily protected yet: see Protected).
         public bool InSafeBase => SafeBase.Instance != null && SafeBase.Instance.Contains(transform.position);
+
+        /// Inside the safe base for at least its reentryGrace: zombies can't hurt or target this player.
+        /// Right after stepping back in the player is still fair game (no doorway peeking).
+        public bool Protected => InSafeBase && Time.time - enteredBaseAt >= (SafeBase.Instance != null ? SafeBase.Instance.reentryGrace : 0f);
+
+        float enteredBaseAt = float.NegativeInfinity;   // the match starts inside: protected at once
+        bool wasInBase = true;
+
+        void Update()
+        {
+            bool inside = InSafeBase;
+            if (inside && !wasInBase) enteredBaseAt = Time.time;
+            wasInBase = inside;
+        }
 
         /// Set on a teammate's copy (multiplayer): damage dealt to the copy (on the host) is sent to the
         /// player who owns it instead of being applied here. Null on the local player.
-        public System.Action<float> forwardDamage;
+        public System.Action<float, Vector3?> forwardDamage;   // amount, where it came from (null = not known)
         public bool IsRemoteCopy => forwardDamage != null;
 
         /// A teammate's copy: mirrors the owner's health and death.
@@ -80,6 +94,7 @@ namespace ZombieRush.Player
             IsDead = false;
             Life++;
             CurrentHealth = maxHealth;
+            enteredBaseAt = float.NegativeInfinity; wasInBase = true;   // back at the start point: protected at once
             var sb = SafeBase.Instance;
             if (sb != null)
             {
@@ -107,10 +122,15 @@ namespace ZombieRush.Player
             RaiseHealth();
         }
 
-        public void TakeDamage(float amount)
+        public void TakeDamage(float amount) => TakeDamage(amount, null);
+
+        /// `source`: where the hit came from (the zombie), for the damage direction arrows. Null = not known
+        /// (poison ticks), no arrow.
+        public void TakeDamage(float amount, Vector3? source)
         {
-            if (IsDead || amount <= 0f || InSafeBase) return;
-            if (forwardDamage != null) { forwardDamage(amount); return; }
+            if (IsDead || amount <= 0f || Protected) return;
+            if (forwardDamage != null) { forwardDamage(amount, source); return; }
+            if (source.HasValue && this == Instance) GameEvents.RaisePlayerHurtFrom(source.Value, amount);
 
             if (CurrentArmor > 0f)
             {

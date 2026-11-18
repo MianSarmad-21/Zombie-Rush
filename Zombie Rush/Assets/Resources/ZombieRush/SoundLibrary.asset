@@ -21,6 +21,9 @@ MonoBehaviour:
   reload: {fileID: 8300000, guid: 265a45da7bd697741ba1b73e58ffe196, type: 3}
   emptyClick: {fileID: 8300000, guid: ef636e45d3c8b374bbf2d2fad51f0d21, type: 3}
   pickup: {fileID: 8300000, guid: 016396ca845a53f4e98465d5188f75cf, type: 3}
+  weaponPickup: {fileID: 8300000, guid: f221570d91da1c54c977e3ee40568c9d, type: 3}
+  ammoPickup: {fileID: 8300000, guid: df54be1178f6666449716aa8f71dc420, type: 3}
+  gearPickup: {fileID: 8300000, guid: b831661fd1ea8324799de1c01de14c5a, type: 3}
   turretShot:
   - {fileID: 8300000, guid: 9e9314b9453fc1f42871b7d6d57fdea3, type: 3}
   - {fileID: 8300000, guid: 4f5d0c3110d58d347b91c3ad951a194e, type: 3}

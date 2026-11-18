@@ -35,7 +35,7 @@ namespace ZombieRush.UI
         // Awake/OnDestroy, not OnEnable/OnDisable: this component disables itself when idle.
         void Awake()
         {
-            GameEvents.OnPlayerDied += HandlePlayerDied;
+            GameEvents.OnGameStateChanged += HandleGameState;
             GameEvents.OnZombieKilled += HandleZombieKilled;
             if (restartButton != null) restartButton.onClick.AddListener(Restart);
             if (menuButton != null) menuButton.onClick.AddListener(ToMenu);
@@ -44,8 +44,15 @@ namespace ZombieRush.UI
 
         void OnDestroy()
         {
-            GameEvents.OnPlayerDied -= HandlePlayerDied;
+            GameEvents.OnGameStateChanged -= HandleGameState;
             GameEvents.OnZombieKilled -= HandleZombieKilled;
+        }
+
+        // The results show when the match is over (solo death, or the whole squad down), not when a squad
+        // member is only down until the next wave.
+        void HandleGameState(GameState state)
+        {
+            if (state == GameState.GameOver) ShowResults();
         }
 
         static void Restart() { if (GameManager.Instance != null) GameManager.Instance.RestartLevel(); }
@@ -57,7 +64,7 @@ namespace ZombieRush.UI
             coinsEarned += info.Coins;
         }
 
-        void HandlePlayerDied()
+        void ShowResults()
         {
             var gm = GameManager.Instance;
             int wave = gm != null ? gm.ReachedWave : 0;

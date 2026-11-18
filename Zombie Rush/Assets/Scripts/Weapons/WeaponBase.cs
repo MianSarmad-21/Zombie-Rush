@@ -87,16 +87,49 @@ namespace ZombieRush.Weapons
                 return false;
             }
 
-            nextFireTime = Time.time + 1f / Mathf.Max(0.01f, data.fireRate);
+            // With the trigger held, the next shot is timed from the last one, not from this frame: otherwise a
+            // frame rate that doesn't divide the fire rate (30 fps) loses part of every interval and slows the gun.
+            float interval = 1f / Mathf.Max(0.01f, data.fireRate);
+            nextFireTime = Time.time - nextFireTime < interval ? nextFireTime + interval : Time.time + interval;
             if (!data.unlimitedUses) magazine--;
 
+            shotNumber++;
             Fire();
             bloom = Mathf.Min(bloom + data.spreadPerShot, data.spreadMax);
             var lib = SoundManager.Library;
             var shot = data.fireSounds != null && data.fireSounds.Length > 0 ? data.fireSounds : lib != null ? lib.gunshot : null;
             SoundManager.Play(shot, data.fireVolume, 0.05f);
             Fired?.Invoke();
+            // the shot is felt: the camera jolts, the view kicks outward, the phone taps (TryUse is the local player's own gun)
+            CameraShake.Add(data.shakePerShot);
+            PlayerViewSwitcher.KickFov(data.fovKick);
+            Haptics.Tap(FeelConfig.Current.shotTap);
             return true;
+        }
+
+        int shotNumber;     // shots fired, for "a tracer every N shots"
+        int volleyImpacts;  // impacts shown for the current shotgun blast
+
+        /// A tracer from the gun to where this shot ended (every data.tracerEvery shots; never for shotgun pellets).
+        void Tracer(Vector3 origin, Vector3 direction, Vector3 end)
+        {
+            if (inVolley || data.tracerEvery <= 0 || shotNumber % data.tracerEvery != 0) return;
+            Vector3 from;
+            if (viewSwitcher != null && viewSwitcher.IsThirdPerson) from = origin + direction * 0.6f;
+            else
+            {
+                // first person: the gun is drawn by its own camera, so start just below and right of the view, where it sits
+                var t = playerCamera.transform;
+                from = t.position + t.forward * 0.7f + t.right * 0.09f - t.up * 0.08f;
+            }
+            ZombieRush.Effects.TracerEffect.Fire(from, end);
+        }
+
+        /// Sparks, dust and a bullet hole where a shot hit the world (a shotgun blast shows only a few).
+        void Impact(RaycastHit hit, Vector3 direction)
+        {
+            if (inVolley && volleyImpacts++ >= FeelConfig.Current.shotgunImpacts) return;
+            ZombieRush.Effects.ImpactEffect.Spawn(hit, direction);
         }
 
         protected abstract void Fire();
@@ -159,15 +192,69 @@ namespace ZombieRush.Weapons
 
         /// Hitscan along `direction` from the camera, damaging the first IDamageable hit.
         /// Flies through the base compound (ShootThrough), so players in the safe base can hit zombies outside.
+        /// A shot to the head does data.headshotMultiplier times the damage.
         protected void HitScan(Vector3 direction, float damage)
         {
             var origin = playerCamera.transform.position;
             if (viewSwitcher != null) origin = viewSwitcher.AimOrigin(origin, direction);
-            if (!ZombieRush.World.ShootThrough.Raycast(origin, direction, out var hit, data.range, hitMask)) return;
+            direction = direction.normalized;
+            bool solid = ZombieRush.World.ShootThrough.Raycast(origin, direction, out var hit, data.range, hitMask);
+            float solidDistance = solid ? Vector3.Distance(origin, hit.point) : data.range;
+
+            // A head in front of whatever the ray hit (a hunched zombie's head sticks out of its body capsule).
+            var headZombie = ZombieRush.Zombie.ZombieHealth.FirstHeadAlong(origin, direction, solidDistance, out float headDistance);
+            if (headZombie != null)
+            {
+                float headDamage = damage * Mathf.Max(1f, data.headshotMultiplier);
+                Vector3 at = origin + direction * headDistance;
+                Tracer(origin, direction, at);
+                if (inVolley) AddToVolley(headZombie, headDamage, at, direction, true);
+                else headZombie.TakeHit(headDamage, true, at, direction, true);
+                return;
+            }
+            Tracer(origin, direction, origin + direction * solidDistance);
+            if (!solid) return;
 
             var zombie = hit.collider.GetComponentInParent<ZombieRush.Zombie.ZombieHealth>();
-            if (zombie != null) { zombie.TakeHit(damage, true, hit.point, direction); return; }
-            hit.collider.GetComponentInParent<IDamageable>()?.TakeDamage(damage);
+            if (zombie != null)
+            {
+                bool head = zombie.IsHeadshot(origin, direction);
+                if (head) damage *= Mathf.Max(1f, data.headshotMultiplier);
+                if (inVolley) AddToVolley(zombie, damage, hit.point, direction, head);
+                else zombie.TakeHit(damage, true, hit.point, direction, head);
+                return;
+            }
+            var target = hit.collider.GetComponentInParent<IDamageable>();
+            if (target != null) target.TakeDamage(damage);
+            Impact(hit, direction);
+        }
+
+        // ---- volleys: every pellet of one shotgun shot that hits the same zombie lands as ONE hit (one damage
+        // number, one sound and blood burst, one network message), with the pellets' damage added up.
+        struct VolleyHit { public float damage; public Vector3 point, direction; public bool head; }
+        static readonly System.Collections.Generic.Dictionary<ZombieRush.Zombie.ZombieHealth, VolleyHit> volley =
+            new System.Collections.Generic.Dictionary<ZombieRush.Zombie.ZombieHealth, VolleyHit>();
+        static readonly System.Collections.Generic.List<(ZombieRush.Zombie.ZombieHealth zombie, VolleyHit hit)> volleyApply =
+            new System.Collections.Generic.List<(ZombieRush.Zombie.ZombieHealth, VolleyHit)>();
+        bool inVolley;
+
+        protected void BeginVolley() { volley.Clear(); inVolley = true; volleyImpacts = 0; }
+
+        void AddToVolley(ZombieRush.Zombie.ZombieHealth zombie, float damage, Vector3 point, Vector3 direction, bool head)
+        {
+            if (volley.TryGetValue(zombie, out var v)) { v.damage += damage; v.head |= head; volley[zombie] = v; }
+            else volley[zombie] = new VolleyHit { damage = damage, point = point, direction = direction, head = head };
+        }
+
+        protected void EndVolley()
+        {
+            inVolley = false;
+            volleyApply.Clear();
+            foreach (var kv in volley) volleyApply.Add((kv.Key, kv.Value));
+            volley.Clear();
+            foreach (var (zombie, v) in volleyApply)
+                if (zombie != null) zombie.TakeHit(v.damage, true, v.point, v.direction, v.head);
+            volleyApply.Clear();
         }
     }
 }
