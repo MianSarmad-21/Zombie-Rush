@@ -57,12 +57,7 @@ namespace ZombieRush.Zombie
         {
             get
             {
-                if (!headLooked)
-                {
-                    headLooked = true;
-                    var an = GetComponentInChildren<Animator>(true);
-                    if (an != null && an.isHuman) headBone = an.GetBoneTransform(HumanBodyBones.Head);
-                }
+                LookUpHead();
                 if (headBone != null)
                 {
                     float size = controller != null ? controller.height * transform.lossyScale.y / 1.85f : 1f;
@@ -71,6 +66,61 @@ namespace ZombieRush.Zombie
                 if (controller == null) return transform.position + Vector3.up * 1.9f;
                 return transform.position + Vector3.up * ((controller.center.y + controller.height * 0.5f) * transform.lossyScale.y);
             }
+        }
+
+        void LookUpHead()
+        {
+            if (headLooked) return;
+            headLooked = true;
+            var an = GetComponentInChildren<Animator>(true);
+            if (an != null && an.isHuman) headBone = an.GetBoneTransform(HumanBodyBones.Head);
+        }
+
+        [Tooltip("Radius of the head for headshots, metres, for a 1.85 m zombie (grows with bigger zombies).")]
+        public float headRadius = 0.17f;
+
+        /// The last hit landed on the head (damage numbers show it).
+        public bool LastHitWasHeadshot { get; private set; }
+
+        /// True when a shot along this ray passes through the head.
+        public bool IsHeadshot(Vector3 origin, Vector3 direction) => RayHitsHead(origin, direction, out _);
+
+        /// The head is a sphere round the head bone, tested by maths rather than a collider: the body collider is
+        /// one upright capsule, and a hunched zombie's head sticks out in front of it, where a collider would also
+        /// get in the way of its own movement. `distance` = where the ray enters the head.
+        public bool RayHitsHead(Vector3 origin, Vector3 direction, out float distance)
+        {
+            distance = 0f;
+            if (IsDead) return false;
+            LookUpHead();
+            float size = controller != null ? controller.height * transform.lossyScale.y / 1.85f : 1f;
+            Vector3 centre = headBone != null
+                ? headBone.position + Vector3.up * (skullHeight * size * 0.5f)
+                : HeadPosition - Vector3.up * 0.12f * size;
+            float r = headRadius * size;
+            Vector3 d = direction.normalized, oc = origin - centre;
+            float b = Vector3.Dot(oc, d), c = oc.sqrMagnitude - r * r;
+            float disc = b * b - c;
+            if (disc < 0f) return false;
+            float root = Mathf.Sqrt(disc);
+            float t = -b - root;
+            if (t < 0f) t = -b + root;   // starts inside the head
+            if (t < 0f) return false;
+            distance = t;
+            return true;
+        }
+
+        /// The zombie whose head a shot along this ray enters first, within `maxDistance` (null if none).
+        public static ZombieHealth FirstHeadAlong(Vector3 origin, Vector3 direction, float maxDistance, out float distance)
+        {
+            ZombieHealth best = null;
+            distance = maxDistance;
+            foreach (var z in Active)
+            {
+                if (z == null || z.IsDead || !z.RayHitsHead(origin, direction, out float t) || t >= distance) continue;
+                best = z; distance = t;
+            }
+            return best;
         }
 
         void OnEnable()
@@ -128,6 +178,52 @@ namespace ZombieRush.Zombie
                 Anim.Animator.enabled = true;
                 if (visualRoot != null) visualRoot.localRotation = visualRootLocalRotation;
             }
+            if (headPopped && headBone != null) headBone.localScale = headScale;   // a pooled zombie gets its head back
+            headPopped = false;
+        }
+
+        // ---- headshot kills: the head comes off (its bone shrunk to nothing) in a burst of blood
+        bool headPopped;
+        Vector3 headScale = Vector3.one;
+
+        void PopHead()
+        {
+            if (headPopped || !FeelConfig.Current.headshotGore) return;
+            LookUpHead();
+            if (headBone == null) return;
+            Vector3 at = headBone.position + Vector3.up * 0.08f;
+            headScale = headBone.localScale;
+            headBone.localScale = Vector3.one * 0.001f;
+            headPopped = true;
+            BloodEffect.Spawn(at, Vector3.up + lastHitDir.normalized * 0.6f);
+            BloodEffect.Spawn(at, Vector3.up + Random.insideUnitSphere * 0.8f);
+            BloodEffect.Spawn(at, lastHitDir.sqrMagnitude > 1e-4f ? lastHitDir : Vector3.up);
+        }
+
+        // ---- the corpse slides back along the killing shot (a shotgun blast throws it, a pistol barely moves it)
+        float lastHitAmount;
+
+        IEnumerator DeathSlide()
+        {
+            var feel = FeelConfig.Current;
+            Vector3 dir = lastHitDir; dir.y = 0f;
+            float dist = Mathf.Min(feel.deathSlideMax, lastHitAmount * feel.deathSlidePerDamage / Mathf.Max(1f, Mathf.Max(1f, Config.maxHealth) / 100f));
+            if (dir.sqrMagnitude < 1e-4f || dist < 0.05f) yield break;
+            dir.Normalize();
+            // stop short of walls and props (the corpse's own colliders are already off)
+            if (Physics.SphereCast(transform.position + Vector3.up * 0.6f, 0.25f, dir, out var hit, dist, ~0, QueryTriggerInteraction.Ignore)
+                && hit.collider.GetComponentInParent<ZombieHealth>() == null)
+                dist = Mathf.Max(0f, hit.distance - 0.15f);
+            const float time = 0.35f;
+            float t = 0f, done = 0f;
+            while (t < time && dist > 0f)
+            {
+                t += Time.deltaTime;
+                float k = 1f - (1f - Mathf.Clamp01(t / time)) * (1f - Mathf.Clamp01(t / time));   // ease out
+                transform.position += dir * (dist * k - done);
+                done = dist * k;
+                yield return null;
+            }
         }
 
         public void TakeDamage(float amount) => TakeDamage(amount, true);
@@ -165,9 +261,10 @@ namespace ZombieRush.Zombie
         }
 
         /// Mirror: the host says it died. Same look as a real death; the host removes it later.
-        public void NetDie()
+        public void NetDie(bool headPop = false)
         {
             if (IsDead) return;
+            if (headPop) PopHead();
             CurrentHealth = 0f;
             IsDead = true;
             Died?.Invoke(this);
@@ -180,16 +277,22 @@ namespace ZombieRush.Zombie
         }
 
         /// A hit at a point on the body, by a shot travelling along `direction` (blood sprays along it).
-        public void TakeHit(float amount, bool byPlayer, Vector3 point, Vector3 direction)
+        public void TakeHit(float amount, bool byPlayer, Vector3 point, Vector3 direction) => TakeHit(amount, byPlayer, point, direction, false);
+
+        /// headshot: the damage already includes the gun's headshot bonus; this only marks it (feedback).
+        public void TakeHit(float amount, bool byPlayer, Vector3 point, Vector3 direction, bool headshot)
         {
             if (IsDead) return;
             lastHitPoint = point; lastHitDir = direction;
+            LastHitWasHeadshot = headshot;
+            lastHitAmount = amount;
 
             if (Mirror)
             {
                 // a joined player's shot: show it here at once, the host applies the damage
-                net.ClientHit(amount, point, direction);
+                net.ClientHit(amount, point, direction, headshot);
                 if (byPlayer) GameEvents.RaiseEnemyHit();
+                if (byPlayer && headshot) GameEvents.RaiseHeadshot();
                 LocalHitFx(point, direction);
                 AnyDamaged?.Invoke(this, amount, byPlayer);
                 return;
@@ -198,6 +301,7 @@ namespace ZombieRush.Zombie
 
             CurrentHealth -= amount;
             if (byPlayer) GameEvents.RaiseEnemyHit();
+            if (byPlayer && headshot) GameEvents.RaiseHeadshot();
             var lib = SoundManager.Library;
             if (lib != null)
             {
@@ -205,11 +309,24 @@ namespace ZombieRush.Zombie
                 if (CurrentHealth > 0f) SoundManager.PlayAt(lib.zombieHurt, transform.position + Vector3.up * 1.6f, 0.8f, 30f, 2);
             }
             BloodEffect.Spawn(point, direction);
+            if (CurrentHealth > 0f) React(amount, direction, headshot);
 
             if (CurrentHealth <= 0f) Die(true);
             else Anim.TriggerHit();
             if (net != null) { net.PushHealth(); net.BroadcastHit(point, direction); }
             AnyDamaged?.Invoke(this, amount, byPlayer);
+        }
+
+        /// The hit shoves the zombie back along the shot and, if it was a solid one (or to the head), makes it
+        /// reel for a moment. Tougher zombies (more base health) are pushed less: a Horror shrugs off a pistol.
+        void React(float amount, Vector3 direction, bool headshot)
+        {
+            if (ai == null || !ai.enabled || direction.sqrMagnitude < 1e-4f) return;
+            var feel = FeelConfig.Current;
+            float baseHealth = Mathf.Max(1f, Config.maxHealth);
+            float push = Mathf.Min(feel.maxKnock, amount * feel.knockPerDamage / Mathf.Max(1f, baseHealth / 100f));
+            float stagger = headshot ? feel.headshotStagger : amount >= baseHealth * 0.15f ? feel.staggerTime : 0f;
+            ai.Knock(direction.normalized * push, stagger);
         }
 
         /// Kills the zombie outright. reward = false drops no coins or ammo (a Bomber that
@@ -230,6 +347,7 @@ namespace ZombieRush.Zombie
             foreach (var col in colliders) col.enabled = false;
 
             if (bleedsOnDeath) BloodEffect.SpawnDeath(lastHitPoint == Vector3.zero ? transform.position + Vector3.up * 0.8f : lastHitPoint, lastHitDir);
+            if (LastHitWasHeadshot && reward) PopHead();
             var lib = SoundManager.Library;
             if (lib != null) SoundManager.PlayAt(lib.zombieDeath, transform.position + Vector3.up * 1.4f, 1f, 35f, 3);
 
@@ -243,6 +361,7 @@ namespace ZombieRush.Zombie
             else GameEvents.RaiseZombieKilled(killed);
 
             deathRoutine = StartCoroutine(DeathRoutine(!Anim.TriggerDie()));
+            if (reward) StartCoroutine(DeathSlide());
         }
 
         IEnumerator DeathRoutine(bool collapse)

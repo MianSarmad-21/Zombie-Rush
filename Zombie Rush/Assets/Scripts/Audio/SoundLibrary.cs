@@ -28,6 +28,16 @@ namespace ZombieRush.Audio
         public AudioClip reload;
         public AudioClip emptyClick;
         public AudioClip pickup;
+        [Tooltip("Taking a gun from a table: a strap grab then a bolt rack (Blender/sfx_pickups.py). Empty = pickup.")]
+        public AudioClip weaponPickup;
+        [Tooltip("Ammo box: a magazine clack. Empty = pickup.")]
+        public AudioClip ammoPickup;
+        [Tooltip("Health and armour: a belt and latch. Empty = pickup.")]
+        public AudioClip gearPickup;
+
+        public AudioClip WeaponPickup => weaponPickup != null ? weaponPickup : pickup;
+        public AudioClip AmmoPickup => ammoPickup != null ? ammoPickup : pickup;
+        public AudioClip GearPickup => gearPickup != null ? gearPickup : pickup;
         [Tooltip("Played when the player switches guns.")]
         public AudioClip[] weaponDraw;
         [Range(0f, 1f)] public float weaponDrawVolume = 0.5f;

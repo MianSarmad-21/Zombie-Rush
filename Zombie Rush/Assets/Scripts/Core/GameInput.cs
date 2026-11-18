@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace ZombieRush.Core
 {
-    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause, Turret, ToggleView, Aim, ShoulderSwap, Interact } // append only: stored as ints in the scene
+    public enum TouchAction { Fire, Reload, Jump, Crouch, SwapWeapon, ExpandZone, Pause, Turret, ToggleView, Aim, ShoulderSwap, Interact, Grenade } // append only: stored as ints in the scene
 
     /// The one place gameplay reads input from. Keyboard/mouse comes from the
     /// legacy Input Manager; the on-screen touch widgets write into this class.
@@ -17,7 +17,7 @@ namespace ZombieRush.Core
 
         static Vector2 touchMove;
         static Vector2 touchLookPixels;
-        static bool touchFireHeld, touchAimHeld, touchInteractHeld;
+        static bool touchFireHeld, touchAimHeld, touchInteractHeld, touchGrenadeHeld;
         static bool touchCrouchToggled;
         static bool reloadQueued, jumpQueued, swapQueued, expandQueued, pauseQueued, turretQueued, viewQueued, shoulderQueued;
 
@@ -49,6 +49,7 @@ namespace ZombieRush.Core
                 case TouchAction.Aim: touchAimHeld = !touchAimHeld; break;   // a toggle on touch: the fire thumb stays free
                 case TouchAction.ShoulderSwap: shoulderQueued = true; break;
                 case TouchAction.Interact: touchInteractHeld = true; break;
+                case TouchAction.Grenade: touchGrenadeHeld = true; break;
             }
         }
 
@@ -56,6 +57,7 @@ namespace ZombieRush.Core
         {
             if (action == TouchAction.Fire) touchFireHeld = false;
             if (action == TouchAction.Interact) touchInteractHeld = false;
+            if (action == TouchAction.Grenade) touchGrenadeHeld = false;
         }
 
         public static bool TouchCrouchActive => touchCrouchToggled;
@@ -70,6 +72,7 @@ namespace ZombieRush.Core
             touchFireHeld = false;
             touchAimHeld = false;
             touchInteractHeld = false;
+            touchGrenadeHeld = false;
             ClearQueued();
         }
 
@@ -109,7 +112,14 @@ namespace ZombieRush.Core
             return look;
         }
 
-        public static bool FireHeld => touchFireHeld || (MouseActive && Input.GetMouseButton(0));
+        public static bool FireHeld => !FireBlocked && (touchFireHeld || (MouseActive && Input.GetMouseButton(0)));
+
+        /// Set while a grenade is cooked or thrown: the gun holds fire (GrenadeThrower).
+        public static bool FireBlocked;
+
+        /// Grenade: hold G (or the touch grenade button) to pull the pin and cook, let go to throw.
+        public static bool GrenadeHeld => touchGrenadeHeld || Input.GetKey(GrenadeKey);
+        public const KeyCode GrenadeKey = KeyCode.G;
 
         /// Aiming: the camera moves in and narrows its view (hold the right mouse button, or tap the touch aim button on/off).
         public static bool AimHeld => touchAimHeld || (MouseActive && Input.GetMouseButton(1));

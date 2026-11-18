@@ -62,7 +62,7 @@ namespace ZombieRush.World
             }
             UI.PickupToast.Show(msg, color);
             var lib = Audio.SoundManager.Library;
-            if (lib != null) Audio.SoundManager.Play(lib.pickup, 0.8f);
+            if (lib != null) Audio.SoundManager.Play(lib.GearPickup, 0.85f, 0.04f);
             Destroy(gameObject);
         }
     }

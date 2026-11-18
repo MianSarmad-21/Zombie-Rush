@@ -18,8 +18,10 @@ namespace ZombieRush.Weapons
         protected override void Fire()
         {
             float cone = SpreadDegrees;
+            BeginVolley();   // pellets on the same zombie add up into one hit
             for (int i = 0; i < pelletCount; i++)
                 HitScan(SpreadDirection(cone), data.damage * ZombieRush.Core.WaveScaling.PlayerDamage);   // each pellet somewhere in the cone
+            EndVolley();
         }
     }
 }

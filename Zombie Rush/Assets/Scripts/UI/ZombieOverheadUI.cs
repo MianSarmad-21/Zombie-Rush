@@ -44,6 +44,7 @@ namespace ZombieRush.UI
             public Vector3 world;
             public Vector2 scatter;
             public float amount, age;
+            public bool headshot;
         }
 
         readonly Dictionary<ZombieHealth, Bar> bars = new Dictionary<ZombieHealth, Bar>();
@@ -233,6 +234,7 @@ namespace ZombieRush.UI
                 if (p.zombie != zombie || p.age > config.mergeWindow) continue;
                 p.amount += amount;
                 p.age = 0f;
+                p.headshot |= byPlayer && zombie.LastHitWasHeadshot;
                 Style(p, zombie.IsDead);
                 return;
             }
@@ -245,6 +247,7 @@ namespace ZombieRush.UI
             popup.scatter.y = Mathf.Abs(popup.scatter.y) * 0.5f + 18f; // sit just above the bar
             popup.amount = amount;
             popup.age = 0f;
+            popup.headshot = byPlayer && zombie.LastHitWasHeadshot;
             popup.rt.SetAsLastSibling();
             Style(popup, zombie.IsDead);
             popups.Add(popup);
@@ -253,8 +256,8 @@ namespace ZombieRush.UI
         void Style(Popup p, bool kill)
         {
             p.text.text = Mathf.Max(1, Mathf.RoundToInt(p.amount)).ToString();
-            p.text.fontSize = kill ? config.killFontSize : config.fontSize;
-            p.text.color = kill ? config.killColor : config.hitColor;
+            p.text.fontSize = kill ? config.killFontSize : p.headshot ? config.headshotFontSize : config.fontSize;
+            p.text.color = kill ? config.killColor : p.headshot ? config.headshotColor : config.hitColor;
         }
 
         void UpdatePopups()

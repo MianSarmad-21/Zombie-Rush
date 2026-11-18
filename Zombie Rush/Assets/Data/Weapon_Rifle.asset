@@ -17,6 +17,7 @@ MonoBehaviour:
   damage: 20
   fireRate: 9
   range: 120
+  headshotMultiplier: 2
   unlimitedUses: 0
   magazineSize: 30
   maxReserveAmmo: 180
@@ -39,12 +40,18 @@ MonoBehaviour:
   scopeZoom: 2
   scopeEyeHeight: 0.105
   scopeEyeBack: -0.13
+  ironSights: 0
+  sightHeight: 0.02
+  sightForward: 0
   recoilUp: 1.2
   recoilSide: 0.45
   recoilAimScale: 0.7
   gunKickBack: 0.03
   gunKickPitch: 3
   bodyKickPitch: 2.5
+  shakePerShot: 0.07
+  fovKick: 0.5
+  tracerEvery: 2
   idleSteady: 0.85
   fireSounds:
   - {fileID: 8300000, guid: 074bc98dc0f9e25429e095505bcf5496, type: 3}

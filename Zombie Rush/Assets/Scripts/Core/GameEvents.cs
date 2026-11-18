@@ -37,9 +37,11 @@ namespace ZombieRush.Core
         public static event Action<int> OnCoinsChanged; // total coins
         public static event Action<float, float> OnPlayerArmorChanged; // current, max
         public static event Action<float, float> OnPlayerSlowed; // strength 0-1, seconds
+        public static event Action<Vector3, float> OnPlayerHurtFrom;   // the local player was hurt by something at this spot, damage
 
         // Combat
         public static event Action OnEnemyHit;
+        public static event Action OnHeadshot;   // the local player's shot hit a zombie's head
         public static event Action<ZombieKilledInfo> OnZombieKilled;
 
         // Waves
@@ -66,8 +68,10 @@ namespace ZombieRush.Core
         public static void RaiseCoinsChanged(int total) => OnCoinsChanged?.Invoke(total);
         public static void RaisePlayerArmorChanged(float current, float max) => OnPlayerArmorChanged?.Invoke(current, max);
         public static void RaisePlayerSlowed(float strength, float seconds) => OnPlayerSlowed?.Invoke(strength, seconds);
+        public static void RaisePlayerHurtFrom(Vector3 source, float damage) => OnPlayerHurtFrom?.Invoke(source, damage);
 
         public static void RaiseEnemyHit() => OnEnemyHit?.Invoke();
+        public static void RaiseHeadshot() => OnHeadshot?.Invoke();
         public static void RaiseZombieKilled(ZombieKilledInfo info) => OnZombieKilled?.Invoke(info);
 
         public static void RaiseWaveAnnounced(int wave) => OnWaveAnnounced?.Invoke(wave);

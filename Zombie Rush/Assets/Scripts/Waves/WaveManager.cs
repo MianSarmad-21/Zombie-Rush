@@ -39,12 +39,23 @@ namespace ZombieRush.Waves
         public bool spawnNearPlayer = true;
         [Min(7f)] public float nearPlayerMinDistance = 8f;
         [Min(8f)] public float nearPlayerMaxDistance = 15f;
+        [Tooltip("Zombies from the same pad climb out up to this many metres apart (not all from one spot, which lined them up).")]
+        public float padScatter = 3.5f;
         [Tooltip("A player still inside the safe base: zombies surface in a band this wide just outside it, waiting at the door.")]
         [Min(2f)] public float nearBaseSpread = 8f;
 
         [Header("Pacing")]
         public float announceDuration = 3f;
         public float breatherDuration = 5f;
+
+        [Header("Last zombies (a wave never stalls)")]
+        [Tooltip("With this many zombies or fewer left and no kill for lastZombiesStallTime, the rest come for the players.")]
+        public int lastZombiesCount = 3;
+        public float lastZombiesStallTime = 25f;
+        [Tooltip("Their speed is multiplied by this once they hunt.")]
+        public float lastZombiesSpeedBoost = 1.35f;
+        [Tooltip("A hunting zombie further than this from every player climbs out of the ground near one instead.")]
+        public float resurfaceDistance = 30f;
 
         [Header("Difficulty")]
         [Tooltip("How zombies and the player grow wave by wave (health, damage, speed). Empty = the config's defaults.")]
@@ -153,8 +164,21 @@ namespace ZombieRush.Waves
 
                 LogSpawnSummary();
 
-                // Only zombies that actually spawned are counted, so this can't hang.
-                while (AliveCount > 0) yield return null;
+                // Only zombies that actually spawned are counted. The last few can still be stuck somewhere or
+                // far off: after a while without a kill they hunt the players down (see HuntLastZombies).
+                hunted.Clear();
+                int lastAlive = AliveCount;
+                float lastKillAt = Time.time;
+                while (AliveCount > 0)
+                {
+                    if (AliveCount != lastAlive) { lastAlive = AliveCount; lastKillAt = Time.time; }
+                    if (AliveCount <= lastZombiesCount && Time.time - lastKillAt >= lastZombiesStallTime)
+                    {
+                        HuntLastZombies();
+                        lastKillAt = Time.time;   // check again after another stall
+                    }
+                    yield return null;
+                }
 
                 GameEvents.RaiseWaveCompleted(CurrentWave, breatherDuration);
                 yield return new WaitForSeconds(breatherDuration);
@@ -208,7 +232,11 @@ namespace ZombieRush.Waves
             else
             {
                 padSpawns++;
-                if (zone != null && ArenaSpawn.TryNear(point.position, zone.Shape, PlayerPosition(zone.center), out var spot))
+                // a different patch of ground round the pad for each zombie: climbing out of the exact same spot one
+                // after another, and then taking the same route, lined them up in single file
+                Vector2 j = Random.insideUnitCircle * padScatter;
+                Vector3 anchor = point.position + new Vector3(j.x, 0f, j.y);
+                if (zone != null && ArenaSpawn.TryNear(anchor, zone.Shape, PlayerPosition(zone.center), out var spot))
                     spawnPos = spot;
             }
 
@@ -366,6 +394,46 @@ namespace ZombieRush.Waves
             foreach (var t in zombieTypes)
                 if (t != null && t.prefab != null) return t.prefab;
             return null;
+        }
+
+        readonly System.Collections.Generic.HashSet<ZombieHealth> hunted = new System.Collections.Generic.HashSet<ZombieHealth>();
+
+        /// The wave's last zombies speed up and head for the players; any that are far from every player
+        /// (stuck behind a building, lost at the zone edge) climb out of the ground near one.
+        void HuntLastZombies()
+        {
+            var zone = ZoneManager.Instance;
+            bool anyOut = false;
+            foreach (var p in ZombieRush.Player.PlayerHealth.All)
+                if (p != null && !p.IsDead && !p.Protected) { anyOut = true; break; }
+            if (!anyOut) return;   // everyone is safe in the base: the zombies wait at its edge as usual
+
+            int resurfaced = 0;
+            foreach (var z in ZombieHealth.Active)
+            {
+                if (z == null || z.IsDead || !z.isActiveAndEnabled) continue;
+                var ai = z.GetComponent<ZombieAI>();
+                if (ai != null && hunted.Add(z)) { ai.speedMultiplier *= lastZombiesSpeedBoost; ai.alwaysHunt = true; }
+
+                if (NearestPlayerDistance(z.transform.position) <= resurfaceDistance || zone == null) continue;
+                if (!TryNearPlayer(zone, out var spot)) continue;
+                var rise = z.GetComponent<ZombieSpawnRise>();
+                if (rise != null) { rise.Begin(spot); resurfaced++; }
+            }
+            GameEvents.RaiseNotice("THE LAST ONES ARE COMING", "");
+            Debug.Log($"[Zombie Rush] Wave {CurrentWave}: {AliveCount} last zombies hunting, {resurfaced} climbed out near a player.", this);
+        }
+
+        static float NearestPlayerDistance(Vector3 from)
+        {
+            float best = float.MaxValue;
+            foreach (var p in ZombieRush.Player.PlayerHealth.All)
+            {
+                if (p == null || p.IsDead) continue;
+                var d = p.transform.position - from; d.y = 0f;
+                best = Mathf.Min(best, d.magnitude);
+            }
+            return best;
         }
 
         void HandleZombieDied(ZombieHealth zombie)

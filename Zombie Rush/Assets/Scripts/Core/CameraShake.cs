@@ -36,6 +36,16 @@ namespace ZombieRush.Core
             shake.trauma = Mathf.Min(1f, shake.trauma + amount * k * k);
         }
 
+        /// Shake the player's own camera (a shot, a hit taken, a kill). 0-1 trauma; it adds up and fades.
+        public static void Add(float amount)
+        {
+            if (amount <= 0f) return;
+            var cam = Camera.main;
+            if (cam == null) return;
+            var shake = Get(cam);
+            shake.trauma = Mathf.Min(1f, shake.trauma + amount);
+        }
+
         static CameraShake Get(Camera cam)
         {
             if (instance != null && instance.gameObject == cam.gameObject) return instance;

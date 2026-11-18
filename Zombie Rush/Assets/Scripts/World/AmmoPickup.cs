@@ -87,7 +87,7 @@ namespace ZombieRush.World
 
             ZombieRush.UI.PickupToast.Show($"+{added} {weapon.AmmoLabel} AMMO");
             var lib = Audio.SoundManager.Library;
-            if (lib != null) Audio.SoundManager.Play(lib.pickup, 0.8f);
+            if (lib != null) Audio.SoundManager.Play(lib.AmmoPickup, 0.85f, 0.04f);
 
             if (isDrop || respawnTime <= 0f) { Destroy(gameObject); return; }
             readyAt = Time.time + respawnTime;

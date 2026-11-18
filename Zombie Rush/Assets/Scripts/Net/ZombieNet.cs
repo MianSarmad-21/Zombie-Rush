@@ -21,6 +21,7 @@ namespace ZombieRush.Net
         readonly NetworkVariable<float> health = new NetworkVariable<float>();
         readonly NetworkVariable<float> maxHealth = new NetworkVariable<float>();
         readonly NetworkVariable<byte> speed = new NetworkVariable<byte>();
+        readonly NetworkVariable<bool> headPopped = new NetworkVariable<bool>();   // before `dead`: set first, read when it dies
         readonly NetworkVariable<bool> dead = new NetworkVariable<bool>();
 
         ZombieHealth zh;
@@ -50,10 +51,10 @@ namespace ZombieRush.Net
                 health.OnValueChanged += (_, __) => PullHealth();
                 maxHealth.OnValueChanged += (_, __) => PullHealth();
                 speed.OnValueChanged += (_, v) => zh.Anim.SetSpeed(v / 255f);
-                dead.OnValueChanged += (_, v) => { if (v) zh.NetDie(); };
+                dead.OnValueChanged += (_, v) => { if (v) zh.NetDie(headPopped.Value); };
                 PullHealth();
                 zh.Anim.SetSpeed(speed.Value / 255f);
-                if (dead.Value) zh.NetDie();
+                if (dead.Value) zh.NetDie(headPopped.Value);
                 else
                 {
                     // just spawned for its rise (still under the ground): the ground breaks open here too
@@ -87,6 +88,7 @@ namespace ZombieRush.Net
         {
             if (!IsServer || !IsSpawned) return;
             PushHealth();
+            headPopped.Value = zh.LastHitWasHeadshot;   // a killing headshot takes the head off everywhere
             dead.Value = true;
             // the reward (coins, ammo, kill count) goes to whoever landed the killing shot
             ulong killer = LastAttacker;
@@ -101,14 +103,14 @@ namespace ZombieRush.Net
         }
 
         /// A player on another machine hit this zombie.
-        public void ClientHit(float amount, Vector3 point, Vector3 direction) => HitRpc(amount, point, direction);
+        public void ClientHit(float amount, Vector3 point, Vector3 direction, bool headshot) => HitRpc(amount, point, direction, headshot);
 
         [Rpc(SendTo.Server)]
-        void HitRpc(float amount, Vector3 point, Vector3 direction, RpcParams p = default)
+        void HitRpc(float amount, Vector3 point, Vector3 direction, bool headshot, RpcParams p = default)
         {
             if (zh.IsDead) return;
             LastAttacker = p.Receive.SenderClientId;
-            zh.TakeHit(amount, false, point, direction);
+            zh.TakeHit(amount, false, point, direction, headshot);   // headshot: a longer stagger on the host's zombie
         }
 
         /// Host: show a hit to everyone else (blood, hurt sound), except the player who fired it (already shown).
@@ -154,6 +156,7 @@ namespace ZombieRush.Net
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer) return;
             if (!NetworkObject.IsSpawned) NetworkObject.Spawn(true);
             LastAttacker = ulong.MaxValue;
+            headPopped.Value = false;
             dead.Value = false;
             PushHealth();
         }

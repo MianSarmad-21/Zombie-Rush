@@ -38,3 +38,7 @@ Added 2026-11-13 (all CC0; reloads were cut and re-timed to the reload animation
     and "Crickets Ambient Noise - loopable" by Wolfgang_,
     https://opengameart.org/content/crickets-ambient-noise-loopable
   SFX/Zombies/goo_spit.wav, goo_splat.wav - moved out of _Archive (same sources as before).
+Added 2026-11-17 (made from the files above with Blender/sfx_pickups.py, no new sources):
+  SFX/Game/weapon_pickup.wav - weapon_draw_2 (Kenney) + the bolt rack from reload_rifle (SpringySpringo)
+  SFX/Game/ammo_pickup.wav   - weapon_draw_3 (Kenney) + the magazine clack from reload_rifle (SpringySpringo)
+  SFX/Game/gear_pickup.wav   - weapon_draw_3 (Kenney), trimmed

@@ -52,6 +52,7 @@ namespace ZombieRush.UI
         void Awake()
         {
             GameEvents.OnEnemyHit += HandleHit;
+            GameEvents.OnHeadshot += HandleHeadshot;
             GameEvents.OnZombieKilled += HandleKill;
             GameEvents.OnGameStateChanged += HandleState;
             SetHitAlpha(0f);
@@ -60,6 +61,7 @@ namespace ZombieRush.UI
         void OnDestroy()
         {
             GameEvents.OnEnemyHit -= HandleHit;
+            GameEvents.OnHeadshot -= HandleHeadshot;
             GameEvents.OnZombieKilled -= HandleKill;
             GameEvents.OnGameStateChanged -= HandleState;
         }
@@ -71,6 +73,13 @@ namespace ZombieRush.UI
             // A kill in the same frame keeps its red colour.
             if (hitAlpha <= 0f || hitColor != UITheme.Blood) hitColor = Color.white;
             Flash(1f);
+        }
+
+        // Gold and a bit bigger; a kill in the same frame still turns it red.
+        void HandleHeadshot()
+        {
+            if (hitAlpha <= 0f || hitColor != UITheme.Blood) hitColor = UITheme.Gold;
+            Flash(1.2f);
         }
 
         void HandleKill(ZombieKilledInfo info)

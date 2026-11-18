@@ -80,7 +80,7 @@ namespace ZombieRush.Zombie
         void Update()
         {
             if (burst || health.IsDead) return;
-            if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
+            if (!GameManager.IsWorldRunning) return;
 
             if (!swelling)
             {
@@ -165,7 +165,7 @@ namespace ZombieRush.Zombie
                     if (p == null || p.IsDead) continue;
                     float d = Vector3.Distance(p.transform.position + Vector3.up, c);
                     if (d > radius) continue;
-                    p.TakeDamage(damage * scale * Mathf.Lerp(1f, edgeDamage, d / radius));
+                    p.TakeDamage(damage * scale * Mathf.Lerp(1f, edgeDamage, d / radius), c);
                 }
                 // the horde around it gets hurt too (copied first: kills change the list)
                 victims.Clear();

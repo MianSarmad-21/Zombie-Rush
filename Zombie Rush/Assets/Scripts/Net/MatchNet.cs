@@ -99,10 +99,23 @@ namespace ZombieRush.Net
         public void ReportPickupTaken(int id) => PickupTakenRpc(id);
 
         [Rpc(SendTo.Server)]
-        void PickupTakenRpc(int id)
+        void PickupTakenRpc(int id, RpcParams p = default)
         {
+            if (World.BasePickup.RegrabDelayOf(id) > 0f)
+            {
+                // it comes back in a few seconds: only hide it for that long everywhere (late joiners see it on the table)
+                PickupBrieflyGoneRpc(id, p.Receive.SenderClientId);
+                return;
+            }
             if (takenPickups.Contains(id)) return;
             takenPickups.Add(id);
+            World.BasePickup.MarkTaken(id);
+        }
+
+        [Rpc(SendTo.Everyone)]
+        void PickupBrieflyGoneRpc(int id, ulong taker)
+        {
+            if (NetworkManager.LocalClientId == taker) return;   // already hidden by the player who took it
             World.BasePickup.MarkTaken(id);
         }
 

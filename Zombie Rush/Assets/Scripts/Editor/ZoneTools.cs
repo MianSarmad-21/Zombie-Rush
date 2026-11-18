@@ -354,8 +354,14 @@ namespace ZombieRush.EditorTools
         internal static NavMeshData BakeNavMesh(GameObject map, Vector3 center, float radius, out string note)
         {
             var sources = new List<NavMeshBuildSource>();
+            // the base building (the fortress: decks, stairs, roof) is an obstacle, never a walkway: zombies that can
+            // climb its stairs path over its roof deck, above the safe base's reach
+            var markups = new List<NavMeshBuildMarkup>();
+            var safe = Object.FindAnyObjectByType<ZombieRush.World.SafeBase>(FindObjectsInactive.Include);
+            if (safe != null && safe.building != null && safe.building.IsChildOf(map.transform))
+                markups.Add(new NavMeshBuildMarkup { root = safe.building, overrideArea = true, area = 1 });   // 1 = Not Walkable
             UnityEngine.AI.NavMeshBuilder.CollectSources(map.transform, ~0, NavMeshCollectGeometry.PhysicsColliders, 0,
-                new List<NavMeshBuildMarkup>(), sources);
+                markups, sources);
             if (sources.Count == 0)
             {
                 note = "Zombie paths: the map has no colliders, so no walk map was baked.";

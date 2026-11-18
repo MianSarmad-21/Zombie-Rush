@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 7607191812713144200}
   - component: {fileID: 2514607740435964274}
   - component: {fileID: 5092969800846975182}
+  - component: {fileID: 5671781251506032445}
   m_Layer: 0
   m_Name: NetPlayer
   m_TagString: Untagged
@@ -72,4 +73,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7dbfbdaf1859ef64aba0ab7651b0b442, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Net.NetPlayer
+  ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &5671781251506032445
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8196158872530673668}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 555df86959d356e49ab798001cc5fff7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Net.GrenadeNet
   ShowTopMostFoldoutHeaderGroup: 1

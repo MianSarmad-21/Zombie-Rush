@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2aa920b281baa3741b05d9cac77cb3e1, type: 3}
+  m_Name: FortressBaseConfig
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieRush.Data.FortressBaseConfig
+  yawOffset: 0
+  centreOnRoom: 1
+  floorOffset: 0
+  flattenTerrain: 1
+  flatMargin: 1.5
+  blend: 6
+  groundBelowFloor: 0.08
+  hideOverlappingProps: 1
+  lampColor: {r: 1, g: 0.8, b: 0.56, a: 1}
+  lampIntensity: 5
+  lampRange: 11
+  lampShadowCasters: 1
+  lampGlow: 6
+  gateOutsideColor: {r: 1, g: 0.78, b: 0.5, a: 1}
+  gateOutsideIntensity: 5
+  gateOutsideRange: 16
+  gateInsideColor: {r: 1, g: 0.82, b: 0.6, a: 1}
+  gateInsideIntensity: 3
+  gateInsideRange: 5.5
+  floodColor: {r: 0.86, g: 0.92, b: 1, a: 1}
+  floodIntensity: 6
+  floodRange: 26
+  floodAngle: 95
+  gateAngle: 110
+  gateInsideDrop: 2.2
+  floodFixtures: 1
+  fortressNormalScale: 0.8
+  fortressOcclusion: 0.85
+  roomNormalScale: 1
+  androidMaxSize: 2048

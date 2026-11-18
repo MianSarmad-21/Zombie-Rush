@@ -13,8 +13,9 @@ namespace ZombieRush.Core
     {
         public const string Turret = "zr.turret";
 
-        /// True until the real store is connected: Buy() succeeds without charging.
-        public static bool TestMode = true;
+        /// Buy() succeeds without charging: in the editor and in development builds only. A release build
+        /// without the real store connected says the store is unavailable.
+        public static bool TestMode = Application.isEditor || Debug.isDebugBuild;
 
         public static event Action<string> Purchased;
 

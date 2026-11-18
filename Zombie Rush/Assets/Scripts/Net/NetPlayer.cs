@@ -152,10 +152,10 @@ namespace ZombieRush.Net
 
         /// Damage dealt to this player's copy on the host goes to the player itself.
         [Rpc(SendTo.Owner)]
-        void DamageRpc(float amount)
+        void DamageRpc(float amount, Vector3 source, bool hasSource)
         {
             if (localHealth == null) BindLocal();
-            if (localHealth != null) localHealth.TakeDamage(amount);
+            if (localHealth != null) localHealth.TakeDamage(amount, hasSource ? source : (Vector3?)null);
         }
 
         // ---------------------------------------------------------------- copy
@@ -173,7 +173,7 @@ namespace ZombieRush.Net
             copyView = copy.GetComponent<PlayerViewSwitcher>();
             copyHealth = copy.GetComponent<PlayerHealth>();
             copyLink = copy.GetComponent<PlayerBodyLink>();
-            if (copyHealth != null) copyHealth.forwardDamage = amount => { if (IsSpawned) DamageRpc(amount); };
+            if (copyHealth != null) copyHealth.forwardDamage = (amount, source) => { if (IsSpawned) DamageRpc(amount, source ?? Vector3.zero, source.HasValue); };
             if (copyWeapons != null)
                 foreach (var w in copyWeapons.weapons) if (w != null) copyWeapons.Unlock(w.data);
         }

@@ -40,17 +40,28 @@ namespace ZombieRush.Core
         /// Start in the lobby screen (multiplayer menu) instead of straight into play.
         public static bool StartInLobby = true;
 
-        void Start() => SetState(StartInLobby ? GameState.Lobby : GameState.Playing);
+        // A restart also waits in Lobby: the lobby screen calls BeginMatch at once, which plays the intro first.
+        void Start() => SetState(StartInLobby || ZombieRush.Effects.IntroCutscene.Enabled ? GameState.Lobby : GameState.Playing);
 
-        /// The lobby screen started a match (solo or with a squad).
+        /// The lobby screen started a match (solo or with a squad): the helicopter intro plays first (skippable),
+        /// then play starts. The game stays in its Lobby state meanwhile: HUD hidden, nothing moves.
         public void BeginMatch()
         {
             StartInLobby = false;   // a restart of this level goes straight into play
-            if (State == GameState.Lobby) SetState(GameState.Playing);
+            if (State != GameState.Lobby) return;
+            if (ZombieRush.Effects.IntroCutscene.TryPlay(() => { if (State == GameState.Lobby) SetState(GameState.Playing); })) return;
+            SetState(GameState.Playing);
         }
 
         /// Pausing freezes time only when playing alone; in a squad the others keep playing.
         public static System.Func<bool> CanFreezeTime = () => true;
+
+        /// The shared world (zombies, turrets, waves) runs: while playing, and also while this player has the
+        /// pause menu open in a squad, where the match goes on for everyone else.
+        public bool WorldRunning => State == GameState.Playing || (State == GameState.Paused && !CanFreezeTime());
+
+        /// WorldRunning, or true when there is no GameManager (test scenes).
+        public static bool IsWorldRunning => Instance == null || Instance.WorldRunning;
 
         void OnEnable()
         {
@@ -78,6 +89,8 @@ namespace ZombieRush.Core
         {
             ReachedWave = wave;
             GameSettings.BestWave = wave;
+            // every machine, not only the host's wave loop: joined players' guns grow with the wave too
+            WaveScaling.Wave = Mathf.Max(1, wave);
         }
 
         void HandlePlayerDied()
@@ -164,14 +177,6 @@ namespace ZombieRush.Core
             StartInLobby = true;
             Time.timeScale = 1f;
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-            return;
-            if (string.IsNullOrEmpty(mainMenuScene) || !Application.CanStreamedLevelBeLoaded(mainMenuScene))
-            {
-                RestartLevel();
-                return;
-            }
-            Time.timeScale = 1f;
-            SceneManager.LoadScene(mainMenuScene);
         }
 
         // Phones: going to the home screen / taking a call pauses the run.
