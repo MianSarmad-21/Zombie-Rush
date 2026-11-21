@@ -108,7 +108,9 @@ namespace ZombieRush.UI
             if (weapons == null && view != null) weapons = view.TryGetComponent(out PlayerWeaponController own) ? own : view.GetComponentInChildren<PlayerWeaponController>(true);
             var gun = weapons != null ? weapons.CurrentWeapon : null;
             bool scoped = view != null && view.Scoped;
-            hideAlpha = Mathf.MoveTowards(hideAlpha, playing && !scoped && gun != null ? 1f : 0f, dt * 12f);
+            // a grenade in hand shows its own fuse timer in the centre instead
+            bool grenade = GrenadeThrower.Local != null && GrenadeThrower.Local.Busy;
+            hideAlpha = Mathf.MoveTowards(hideAlpha, playing && !scoped && !grenade && gun != null ? 1f : 0f, dt * 12f);
             if (crosshairGroup != null) crosshairGroup.alpha = hideAlpha;
             if (gun == null || gun.data == null) return;
 

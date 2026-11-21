@@ -56,6 +56,9 @@ namespace ZombieRush.Player
 
         /// True while the held gun is driven by body clips (the aim rig skips its arm IK).
         public bool Active { get; private set; }
+        /// The body's own animation holds the gun (the match intro's pistol clips, made with the same grip): the gun
+        /// only goes on the animated right hand; arms, torso and camera are left as the animation has them.
+        public bool HandsFromBody { get; set; }
         /// Test numbers (captures): the torso bend this frame (deg), the steady move (m), the right hand
         /// in the right shoulder's space of the body facing (m), the wanted vs. reached gun pitch.
         [System.NonSerialized] public float DebugFix, DebugMove, DebugWantPitch, DebugGunPitch;
@@ -145,6 +148,15 @@ namespace ZombieRush.Player
 
             // 1. the body clip at the gun's moment
             rig.Now(out int clip, out float t);
+            if (HandsFromBody)
+            {
+                // the grip (hand to gun) is the Idle clip's, the same grip the animation was made with
+                var idle = rig.bodyClips[0];
+                ClipSampler.Sample(p.go, idle, 0f);
+                Place(gun, rig, rightHand.localToWorldMatrix * (p.hand.worldToLocalMatrix * p.gun.localToWorldMatrix));
+                ShowFpArms(null);
+                return;
+            }
             var held = weapons != null && weapons.CurrentWeapon != null ? weapons.CurrentWeapon.data : null;
             if (clip == 0 && held != null && held.idleSteady > 0f)
             {

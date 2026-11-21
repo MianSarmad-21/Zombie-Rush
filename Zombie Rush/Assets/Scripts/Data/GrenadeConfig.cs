@@ -20,8 +20,18 @@ namespace ZombieRush.Data
         public float fuse = 3.5f;
         [Tooltip("Cooked too long, it goes off in your hand (as in COD). Off: it is thrown by itself when the fuse is nearly out.")]
         public bool explodeInHand = true;
-        [Tooltip("Seconds the arm needs from the press before a throw can leave the hand (pin pull).")]
+        [Tooltip("Seconds from the press before a throw can start (also never before the arm is cocked: cookRaise).")]
         public float minHold = 0.25f;
+
+        [Header("Fuse timer")]
+        [Tooltip("The countdown ring and seconds at the centre of the screen while cooking (the crosshair hides).")]
+        public bool centerTimer = true;
+        [Tooltip("Seconds between fuse ticks while cooking (0 = no ticks).")]
+        public float tickEvery = 0.5f;
+        [Tooltip("In the last this-many seconds the ticks speed up to tickFastEvery and the timer turns red and pulses.")]
+        public float dangerUnder = 1f;
+        public float tickFastEvery = 0.2f;
+        public float tickVolume = 0.35f;
 
         [Header("Throw")]
         [Tooltip("Speed along the aim (m/s).")]
@@ -40,9 +50,24 @@ namespace ZombieRush.Data
         [Header("Aim arc (while cooking)")]
         public bool showArc = true;
         public Color arcColor = new Color(1f, 0.82f, 0.35f, 0.75f);
-        public float arcWidth = 0.035f;
+        [Tooltip("Arc and landing marker colour when you stand inside the blast of where it lands.")]
+        public Color dangerColor = new Color(1f, 0.25f, 0.18f, 0.85f);
+        [Tooltip("Width of the dashed arc (m) once it is away from the hand; it narrows toward the hand.")]
+        public float arcWidth = 0.045f;
+        [Tooltip("Length of one dash plus its gap along the arc (m).")]
+        public float arcDash = 0.45f;
+        [Tooltip("Metres of path from the hand before the arc shows (keeps it from filling the view).")]
+        public float arcStartDistance = 1.2f;
         [Tooltip("Seconds of flight the arc shows (it also stops where it hits something).")]
         public float arcSeconds = 2.2f;
+        [Tooltip("Radius of the landing ring (m).")]
+        public float landingRing = 0.35f;
+        [Tooltip("A faint dashed ring on the ground at the blast radius round the landing spot.")]
+        public bool showBlastRing = true;
+        [Tooltip("Where the grenade leaves the hand, from the eye in camera axes (right, up, forward), first person.")]
+        public Vector3 fpRelease = new Vector3(0.07f, 0.05f, 0.5f);
+        [Tooltip("Where the grenade leaves the hand, from the feet in body axes (right, up, forward), third person.")]
+        public Vector3 tpRelease = new Vector3(0.17f, 1.64f, 0.46f);
 
         [Header("Blast")]
         public float radius = 7f;
@@ -100,7 +125,11 @@ namespace ZombieRush.Data
         public string[] tpCopyBones;
         [Tooltip("Bones turned by the clip's change from rest (the chest twist).")]
         public string[] tpDeltaBones;
-        [Tooltip("Seconds of the Cook clips that bring the grenade up; the rest loops while cooking.")]
-        public float cookRaise = 8f / 30f;
+        [Tooltip("Seconds of the Cook clips that bring the grenade up, pull the pin and cock the arm; the rest loops while cooking.")]
+        public float cookRaise = 16f / 30f;
+        [Tooltip("Cook clip second the left hand pulls the pin out (first person: the pin moves from the grenade to the hand).")]
+        public float pinPullAt = 8f / 30f;
+        [Tooltip("Seconds the pulled pin stays in the left hand before it drops out of view.")]
+        public float pinHandFor = 0.4f;
     }
 }

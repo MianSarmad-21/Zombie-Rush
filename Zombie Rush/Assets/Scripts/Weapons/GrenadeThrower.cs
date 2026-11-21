@@ -111,7 +111,8 @@ namespace ZombieRush.Weapons
                         else StartThrow();
                         break;
                     }
-                    if (!held && Time.time - pinAt >= cfg.minHold) StartThrow();
+                    Tick();
+                    if (!held && Time.time - pinAt >= Mathf.Max(cfg.minHold, cfg.cookRaise)) StartThrow();
                     break;
                 case State.Throwing:
                     float t = (Time.time - throwAt) / Mathf.Max(0.05f, cfg.throwTime);
@@ -129,11 +130,27 @@ namespace ZombieRush.Weapons
             if (!World.SafeBase.FiringAllowedAt(transform.position)) { Note("NO GRENADES IN THE SAFE BASE"); return; }
             state = State.Cooking;
             pinAt = Time.time;
+            nextTick = Time.time + Mathf.Max(0.05f, cfg.tickEvery);
             SetCount(Count - 1);
             GameInput.FireBlocked = true;
             if (cfg.pinPull != null) Audio.SoundManager.Play(cfg.pinPull, 0.8f);
             if (LogEvents) Debug.Log($"[Grenade] pin pulled at {Time.time:0.00}, {Count} left");
         }
+
+        float nextTick;
+
+        /// The fuse ticks while cooking, faster in the last second.
+        void Tick()
+        {
+            if (cfg.tickEvery <= 0f || Time.time < nextTick) return;
+            bool danger = FuseLeft <= cfg.dangerUnder;
+            nextTick = Time.time + Mathf.Max(0.05f, danger ? cfg.tickFastEvery : cfg.tickEvery);
+            Audio.SoundManager.Play(Audio.ProceduralSfx.GrenadeTick, cfg.tickVolume * (danger ? 1.25f : 1f), 0f);
+        }
+
+        /// 0..1 of the fuse left while cooking.
+        public float FuseFraction => cfg != null && cfg.fuse > 0f ? FuseLeft / cfg.fuse : 0f;
+        public bool Danger => Cooking && cfg != null && FuseLeft <= cfg.dangerUnder;
 
         void Note(string text)
         {
@@ -163,17 +180,29 @@ namespace ZombieRush.Weapons
             GrenadeProjectile.Launch(origin, velocity, fuseLeft, authoritative: true, ownedByLocal: true, id, ownColliders);
         }
 
-        /// Where the grenade leaves the hand: just right of and below the eye (first person) or the right hand (third
-        /// person), pulled back if that spot is inside a wall.
+        /// Where the grenade leaves the hand: the release spot of the throw clips (GrenadeConfig.fpRelease from the eye,
+        /// tpRelease from the feet), the same every frame so the aim arc is the path it really flies. Pulled back if
+        /// that spot is inside a wall.
         Vector3 ReleasePoint(Camera cam, Vector3 dir)
         {
             Vector3 eye = cam != null ? cam.transform.position : transform.position + Vector3.up * 1.6f;
+            bool tp = view != null && view.IsThirdPerson;
             Vector3 p;
-            Transform hand = body != null && body.isHuman ? body.GetBoneTransform(HumanBodyBones.RightHand) : null;
-            if (view != null && view.IsThirdPerson && hand != null) p = hand.position + dir * 0.2f;
-            else if (cam != null) p = eye + cam.transform.right * 0.2f - cam.transform.up * 0.12f + dir * 0.35f;
-            else p = eye + dir * 0.4f;
-            Vector3 from = view != null && view.IsThirdPerson ? transform.position + Vector3.up * 1.5f : eye;
+            if (tp)
+            {
+                Vector3 f = Vector3.ProjectOnPlane(cam != null ? cam.transform.forward : transform.forward, Vector3.up);
+                if (f.sqrMagnitude < 1e-4f) f = transform.forward;
+                f.Normalize();
+                Vector3 r = Vector3.Cross(Vector3.up, f);
+                p = transform.position + r * cfg.tpRelease.x + Vector3.up * cfg.tpRelease.y + f * cfg.tpRelease.z;
+            }
+            else if (cam != null)
+            {
+                var c = cam.transform;
+                p = eye + c.right * cfg.fpRelease.x + c.up * cfg.fpRelease.y + c.forward * cfg.fpRelease.z;
+            }
+            else p = eye + dir * 0.5f;
+            Vector3 from = tp ? transform.position + Vector3.up * 1.5f : eye;
             Vector3 d = p - from;
             if (Physics.SphereCast(from, 0.05f, d.normalized, out var hit, d.magnitude, ~0, QueryTriggerInteraction.Ignore) && !IsOwn(hit.collider))
                 p = hit.point + hit.normal * 0.08f;
@@ -214,7 +243,7 @@ namespace ZombieRush.Weapons
             state = State.Idle;
             testAim = null;
             GameInput.FireBlocked = false;
-            if (arc != null) { arc.enabled = false; ring.enabled = false; }
+            HideArc();
             if (fpArms != null) fpArms.gameObject.SetActive(false);
         }
 
@@ -222,10 +251,22 @@ namespace ZombieRush.Weapons
 
         // ------------------------------------------------------------------ aim arc
 
+        LineRenderer blastRing;
+        Material arcMat;
+        readonly Vector3[] landPts = new Vector3[33];
+        readonly Vector3[] blastPts = new Vector3[97];
+        /// Where the arc says it lands (test pictures and logs), valid while cooking.
+        public Vector3 PredictedLanding { get; private set; }
+        /// The arc's colour is the danger colour: you stand inside the blast of where it lands.
+        public bool LandingDanger { get; private set; }
+
+        /// The path the grenade will fly, shown while cooking: a dashed line that fades in a little way from the hand
+        /// and narrows toward it (so it never fills the view), a ring where it first hits something and, on the
+        /// ground, a faint dashed ring at the blast radius. Both turn red when you stand inside that blast.
         void UpdateArc()
         {
             bool show = cfg.showArc && state == State.Cooking;
-            if (!show) { if (arc != null) { arc.enabled = false; ring.enabled = false; } return; }
+            if (!show) { HideArc(); return; }
             if (arc == null) MakeArc();
             var cam = Cam;
             Vector3 dir = testAim ?? (cam != null ? cam.transform.forward : transform.forward);
@@ -233,58 +274,125 @@ namespace ZombieRush.Weapons
             Vector3 v = dir * cfg.throwSpeed + Vector3.up * cfg.throwLift;
             if (mover != null) v += Vector3.ProjectOnPlane(mover.velocity, Vector3.up) * 0.6f;
             float dt = cfg.arcSeconds / (arcPts.Length - 1);
-            int n = 1; arcPts[0] = p;
+            // the path, skipping the first arcStartDistance metres (the drawn line starts there)
+            int n = 0; float walked = 0f;
             bool landed = false; Vector3 landAt = p, landN = Vector3.up;
-            for (; n < arcPts.Length; n++)
+            for (int i = 1; i < arcPts.Length && n < arcPts.Length; i++)
             {
                 Vector3 next = p + v * dt + 0.5f * Physics.gravity * dt * dt;
                 v += Physics.gravity * dt;
                 Vector3 seg = next - p;
-                if (Physics.Raycast(p, seg.normalized, out var hit, seg.magnitude, ~0, QueryTriggerInteraction.Ignore) && !IsOwn(hit.collider))
+                bool hitSomething = Physics.Raycast(p, seg.normalized, out var hit, seg.magnitude, ~0, QueryTriggerInteraction.Ignore) && !IsOwn(hit.collider);
+                Vector3 end = hitSomething ? hit.point : next;
+                float before = walked;
+                walked += (end - p).magnitude;
+                if (walked >= cfg.arcStartDistance)
                 {
-                    arcPts[n++] = hit.point; landed = true; landAt = hit.point; landN = hit.normal; break;
+                    if (n == 0) arcPts[n++] = Vector3.Lerp(p, end, Mathf.InverseLerp(before, walked, cfg.arcStartDistance));
+                    if (n < arcPts.Length) arcPts[n++] = end;
                 }
-                arcPts[n] = p = next;
+                if (hitSomething) { landed = true; landAt = hit.point; landN = hit.normal; break; }
+                p = next;
             }
-            arc.enabled = true;
-            arc.positionCount = n;
-            arc.SetPositions(arcPts);
+            if (!landed) landAt = p;
+            PredictedLanding = landAt;
+
+            // inside the blast of where it lands?
+            var me = PlayerHealth.Instance != null ? PlayerHealth.Instance.transform : transform;
+            LandingDanger = landed && Vector3.Distance(me.position + Vector3.up * 1.1f, landAt) < cfg.radius;
+            Color c = LandingDanger ? cfg.dangerColor : cfg.arcColor;
+
+            arc.enabled = n >= 2;
+            if (n >= 2)
+            {
+                arc.positionCount = n;
+                arc.SetPositions(arcPts);
+                float len = 0f;
+                for (int i = 1; i < n; i++) len += (arcPts[i] - arcPts[i - 1]).magnitude;
+                // narrow and see-through near the hand, full width a couple of metres on, a little fade at the end
+                float near = Mathf.Clamp(2.5f / Mathf.Max(0.01f, len), 0.01f, 0.9f);
+                arc.widthCurve = new AnimationCurve(new Keyframe(0f, 0.3f), new Keyframe(near, 1f), new Keyframe(1f, 1f));
+                var g = new Gradient();
+                g.SetKeys(new[] { new GradientColorKey(c, 0f), new GradientColorKey(c, 1f) },
+                          new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(c.a, near * 0.7f), new GradientAlphaKey(c.a * 0.55f, 1f) });
+                arc.colorGradient = g;
+            }
+
             ring.enabled = landed;
             if (landed)
             {
-                var rot = Quaternion.FromToRotation(Vector3.up, landN);
-                for (int i = 0; i < ring.positionCount; i++)
-                {
-                    float a = i * Mathf.PI * 2f / (ring.positionCount - 1);
-                    ring.SetPosition(i, landAt + rot * new Vector3(Mathf.Cos(a) * 0.45f, 0.04f, Mathf.Sin(a) * 0.45f));
-                }
+                ring.startColor = ring.endColor = c;
+                Circle(landPts, landAt, landN, cfg.landingRing, false);
+                ring.SetPositions(landPts);
             }
+            bool showBlast = landed && cfg.showBlastRing;
+            blastRing.enabled = showBlast;
+            if (showBlast)
+            {
+                Color cb = c; cb.a *= 0.45f;
+                blastRing.startColor = blastRing.endColor = cb;
+                Circle(blastPts, landAt, landN, cfg.radius, true);
+                blastRing.SetPositions(blastPts);
+            }
+        }
+
+        /// A circle round `centre` (the last point repeats the first); on the ground (`hug`) each point drops onto
+        /// what is below it.
+        void Circle(Vector3[] pts, Vector3 centre, Vector3 normal, float radius, bool hug)
+        {
+            var rot = Quaternion.FromToRotation(Vector3.up, hug ? Vector3.up : normal);
+            for (int i = 0; i < pts.Length; i++)
+            {
+                float a = i * Mathf.PI * 2f / (pts.Length - 1);
+                Vector3 q = centre + rot * new Vector3(Mathf.Cos(a) * radius, 0.04f, Mathf.Sin(a) * radius);
+                if (hug && Physics.Raycast(q + Vector3.up * 2.5f, Vector3.down, out var h, 6f, ~0, QueryTriggerInteraction.Ignore) && !IsOwn(h.collider))
+                    q = h.point + Vector3.up * 0.06f;
+                pts[i] = q;
+            }
+        }
+
+        void HideArc()
+        {
+            if (arc == null) return;
+            arc.enabled = false; ring.enabled = false; blastRing.enabled = false;
         }
 
         void MakeArc()
         {
-            var mat = new Material(Shader.Find("Sprites/Default"));
-            LineRenderer Line(string name, int count, float width)
+            // a dash texture: opaque for about half of each repeat with soft ends, then a gap
+            var tex = new Texture2D(32, 4, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear, name = "GrenadeDash" };
+            for (int x = 0; x < 32; x++)
+            {
+                float u = (x + 0.5f) / 32f;
+                float a = Mathf.Clamp01(Mathf.Min(u, 0.55f - u) * 18f);
+                for (int y = 0; y < 4; y++) tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+            tex.Apply();
+            arcMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = tex, name = "GrenadeArc" };
+            var plain = new Material(Shader.Find("Sprites/Default")) { name = "GrenadeRing" };
+            LineRenderer Line(string name, int count, float width, Material mat, bool dashed)
             {
                 var go = new GameObject(name);
                 go.transform.SetParent(transform, false);
                 var lr = go.AddComponent<LineRenderer>();
                 lr.useWorldSpace = true; lr.sharedMaterial = mat; lr.positionCount = count;
-                lr.widthMultiplier = width; lr.numCapVertices = 2;
+                lr.widthMultiplier = width; lr.numCapVertices = dashed ? 0 : 2; lr.numCornerVertices = 2;
+                lr.textureMode = dashed ? LineTextureMode.Tile : LineTextureMode.Stretch;
                 lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; lr.receiveShadows = false;
-                var c0 = cfg.arcColor; var c1 = cfg.arcColor; c1.a *= 0.35f;
-                lr.startColor = c0; lr.endColor = c1;
+                lr.startColor = lr.endColor = cfg.arcColor;
                 lr.enabled = false;
                 return lr;
             }
-            arc = Line("GrenadeArc", arcPts.Length, cfg.arcWidth);
-            ring = Line("GrenadeLanding", 25, cfg.arcWidth * 1.4f);
-            ring.startColor = ring.endColor = cfg.arcColor;
+            arc = Line("GrenadeArc", arcPts.Length, cfg.arcWidth, arcMat, true);
+            arc.textureScale = new Vector2(1f / Mathf.Max(0.05f, cfg.arcDash), 1f);
+            ring = Line("GrenadeLanding", landPts.Length, cfg.arcWidth * 1.3f, plain, false);
+            blastRing = Line("GrenadeBlastRadius", blastPts.Length, cfg.arcWidth * 1.6f, arcMat, true);
+            blastRing.textureScale = new Vector2(1f / Mathf.Max(0.05f, cfg.arcDash * 2.5f), 1f);
         }
 
         // ------------------------------------------------------------------ first person: the gun dips, the arm throws
 
-        Transform fpArms, fpGrenade;
+        Transform fpArms, fpGrenade, fpPinIn, fpPinOut;
 
         /// Throw clip time (s) for the moment now: cooking = the raise then a looping sway; throwing = the throw
         /// stretched over cfg.throwTime. Returns false when nothing is in hand.
@@ -321,7 +429,20 @@ namespace ZombieRush.Weapons
                 {
                     if (layer >= 0) t.gameObject.layer = layer;
                     if (t.name == "FPGrenade") fpGrenade = t;
+                    else if (t.name == "FPPin_Grenade") fpPinIn = t;
+                    else if (t.name == "FPPin_Hand") fpPinOut = t;
                 }
+                // the arms wear the body's own material (as the gun arms do), the grenade and pins keep theirs
+                Material[] mats = null;
+                if (view != null && view.body != null && view.body.firstPersonOnly != null)
+                    foreach (var r in view.body.firstPersonOnly) if (r != null) { mats = r.sharedMaterials; break; }
+                if (mats != null && mats.Length > 0)
+                    foreach (var r in fpArms.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    {
+                        var use = r.sharedMaterials;
+                        for (int i = 0; i < use.Length; i++) use[i] = mats[Mathf.Min(i, mats.Length - 1)];
+                        r.sharedMaterials = use;
+                    }
                 foreach (var r in fpArms.GetComponentsInChildren<Renderer>(true)) { r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; r.receiveShadows = false; }
                 foreach (var r in fpArms.GetComponentsInChildren<SkinnedMeshRenderer>(true)) r.updateWhenOffscreen = true;
             }
@@ -330,6 +451,11 @@ namespace ZombieRush.Weapons
             fpArms.gameObject.SetActive(true);
             ClipSampler.Sample(fpArms.gameObject, clip, time);
             if (fpGrenade != null) fpGrenade.gameObject.SetActive(shown);
+            // the pin: in the grenade until the left hand pulls it, then in that hand for a moment
+            float sincePin = Time.time - pinAt;
+            bool cooking = state == State.Cooking;
+            if (fpPinIn != null) fpPinIn.gameObject.SetActive(cooking && sincePin < cfg.pinPullAt);
+            if (fpPinOut != null) fpPinOut.gameObject.SetActive(cooking && sincePin >= cfg.pinPullAt && sincePin < cfg.pinPullAt + cfg.pinHandFor);
         }
 
         // ------------------------------------------------------------------ third person: the throwing arm
@@ -402,7 +528,7 @@ namespace ZombieRush.Weapons
             }
             else on = view != null && view.IsThirdPerson && ClipTime(cfg.tpCook, cfg.tpThrow, out clip, out time, out shown);
             tpWeight = Mathf.MoveTowards(tpWeight, on ? 1f : 0f, Time.deltaTime / 0.12f);
-            if (tpWeight <= 0f || !MakeProxy()) { ShowTpGrenade(false); return; }
+            if (tpWeight <= 0f || !MakeProxy()) { ShowTpGrenade(false); HideTpGun(false); return; }
             if (clip != null) { ClipSampler.Sample(proxy, clip, time); lastTpClip = clip; lastTpTime = time; }
             else if (lastTpClip != null) ClipSampler.Sample(proxy, lastTpClip, lastTpTime);   // fading out: hold the last pose
             float w = tpWeight * tpWeight * (3f - 2f * tpWeight);
@@ -415,6 +541,7 @@ namespace ZombieRush.Weapons
                     if (bodyBones.TryGetValue(n, out var b) && proxyBones.TryGetValue(n, out var s) && proxyRest.TryGetValue(n, out var r))
                         b.localRotation = b.localRotation * Quaternion.Slerp(Quaternion.identity, Quaternion.Inverse(r) * s.localRotation, w);
             ShowTpGrenade(shown && on);
+            HideTpGun(on && tpWeight > 0.35f);
             if (tpHeld != null && tpHeld.gameObject.activeSelf && proxyGrenade != null && proxyHand != null && bodyBones.TryGetValue("RightHand", out var hand))
             {
                 // the grenade where the clip holds it: its place in the copy's hand, on the body's hand
@@ -437,6 +564,25 @@ namespace ZombieRush.Weapons
             if (tpHeld != null) tpHeld.gameObject.SetActive(true);
         }
 
-        void OnDisable() { if (proxy != null) Destroy(proxy); if (tpHeld != null) tpHeld.gameObject.SetActive(false); }
+        // the body's gun: both hands leave it to throw, so it is put away (hidden) until the throw is done
+        WeaponAimRig aimRig;
+        Transform hiddenGun;
+        readonly System.Collections.Generic.List<Renderer> hiddenRenderers = new System.Collections.Generic.List<Renderer>();
+
+        void HideTpGun(bool hide)
+        {
+            if (aimRig == null) aimRig = body != null ? body.GetComponent<WeaponAimRig>() : null;
+            if (aimRig == null) aimRig = GetComponentInChildren<WeaponAimRig>();
+            Transform gun = hide && aimRig != null ? aimRig.HeldGun : null;
+            if (gun == hiddenGun) return;
+            foreach (var r in hiddenRenderers) if (r != null) r.forceRenderingOff = false;
+            hiddenRenderers.Clear();
+            hiddenGun = gun;
+            if (gun == null) return;
+            foreach (var r in gun.GetComponentsInChildren<Renderer>(true))
+                if (!r.forceRenderingOff) { r.forceRenderingOff = true; hiddenRenderers.Add(r); }
+        }
+
+        void OnDisable() { if (proxy != null) Destroy(proxy); if (tpHeld != null) tpHeld.gameObject.SetActive(false); HideTpGun(false); }
     }
 }

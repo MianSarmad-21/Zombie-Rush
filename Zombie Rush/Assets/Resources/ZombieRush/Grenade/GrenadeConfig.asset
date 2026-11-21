@@ -17,17 +17,29 @@ MonoBehaviour:
   fuse: 3.5
   explodeInHand: 1
   minHold: 0.25
+  centerTimer: 1
+  tickEvery: 0.5
+  dangerUnder: 1
+  tickFastEvery: 0.2
+  tickVolume: 0.35
   throwSpeed: 17
   throwLift: 3.5
-  throwTime: 0.45
-  releaseAt: 0.38
+  throwTime: 0.4
+  releaseAt: 0.36
   bounciness: 0.32
   friction: 0.7
   rollDrag: 1.2
   showArc: 1
   arcColor: {r: 1, g: 0.82, b: 0.35, a: 0.75}
-  arcWidth: 0.035
+  dangerColor: {r: 1, g: 0.25, b: 0.18, a: 0.85}
+  arcWidth: 0.045
+  arcDash: 0.45
+  arcStartDistance: 1.2
   arcSeconds: 2.2
+  landingRing: 0.35
+  showBlastRing: 1
+  fpRelease: {x: 0.07, y: 0.05, z: 0.5}
+  tpRelease: {x: 0.17, y: 1.64, z: 0.46}
   radius: 7
   zombieDamage: 320
   playerDamage: 120
@@ -61,3 +73,55 @@ MonoBehaviour:
   fpHoldPosition: {x: 0.17, y: -0.15, z: 0.36}
   fpHoldEuler: {x: -20, y: 25, z: -10}
   fpGunDip: 32
+  fpArms: {fileID: 919132149155446097, guid: 16f02f5c81f24e6459a3502e57710a6f, type: 3}
+  fpCook: {fileID: -7227172321777485954, guid: 16f02f5c81f24e6459a3502e57710a6f, type: 3}
+  fpThrow: {fileID: -5822508557203351016, guid: 16f02f5c81f24e6459a3502e57710a6f, type: 3}
+  tpProxy: {fileID: 919132149155446097, guid: 9e504eb0623a8934e89f703230213c9d, type: 3}
+  tpRest: {fileID: 483352080543593837, guid: 9e504eb0623a8934e89f703230213c9d, type: 3}
+  tpCook: {fileID: -3213450782255110619, guid: 9e504eb0623a8934e89f703230213c9d, type: 3}
+  tpThrow: {fileID: 3625391853315421469, guid: 9e504eb0623a8934e89f703230213c9d, type: 3}
+  tpCopyBones:
+  - LeftHand
+  - LeftHandIndex1
+  - LeftHandIndex2
+  - LeftHandIndex3
+  - LeftHandMiddle1
+  - LeftHandMiddle2
+  - LeftHandMiddle3
+  - LeftHandPinky1
+  - LeftHandPinky2
+  - LeftHandPinky3
+  - LeftHandRing1
+  - LeftHandRing2
+  - LeftHandRing3
+  - LeftHandThumb1
+  - LeftHandThumb2
+  - LeftHandThumb3
+  - LeftLowerArm
+  - LeftShoulder
+  - LeftUpperArm
+  - RightHand
+  - RightHandIndex1
+  - RightHandIndex2
+  - RightHandIndex3
+  - RightHandMiddle1
+  - RightHandMiddle2
+  - RightHandMiddle3
+  - RightHandPinky1
+  - RightHandPinky2
+  - RightHandPinky3
+  - RightHandRing1
+  - RightHandRing2
+  - RightHandRing3
+  - RightHandThumb1
+  - RightHandThumb2
+  - RightHandThumb3
+  - RightLowerArm
+  - RightShoulder
+  - RightUpperArm
+  tpDeltaBones:
+  - Chest
+  - UpperChest
+  cookRaise: 0.53333336
+  pinPullAt: 0.26666668
+  pinHandFor: 0.4

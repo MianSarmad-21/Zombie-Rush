@@ -79,6 +79,7 @@ namespace ZombieRush.EditorTools
             public List<Spot> spots = new List<Spot>();
             public List<string> exterior = new List<string>();
             public bool hasHelipad; public Vector3 padCentre, padNose; public bool hasStairs; public Vector3 padStairs;
+            public List<Vector3> stairsPath = new List<Vector3>();   // landing, flight top, flight bottom, walk-off end
             public Vector3 RoomCentre => new Vector3((roomMin.x + roomMax.x) * 0.5f, 0f, (roomMin.z + roomMax.z) * 0.5f);
         }
 
@@ -103,6 +104,8 @@ namespace ZombieRush.EditorTools
             {
                 d.hasHelipad = true; d.padCentre = V(h["centre"]); d.padNose = V(h["nose"]);
                 if (h.TryGetValue("stairs", out var st) && st is List<object>) { d.hasStairs = true; d.padStairs = V(st); }
+                if (h.TryGetValue("stairsPath", out var sp) && sp is List<object> spl) d.stairsPath = spl.Select(V).ToList();
+                if (d.stairsPath.Count > 0) { d.hasStairs = true; d.padStairs = d.stairsPath[0]; }   // the steel flight is the way down
             }
             return d;
         }
@@ -248,6 +251,18 @@ namespace ZombieRush.EditorTools
             }
             foreach (var r in go.GetComponentsInChildren<MeshRenderer>())
                 if (r.name.StartsWith("Lamp_")) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            // helipad stairs: the steel flight is looks only; the walkable ramp beside it is a collider with no renderer
+            var stairsMesh = go.transform.Find("HelipadStairs");
+            if (stairsMesh != null)
+                GameObjectUtility.SetStaticEditorFlags(stairsMesh.gameObject, StaticEditorFlags.OccludeeStatic | StaticEditorFlags.BatchingStatic);
+            var ramp = go.transform.Find("HelipadStairsRamp");
+            if (ramp != null)
+            {
+                var rc = ramp.gameObject.AddComponent<MeshCollider>();
+                rc.sharedMesh = ramp.GetComponent<MeshFilter>().sharedMesh;
+                Object.DestroyImmediate(ramp.GetComponent<MeshRenderer>());
+                GameObjectUtility.SetStaticEditorFlags(ramp.gameObject, 0);
+            }
 
             // door marker (BaseFurnishTools reads the first "door*" child to know the hall's entrance end)
             var main = data.doors.OrderByDescending(d => d.x).First();
@@ -264,7 +279,18 @@ namespace ZombieRush.EditorTools
                 pad.localPosition = data.padCentre;
                 pad.localRotation = Quaternion.LookRotation(new Vector3(data.padNose.x, 0f, data.padNose.z).normalized, Vector3.up);
                 if (data.hasStairs) { var st = new GameObject("Helipad_Stairs").transform; st.SetParent(go.transform, false); st.localPosition = data.padStairs; }
-                sb.AppendLine($"Helipad markers: centre {data.padCentre}, nose {data.padNose}, stairs {(data.hasStairs ? data.padStairs.ToString() : "none")}.");
+                // walk path off the deck (Helipad_Path_0..3), each facing the next point
+                for (int k = 0; k < data.stairsPath.Count; k++)
+                {
+                    var pt = new GameObject($"Helipad_Path_{k}").transform; pt.SetParent(go.transform, false);
+                    pt.localPosition = data.stairsPath[k];
+                    int last = data.stairsPath.Count - 1;
+                    var dir = k < last ? data.stairsPath[k + 1] - data.stairsPath[k] : data.stairsPath[k] - data.stairsPath[Mathf.Max(0, k - 1)];
+                    dir.y = 0f;
+                    if (dir.sqrMagnitude > 1e-4f) pt.localRotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+                }
+                sb.AppendLine($"Helipad markers: centre {data.padCentre}, nose {data.padNose}, stairs {(data.hasStairs ? data.padStairs.ToString() : "none")}, " +
+                              $"path {data.stairsPath.Count} points, steel stairs {(stairsMesh != null ? "yes" : "NO")}, ramp collider {(ramp != null ? "yes" : "NO")}.");
             }
 
             // lights

@@ -18,36 +18,10 @@ ModelImporter:
     removeConstantScaleCurves: 0
     motionNodeName: 
     animationImportErrors: 
-    animationImportWarnings: "\nClip 'Death' has import animation warnings that might
-      lower retargeting quality:\nNote: Activate translation DOF on avatar to improve
-      retargeting quality.\n\t'RightUpperLeg' has scale animation that will be discarded.\n\nClip
-      'Run_BackLeft' has import animation warnings that might lower retargeting quality:\nNote:
-      Activate translation DOF on avatar to improve retargeting quality.\n\t'LeftFoot'
-      has scale animation that will be discarded.\n\t'RightFoot' has scale animation
-      that will be discarded.\n\nClip 'Run_BackRight' has import animation warnings
-      that might lower retargeting quality:\nNote: Activate translation DOF on avatar
-      to improve retargeting quality.\n\t'LeftFoot' has scale animation that will
-      be discarded.\n\t'RightFoot' has scale animation that will be discarded.\n\nClip
-      'Run_FwdLeft' has import animation warnings that might lower retargeting quality:\nNote:
-      Activate translation DOF on avatar to improve retargeting quality.\n\t'LeftFoot'
-      has scale animation that will be discarded.\n\t'RightFoot' has scale animation
-      that will be discarded.\n\nClip 'Run_FwdRight' has import animation warnings
-      that might lower retargeting quality:\nNote: Activate translation DOF on avatar
-      to improve retargeting quality.\n\t'LeftFoot' has scale animation that will
-      be discarded.\n\t'RightFoot' has scale animation that will be discarded.\n\nClip
-      'Strafe_Left' has import animation warnings that might lower retargeting quality:\nNote:
-      Activate translation DOF on avatar to improve retargeting quality.\n\t'LeftUpperLeg'
-      has scale animation that will be discarded.\n\t'LeftFoot' has scale animation
-      that will be discarded.\n\t'RightUpperLeg' has scale animation that will be
-      discarded.\n\t'RightFoot' has scale animation that will be discarded.\n\nClip
-      'Strafe_Right' has import animation warnings that might lower retargeting quality:\nNote:
-      Activate translation DOF on avatar to improve retargeting quality.\n\t'LeftUpperLeg'
-      has scale animation that will be discarded.\n\t'LeftFoot' has scale animation
-      that will be discarded.\n\t'RightUpperLeg' has scale animation that will be
-      discarded.\n\t'RightFoot' has scale animation that will be discarded.\n\nClip
-      'Walk' has import animation warnings that might lower retargeting quality:\nNote:
-      Activate translation DOF on avatar to improve retargeting quality.\n\t'RightFoot'
-      has scale animation that will be discarded.\n"
+    animationImportWarnings: "\nClip 'ShadowOperative_Rig|Death' has import animation
+      warnings that might lower retargeting quality:\nNote: Activate translation
+      DOF on avatar to improve retargeting quality.\n\t'RightUpperLeg' has scale
+      animation that will be discarded.\n"
     animationRetargetingWarnings: 
     animationDoRetargetingWarnings: 0
     importAnimatedCustomProperties: 0
@@ -62,7 +36,7 @@ ModelImporter:
     clipAnimations:
     - serializedVersion: 16
       name: Crouch_Idle
-      takeName: Crouch_Idle
+      takeName: ShadowOperative_Rig|Crouch_Idle
       internalID: 6926052104325756175
       firstFrame: 0
       lastFrame: 120
@@ -91,7 +65,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Crouch_Walk
-      takeName: Crouch_Walk
+      takeName: ShadowOperative_Rig|Crouch_Walk
       internalID: -4283384174308760985
       firstFrame: 0
       lastFrame: 24
@@ -120,7 +94,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Death
-      takeName: Death
+      takeName: ShadowOperative_Rig|Death
       internalID: 4348485665485846014
       firstFrame: 0
       lastFrame: 74
@@ -149,7 +123,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Fall
-      takeName: Fall
+      takeName: ShadowOperative_Rig|Fall
       internalID: 5917537482288442099
       firstFrame: 0
       lastFrame: 30
@@ -178,7 +152,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Fire
-      takeName: Fire
+      takeName: ShadowOperative_Rig|Fire
       internalID: -4579541417933013020
       firstFrame: 0
       lastFrame: 9
@@ -207,7 +181,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Hit_Reaction
-      takeName: Hit_Reaction
+      takeName: ShadowOperative_Rig|Hit_Reaction
       internalID: 8970099879989002870
       firstFrame: 0
       lastFrame: 17
@@ -235,37 +209,8 @@ ModelImporter:
       maskSource: {instanceID: 0}
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
-      name: Idle_Aim
-      takeName: Idle_Aim
-      internalID: 8766126473117290893
-      firstFrame: 0
-      lastFrame: 120
-      wrapMode: 0
-      orientationOffsetY: 0
-      level: 0
-      cycleOffset: 0
-      loop: 0
-      hasAdditiveReferencePose: 0
-      loopTime: 1
-      loopBlend: 1
-      loopBlendOrientation: 1
-      loopBlendPositionY: 1
-      loopBlendPositionXZ: 1
-      keepOriginalOrientation: 1
-      keepOriginalPositionY: 1
-      keepOriginalPositionXZ: 1
-      heightFromFeet: 0
-      mirror: 0
-      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
-      curves: []
-      events: []
-      transformMask: []
-      maskType: 3
-      maskSource: {instanceID: 0}
-      additiveReferencePoseFrame: 0
-    - serializedVersion: 16
       name: Idle
-      takeName: Idle
+      takeName: ShadowOperative_Rig|Idle
       internalID: -3100369314251171874
       firstFrame: 0
       lastFrame: 150
@@ -293,8 +238,66 @@ ModelImporter:
       maskSource: {instanceID: 0}
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
+      name: Idle_Aim
+      takeName: ShadowOperative_Rig|Idle_Aim
+      internalID: 8766126473117290893
+      firstFrame: 0
+      lastFrame: 120
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 1
+      loopBlendOrientation: 1
+      loopBlendPositionY: 1
+      loopBlendPositionXZ: 1
+      keepOriginalOrientation: 1
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 1
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: Idle_Pistol
+      takeName: ShadowOperative_Rig|Idle_Pistol
+      internalID: -4105909721224269478
+      firstFrame: 0
+      lastFrame: 120
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 1
+      loopBlendOrientation: 1
+      loopBlendPositionY: 1
+      loopBlendPositionXZ: 1
+      keepOriginalOrientation: 1
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 1
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
       name: Reload
-      takeName: Reload
+      takeName: ShadowOperative_Rig|Reload
       internalID: 229770723416056496
       firstFrame: 0
       lastFrame: 59
@@ -322,8 +325,37 @@ ModelImporter:
       maskSource: {instanceID: 0}
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
+      name: Run
+      takeName: ShadowOperative_Rig|Run
+      internalID: 5522812681064789136
+      firstFrame: 0
+      lastFrame: 20
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 1
+      loopBlendOrientation: 1
+      loopBlendPositionY: 1
+      loopBlendPositionXZ: 1
+      keepOriginalOrientation: 1
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 1
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
       name: Run_Back
-      takeName: Run_Back
+      takeName: ShadowOperative_Rig|Run_Back
       internalID: 910671905830426635
       firstFrame: 0
       lastFrame: 20
@@ -352,7 +384,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Run_BackLeft
-      takeName: Run_BackLeft
+      takeName: ShadowOperative_Rig|Run_BackLeft
       internalID: 4337508221818252317
       firstFrame: 0
       lastFrame: 20
@@ -381,7 +413,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Run_BackRight
-      takeName: Run_BackRight
+      takeName: ShadowOperative_Rig|Run_BackRight
       internalID: 5830384713823128668
       firstFrame: 0
       lastFrame: 20
@@ -410,7 +442,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Run_FwdLeft
-      takeName: Run_FwdLeft
+      takeName: ShadowOperative_Rig|Run_FwdLeft
       internalID: -7859604674525622598
       firstFrame: 0
       lastFrame: 20
@@ -439,7 +471,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Run_FwdRight
-      takeName: Run_FwdRight
+      takeName: ShadowOperative_Rig|Run_FwdRight
       internalID: -8505227428543051841
       firstFrame: 0
       lastFrame: 20
@@ -467,11 +499,11 @@ ModelImporter:
       maskSource: {instanceID: 0}
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
-      name: Run
-      takeName: Run
-      internalID: 5522812681064789136
+      name: Sit_Pistol
+      takeName: ShadowOperative_Rig|Sit_Pistol
+      internalID: -9053841249232068234
       firstFrame: 0
-      lastFrame: 20
+      lastFrame: 150
       wrapMode: 0
       orientationOffsetY: 0
       level: 0
@@ -497,7 +529,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Sprint
-      takeName: Sprint
+      takeName: ShadowOperative_Rig|Sprint
       internalID: -8086047558812005389
       firstFrame: 0
       lastFrame: 16
@@ -525,8 +557,37 @@ ModelImporter:
       maskSource: {instanceID: 0}
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
+      name: Stairs_Down_Pistol
+      takeName: ShadowOperative_Rig|Stairs_Down_Pistol
+      internalID: -446592461004619303
+      firstFrame: 0
+      lastFrame: 30
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 1
+      loopBlendOrientation: 1
+      loopBlendPositionY: 1
+      loopBlendPositionXZ: 1
+      keepOriginalOrientation: 1
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 1
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
       name: Strafe_Left
-      takeName: Strafe_Left
+      takeName: ShadowOperative_Rig|Strafe_Left
       internalID: 1540028457872560229
       firstFrame: 0
       lastFrame: 16
@@ -555,7 +616,7 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Strafe_Right
-      takeName: Strafe_Right
+      takeName: ShadowOperative_Rig|Strafe_Right
       internalID: -2094301782565841437
       firstFrame: 0
       lastFrame: 16
@@ -584,10 +645,39 @@ ModelImporter:
       additiveReferencePoseFrame: 0
     - serializedVersion: 16
       name: Walk
-      takeName: Walk
+      takeName: ShadowOperative_Rig|Walk
       internalID: 2667949614841947897
       firstFrame: 0
       lastFrame: 32
+      wrapMode: 0
+      orientationOffsetY: 0
+      level: 0
+      cycleOffset: 0
+      loop: 0
+      hasAdditiveReferencePose: 0
+      loopTime: 1
+      loopBlend: 1
+      loopBlendOrientation: 1
+      loopBlendPositionY: 1
+      loopBlendPositionXZ: 1
+      keepOriginalOrientation: 1
+      keepOriginalPositionY: 1
+      keepOriginalPositionXZ: 1
+      heightFromFeet: 0
+      mirror: 0
+      bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+      curves: []
+      events: []
+      transformMask: []
+      maskType: 3
+      maskSource: {instanceID: 0}
+      additiveReferencePoseFrame: 0
+    - serializedVersion: 16
+      name: Walk_Pistol
+      takeName: ShadowOperative_Rig|Walk_Pistol
+      internalID: 827793498342248840
+      firstFrame: 0
+      lastFrame: 30
       wrapMode: 0
       orientationOffsetY: 0
       level: 0

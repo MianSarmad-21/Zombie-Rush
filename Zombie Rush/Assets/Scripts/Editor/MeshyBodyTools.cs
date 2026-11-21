@@ -58,7 +58,7 @@ namespace ZombieRush.EditorTools
         // Clips that cycle.
         static readonly HashSet<string> LoopClips = new HashSet<string>
             { "Idle", "Idle_Aim", "Walk", "Run", "Sprint", "Crouch_Idle", "Crouch_Walk", "Fall", "Downed", "Run_Reload", "Strafe_Left", "Strafe_Right", "Run_Back",
-              "Run_FwdLeft", "Run_FwdRight", "Run_BackLeft", "Run_BackRight" };
+              "Run_FwdLeft", "Run_FwdRight", "Run_BackLeft", "Run_BackRight", "Walk_Pistol", "Idle_Pistol", "Stairs_Down_Pistol", "Sit_Pistol" };
 
         // Player controller slot -> Meshy clip. Walk speed (PlayerJogSpeed) is a jog and sprint speed (8 m/s)
         // a sprint, so the walk and run slots take Run and Sprint.
@@ -85,18 +85,45 @@ namespace ZombieRush.EditorTools
         static string ClipName(string n) => n.Contains("|") ? n.Substring(n.LastIndexOf('|') + 1) : n;
 
         /// Loop the cycles; every clip stays in place (the controller moves the player).
-        static void ConfigureClips(ModelImporter imp)
+        internal static void ConfigureClips(ModelImporter imp)
         {
+            // every clip's sub-asset id (what the controllers point at) is kept by name: re-reading the take list
+            // would otherwise hand existing clips new ids and unlink them
+            var ids = ClipIds(imp);
             var clips = imp.defaultClipAnimations;
             foreach (var c in clips)
             {
-                bool loop = LoopClips.Contains(ClipName(c.name));
+                // Blender 5 names takes "<rig>|<action>": the clip keeps the bare action name
+                c.name = ClipName(c.takeName);
+                bool loop = LoopClips.Contains(c.name);
                 c.loopTime = loop; c.loopPose = loop;
                 c.lockRootRotation = true; c.keepOriginalOrientation = true;
                 c.lockRootHeightY = true; c.keepOriginalPositionY = true;
                 c.lockRootPositionXZ = true; c.keepOriginalPositionXZ = true;
             }
             imp.clipAnimations = clips;
+            var so = new SerializedObject(imp);
+            var arr = so.FindProperty("m_ClipAnimations");
+            for (int i = 0; arr != null && i < arr.arraySize; i++)
+            {
+                var e = arr.GetArrayElementAtIndex(i);
+                if (ids.TryGetValue(e.FindPropertyRelative("name").stringValue, out long id))
+                    e.FindPropertyRelative("internalID").longValue = id;
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// Clip name -> sub-asset id, as the importer has them now.
+        static Dictionary<string, long> ClipIds(ModelImporter imp)
+        {
+            var ids = new Dictionary<string, long>();
+            var arr = new SerializedObject(imp).FindProperty("m_ClipAnimations");
+            for (int i = 0; arr != null && i < arr.arraySize; i++)
+            {
+                var e = arr.GetArrayElementAtIndex(i);
+                ids[e.FindPropertyRelative("name").stringValue] = e.FindPropertyRelative("internalID").longValue;
+            }
+            return ids;
         }
 
         [MenuItem("Zombie Rush/Player/Set Up Meshy Body (Shadow Operative)")]
