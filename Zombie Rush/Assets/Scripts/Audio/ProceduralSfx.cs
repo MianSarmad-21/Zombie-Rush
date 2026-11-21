@@ -103,6 +103,16 @@ namespace ZombieRush.Audio
         }
 
         // two bright tones with a very fast decay plus a breath of noise: the classic hit marker "tick"
+        static AudioClip grenadeTick;
+        /// The cooked grenade's fuse tick: a dry metal click with a short ring.
+        public static AudioClip GrenadeTick => grenadeTick != null ? grenadeTick : grenadeTick = Make("ZR_GrenadeTick", 0.07f, GrenadeTickSample);
+
+        static float GrenadeTickSample(float t, ref float state, ref uint seed)
+        {
+            float ring = Mathf.Exp(-t * 70f) * (Mathf.Sin(2f * Mathf.PI * 2350f * t) * 0.5f + Mathf.Sin(2f * Mathf.PI * 3900f * t) * 0.25f);
+            return ring + Noise(ref seed) * Mathf.Exp(-t * 400f) * 0.6f;
+        }
+
         static float HitTickSample(float t, ref float state, ref uint seed)
         {
             float env = Mathf.Exp(-t * 95f);

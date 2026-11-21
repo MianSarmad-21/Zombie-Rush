@@ -244,6 +244,9 @@ namespace ZombieRush.EditorTools
                 imp.SaveAndReimport();
                 return AssetDatabase.LoadAllAssetsAtPath(path).OfType<AnimationClip>().Where(c => !c.name.StartsWith("__preview")).ToArray();
             }
+            // the clip moments, as Blender/grenade_anim.py keys them (30 fps): pin out at frame 8, arm cocked at 16,
+            // release at 0.36 of the throw
+            cfg.pinPullAt = 8f / 30f; cfg.cookRaise = 16f / 30f; cfg.releaseAt = 0.36f;
             string fpPath = ModelDir + "/FP_Grenade.fbx", tpPath = ModelDir + "/Operative_Grenade.fbx";
             var fp = Import(fpPath);
             if (fp != null)
@@ -264,7 +267,8 @@ namespace ZombieRush.EditorTools
                 foreach (var c in new[] { cfg.tpCook, cfg.tpThrow }.Where(c => c != null))
                     foreach (var b in AnimationUtility.GetCurveBindings(c))
                         if (b.propertyName.StartsWith("m_LocalRotation")) moved.Add(b.path.Split('/').Last());
-                cfg.tpCopyBones = moved.Where(n => n.StartsWith("Right") && (n.Contains("Shoulder") || n.Contains("Arm") || n.Contains("Hand"))).OrderBy(n => n).ToArray();
+                // both arms: the right throws, the left pulls the pin and points ahead
+                cfg.tpCopyBones = moved.Where(n => (n.StartsWith("Right") || n.StartsWith("Left")) && (n.Contains("Shoulder") || n.Contains("Arm") || n.Contains("Hand"))).OrderBy(n => n).ToArray();
                 cfg.tpDeltaBones = moved.Where(n => DeltaBones.Contains(n)).ToArray();
                 sb.AppendLine($"Third person: {tpPath}, clips {string.Join(", ", tp.Select(c => $"{c.name} {c.length:0.00}s"))}; " +
                               $"{cfg.tpCopyBones.Length} arm bones copied, {cfg.tpDeltaBones.Length} chest bones turned.");
@@ -340,7 +344,43 @@ namespace ZombieRush.EditorTools
 
             var gh = root.gameObject.AddComponent<GrenadeHUD>();
             gh.icon = icon; gh.countText = text; gh.fuseRing = ring;
-            return $"HUD: grenade counter left of the ammo panel '{blockRT.name}' ({root.sizeDelta.x:0} x {root.sizeDelta.y:0}).\n";
+
+            // the centre fuse timer: a ring round the screen centre, the seconds under it, a dot in the middle
+            foreach (Transform old in canvasRT) if (old.name == "GrenadeTimer") { Undo.DestroyObjectImmediate(old.gameObject); break; }
+            const float D = 120f;
+            var timer = new GameObject("GrenadeTimer", typeof(RectTransform), typeof(CanvasGroup)).GetComponent<RectTransform>();
+            Undo.RegisterCreatedObjectUndo(timer.gameObject, "Grenade timer");
+            timer.SetParent(canvasRT, false);
+            timer.anchorMin = timer.anchorMax = timer.pivot = new Vector2(0.5f, 0.5f);
+            timer.sizeDelta = new Vector2(D, D); timer.anchoredPosition = Vector2.zero;
+            var group = timer.GetComponent<CanvasGroup>(); group.alpha = 0f; group.blocksRaycasts = false; group.interactable = false;
+            Image Img(string name, Transform parent, Sprite sprite, Vector2 size)
+            {
+                var im = new GameObject(name, typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+                im.rectTransform.SetParent(parent, false);
+                im.rectTransform.anchorMin = im.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                im.rectTransform.sizeDelta = size; im.sprite = sprite; im.raycastTarget = false; im.preserveAspect = true;
+                return im;
+            }
+            var ringSprite = Sprite(RingPath);
+            var back = Img("Back", timer, ringSprite, new Vector2(D, D));
+            var fill = Img("Fuse", timer, ringSprite, new Vector2(D, D));
+            fill.type = Image.Type.Filled; fill.fillMethod = Image.FillMethod.Radial360;
+            fill.fillOrigin = (int)Image.Origin360.Top; fill.fillClockwise = false;
+            var dot = Img("Dot", timer, AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd"), new Vector2(9f, 9f));
+            var dotOutline = dot.gameObject.AddComponent<Outline>(); dotOutline.effectColor = new Color(0f, 0f, 0f, 0.7f);
+            var secs = new GameObject("Seconds", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+            secs.rectTransform.SetParent(timer, false);
+            secs.rectTransform.anchorMin = secs.rectTransform.anchorMax = new Vector2(0.5f, 0f);
+            secs.rectTransform.pivot = new Vector2(0.5f, 1f);
+            secs.rectTransform.sizeDelta = new Vector2(D * 1.4f, 44f); secs.rectTransform.anchoredPosition = new Vector2(0f, -6f);
+            secs.font = src.font; secs.fontStyle = src.fontStyle; secs.fontSize = 36; secs.alignment = TextAnchor.UpperCenter;
+            secs.text = "3.5"; secs.raycastTarget = false; secs.horizontalOverflow = HorizontalWrapMode.Overflow;
+            var so = secs.gameObject.AddComponent<Outline>();
+            so.effectColor = outline != null ? outline.effectColor : new Color(0f, 0f, 0f, 0.8f);
+            so.effectDistance = outline != null ? outline.effectDistance : new Vector2(2f, -2f);
+            gh.timerGroup = group; gh.timerBack = back; gh.timerRing = fill; gh.timerText = secs; gh.timerDot = dot;
+            return $"HUD: grenade counter left of the ammo panel '{blockRT.name}' ({root.sizeDelta.x:0} x {root.sizeDelta.y:0}); fuse timer at the screen centre ({D:0}).\n";
         }
 
         /// A copy of the touch Reload button, set to the grenade action, in a free spot beside it.
@@ -400,6 +440,7 @@ namespace ZombieRush.EditorTools
             static int step; static double next; static double started; static float nextGame;
             static ZombieHealth target; static float targetBefore;
             static bool sawGrenade;
+            static Vector3 predicted;
             static readonly Dictionary<ZombieHealth, float> before = new Dictionary<ZombieHealth, float>();
 
             public static void Begin()
@@ -428,9 +469,12 @@ namespace ZombieRush.EditorTools
 
             static void Tick()
             {
-                if (!EditorApplication.isPlaying || EditorApplication.timeSinceStartup < next || Time.time < nextGame) return;
-                GameManager.Instance?.Resume();   // undo the pause the game makes when the editor window loses focus
-                if (EditorApplication.timeSinceStartup - started > 420) { Finish("FAILED: timed out."); return; }
+                if (!EditorApplication.isPlaying) return;
+                // undo the pause the game makes when the editor window loses focus, before the game-clock wait
+                // (a paused game clock never reaches nextGame)
+                GameManager.Instance?.Resume();
+                if (EditorApplication.timeSinceStartup - started > 420) { Finish($"FAILED: timed out at step {step}."); return; }
+                if (EditorApplication.timeSinceStartup < next || Time.time < nextGame) return;
                 try
                 {
                     if (step >= plan.Count) { Finish("Done."); return; }
@@ -453,6 +497,7 @@ namespace ZombieRush.EditorTools
                     if (!Net.NetSession.IsRunning)
                     {
                         if (!Net.NetSession.StartSolo()) { log.AppendLine("FAILED: could not start solo."); return true; }
+                        Effects.IntroCutscene.Enabled = false;   // the helicopter intro would carry the player off the test spot
                         GameManager.Instance?.BeginMatch();
                         var lobby = Object.FindAnyObjectByType<Net.NetLobbyUI>(); if (lobby != null) lobby.gameObject.SetActive(false);
                     }
@@ -472,6 +517,12 @@ namespace ZombieRush.EditorTools
                     V.transform.position = spot + Vector3.up * 0.05f;
                     if (cc != null) cc.enabled = true;
                     log.AppendLine($"Start: {T.Count} grenades; player moved out of the base to ({spot.x:0.0}, {spot.y:0.0}, {spot.z:0.0}).");
+                    return true;
+                }),
+                (0.3f, () =>
+                {
+                    Vector3 at = V.transform.position;
+                    log.AppendLine($"  player now at ({at.x:0.0}, {at.y:0.0}, {at.z:0.0}); grenades allowed here: {SafeBase.FiringAllowedAt(at)}.");
                     return true;
                 }),
                 (1.0f, () =>
@@ -513,8 +564,26 @@ namespace ZombieRush.EditorTools
                     log.AppendLine($"Throw: cooking 1.6 s at {(target != null ? $"zombie '{target.name}' {Vector3.Distance(target.transform.position, me):0.0} m away" : "open ground 14 m ahead")}; count now {T.Count}; fire blocked {GameInput.FireBlocked}.");
                     return true;
                 }),
-                (0.9f, () => { Shot("Cook_FP"); log.AppendLine($"  cooking: {T.Cooking}, fuse left {T.FuseLeft:0.0} s"); return true; }),
+                (0.22f, () => { Shot("FP_1Pin"); return true; }),
+                (0.15f, () => { Shot("FP_2PinOut"); return true; }),
+                (0.6f, () =>
+                {
+                    Shot("FP_3Ready");
+                    predicted = T.PredictedLanding;
+                    log.AppendLine($"  cooking: {T.Cooking}, fuse left {T.FuseLeft:0.0} s, arc lands at ({predicted.x:0.0}, {predicted.y:0.0}, {predicted.z:0.0}) " +
+                                   $"{Vector3.Distance(predicted, V.transform.position):0.0} m away, danger {T.LandingDanger}");
+                    return true;
+                }),
+                (0.73f, () => { Shot("FP_4Throw"); return true; }),
                 (0.35f, () => { log.AppendLine($"  after the throw: grenades in flight {GrenadeProjectile.All.Count}, fire blocked {GameInput.FireBlocked}"); Shot("Flight"); return true; }),
+                (0.1f, () =>
+                {
+                    // the first bounce against the arc's landing ring
+                    if (GrenadeProjectile.LastFirstHit == null) return GrenadeProjectile.All.Count == 0;
+                    Vector3 h = GrenadeProjectile.LastFirstHit.Value;
+                    log.AppendLine($"  first touch at ({h.x:0.0}, {h.y:0.0}, {h.z:0.0}): {Vector3.Distance(h, predicted):0.00} m from the arc's landing ring.");
+                    return true;
+                }),
                 (0.6f, () =>
                 {
                     // the moment it goes off: a grenade was in the air and now none is
@@ -539,11 +608,13 @@ namespace ZombieRush.EditorTools
                 (0.5f, () =>
                 {
                     Vector3 me = V.transform.position;
-                    T.TestThrow(Aim(me + Vector3.up * 1.5f, me + V.transform.forward * 18f, GrenadeConfig.Get()), 0.5f);
+                    T.TestThrow(Aim(me + Vector3.up * 1.5f, me + V.transform.forward * 18f, GrenadeConfig.Get()), 1.2f);
                     return true;
                 }),
-                (0.32f, () => { Shot("Cook_TP"); return true; }),
-                (0.2f, () => { Shot("Throw_TP"); return true; }),
+                (0.22f, () => { Shot("TP_1Pin"); return true; }),
+                (0.7f, () => { Shot("TP_2Ready"); return true; }),
+                (0.36f, () => { Shot("TP_3Throw"); return true; }),
+                (0.2f, () => { Shot("TP_4Follow"); return true; }),
                 (0.6f, () =>
                 {
                     if (GrenadeProjectile.All.Count > 0) { sawGrenade = true; return false; }

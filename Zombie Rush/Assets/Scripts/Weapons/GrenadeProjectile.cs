@@ -42,6 +42,7 @@ namespace ZombieRush.Weapons
             if (cfg == null || cfg.projectilePrefab == null) return null;
             var go = Instantiate(cfg.projectilePrefab, position, Quaternion.LookRotation(velocity.sqrMagnitude > 0.01f ? velocity : Vector3.forward) * Quaternion.Euler(90f, 0f, 0f));
             var g = go.GetComponent<GrenadeProjectile>();
+            if (ownedByLocal) LastFirstHit = null;
             g.cfg = cfg;
             g.NetId = netId;
             g.Authoritative = authoritative;
@@ -86,8 +87,13 @@ namespace ZombieRush.Weapons
 
         void OnCollisionStay(Collision c) { if (c.contactCount > 0 && c.GetContact(0).normal.y > 0.5f) grounded = true; }
 
+        /// Where it first touched something (tests compare it with the aim arc's landing ring).
+        public Vector3? FirstHit { get; private set; }
+        public static Vector3? LastFirstHit { get; private set; }
+
         void OnCollisionEnter(Collision c)
         {
+            if (FirstHit == null && c.contactCount > 0) LastFirstHit = FirstHit = c.GetContact(0).point;
             float speed = c.relativeVelocity.magnitude;
             if (speed < 1.2f || Time.time < nextBounceSound || cfg.bounce == null || cfg.bounce.Length == 0) return;
             nextBounceSound = Time.time + 0.09f;

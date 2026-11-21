@@ -38,6 +38,8 @@ WRITE = "--write" in argv
 BAKE = "--no-bake" not in argv
 MESHY_PAINT = "--meshy-paint" in argv      # old look: Meshy's enhanced atlas instead of the class retexture
 PREVIEW = argv[argv.index("--preview") + 1] if "--preview" in argv else None
+DEBUG = "--debug" in argv
+ONLY = argv[argv.index("--only") + 1].split(",") if "--only" in argv else None   # preview views to render
 
 PROJECT = "C:/Mian Sarmad/Unity/Zombie-Rush/Zombie Rush/"
 SRC = PROJECT + "Blender/Source/FortressHaven/Meshy_AI_Fortress_Haven_20261117_texture"
@@ -586,6 +588,8 @@ PAD_R = 7.0            # helipad half width (octagon), metres
 PAD_CLEAR = 7.5        # radius kept clear of anything higher than the pad (rotor disc 13 m)
 TAIL_LEN = 9.5         # strip behind the pad centre kept clear for the tail boom
 ROTOR_H = 3.5          # nothing taller than this above the pad inside the rotor disc
+STUD_IN = 0.32         # edge light studs sit this far in from the pad rim
+PAD_CIRC = PAD_R / math.cos(math.radians(22.5))   # octagon corner radius
 
 
 def loose_parts(o):
@@ -727,14 +731,21 @@ def clear_pad(o, c, top):
     """Clears the rotor disc: pieces that stand above the deck inside PAD_CLEAR go (stones, barrels, dishes, poles)."""
     parts = loose_parts(o)
     parts.sort(key=lambda p: -p["area"])
-    gone, n = [], 0
+    gone, n, small = [], 0, []
     for p in parts[1:]:
         mid = (p["lo"][:2] + p["hi"][:2]) / 2
         r = float(np.linalg.norm(mid - c))
-        if p["hi"][2] > top + 0.05 and p["lo"][2] > top - 1.0 and r < PAD_CLEAR + 0.5 * float(max(p["hi"][:2] - p["lo"][:2])):
+        d = p["hi"] - p["lo"]
+        if DEBUG and r < PAD_CIRC + 4 and p["hi"][2] > top - 1.0:
+            log(f"  deck part r {r:.1f} lo {np.round(p['lo'], 2)} hi {np.round(p['hi'], 2)} area {p['area']:.1f} faces {len(p['faces'])}")
+        if p["hi"][2] > top + 0.05 and p["lo"][2] > top - 1.0 and r < PAD_CLEAR + 0.5 * float(max(d[:2])):
             gone += p["faces"]; n += 1
+        # small loose things lying on the deck round the pad (sandbags that would end up half under the slab)
+        elif (p["lo"][2] > top - 1.0 and p["hi"][2] < top + 1.5 and float(max(d[:2])) < 3.0 and p["area"] < 10
+              and r < PAD_CIRC + 2.0):
+            gone += p["faces"]; small.append(f"{max(d[:2]):.1f}m@{r:.1f}")
     delete_faces(o, gone)
-    log(f"helipad: {n} pieces cleared off the deck")
+    log(f"helipad: {n} pieces cleared off the rotor disc, {len(small)} small pieces off the deck round it {small}")
 
 
 def tex_helipad(n=1024):
@@ -751,7 +762,9 @@ def tex_helipad(n=1024):
     hb = (np.abs(x) < 0.12) & (np.abs(y) < 0.025)
     H = (hx | hb) & wear
     col = np.where(H[..., None], np.stack([0.86, 0.86, 0.84]), col)
-    edge = (np.maximum(np.abs(x), np.abs(y)) > 0.46) & wear
+    # the pad is an octagon with flat sides on the axes and the diagonals, so the band follows the octagon distance
+    oct_d = np.maximum(np.maximum(np.abs(x), np.abs(y)), (np.abs(x) + np.abs(y)) / math.sqrt(2))
+    edge = (oct_d > 0.455) & (oct_d <= 0.5) & wear
     col = np.where(edge[..., None], np.stack([0.8, 0.8, 0.78]), col)
     col = col * (0.85 + 0.25 * fine[..., None])
     h = 0.3 * big + 0.3 * fine - 0.3 * (ring | H | edge)
@@ -774,21 +787,27 @@ def build_helipad(c, top, yaw):
     for l in ft.loops:
         q = rot.transposed() @ (l.vert.co - Vector((c[0], c[1], top + T)))
         l[uv].uv = (q.x / (2 * R) + 0.5, q.y / (2 * R) + 0.5)
+    side = 2 * R * math.tan(math.radians(22.5))       # length of one octagon side
     for i in range(8):
         j = (i + 1) % 8
         f = bm.faces.new((botv[i], botv[j], topv[j], topv[i])); f.material_index = 1
-        for l in f.loops: l[uv].uv = (l.vert.co.x * 0.5, l.vert.co.z * 0.5)
+        # UV = distance along the rim (u) and height (v), in tiles of 2 m, so the concrete is not smeared
+        u0 = i * side
+        for l in f.loops:
+            u = u0 + (side if l.vert in (botv[j], topv[j]) else 0.0)
+            l[uv].uv = (u * 0.5, (l.vert.co.z - top) * 0.5)
     fb_ = bm.faces.new(botv[::-1]); fb_.material_index = 1
     for l in fb_.loops: l[uv].uv = (0.5, 0.5)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-    # light studs round the edge (16)
+    # light studs on the octagon rim: 8 corners + 8 mid-sides, inset STUD_IN from the edge
     lights = []
     for i in range(16):
-        a = 2 * math.pi * i / 16
-        x, y = math.cos(a) * (R - 0.25), math.sin(a) * (R - 0.25)
+        a = math.radians(22.5 * i)
+        rr = (R - STUD_IN) / (math.cos(math.radians(22.5)) if i % 2 else 1.0)   # odd i = corners
+        x, y = math.cos(a) * rr, math.sin(a) * rr
         p = P(x, y, top + T)
-        res = bmesh.ops.create_cone(bm, cap_ends=True, segments=8, radius1=0.09, radius2=0.07, depth=0.08,
-                                    matrix=Matrix.Translation(p + Vector((0, 0, 0.04))))
+        res = bmesh.ops.create_cone(bm, cap_ends=True, segments=8, radius1=0.065, radius2=0.05, depth=0.06,
+                                    matrix=Matrix.Translation(p + Vector((0, 0, 0.03))))
         for f in {f for v in res["verts"] for f in v.link_faces}: f.material_index = 2
         lights.append(tuple(p + Vector((0, 0, 0.12))))
     me = bpy.data.meshes.new("HelipadDeck"); bm.to_mesh(me); bm.free()
@@ -837,6 +856,258 @@ def stairs_spot(o, c, top, reach):
         if best is None or r < best[0]: best = (r, mid, float(p["hi"][2]))
     if best is None: return None
     return (float(best[1][0]), float(best[1][1]), best[2])
+
+
+# ------------------------------------------------------------------ steel stairs from the helipad deck (2026-11-19)
+# One straight steel flight down the outside of the top deck, on the helicopter's door side, from a landing on the
+# deck edge to the level below (about 8 m). Local frame: u = door direction (out from the pad centre), v = along the
+# deck edge (the way the flight goes down), origin at the pad centre. Every placement is checked with ray casts.
+ST_W = 1.2             # flight and landing width
+ST_RISE = 0.19         # wanted riser height (the real one is rise / step count)
+ST_RUN = 0.27          # tread run
+ST_LAND_IN = 1.4       # landing reaches this far in from the deck edge
+ST_GAP = 0.1           # gap between the deck wall and the inner stringer
+ST_RAIL = 1.0          # railing height
+ST_END = 1.2           # walk-off length past the last step (path end)
+
+
+def door_dir(yaw):
+    """The side the helicopter door faces: the nose rotated -90 deg about z."""
+    return (Matrix.Rotation(yaw - math.pi / 2, 3, "Z") @ Vector((0, 1, 0))).xy.normalized()
+
+
+def stair_frame(c, d, s, v0):
+    t = Vector((-d.y, d.x)) * s
+    def F(u, v, z):
+        q = Vector((c[0], c[1])) + d * u + t * (v0 + v)
+        return Vector((q.x, q.y, z))
+    return F
+
+
+def stair_plan(o, c, top, yaw):
+    """Searches both directions along the deck edge and landing spots near the door axis. Returns the best plan
+    (dict) or None. Hits on the hull block a spot; small loose Meshy parts in the way are listed for removal."""
+    bvh = BVHTree.FromObject(o, bpy.context.evaluated_depsgraph_get())
+    parts = loose_parts(o); parts.sort(key=lambda p: -p["area"])
+    part_of = np.zeros(len(o.data.polygons), int)
+    for pi, p in enumerate(parts): part_of[p["faces"]] = pi
+    d = door_dir(yaw)
+
+    def down(F, u, v, z0, dist=60.0):
+        loc, n, i, _ = bvh.ray_cast(F(u, v, z0), Vector((0, 0, -1)), dist)
+        return (loc.z, i) if loc is not None else (None, None)
+
+    def edge(F, v):
+        """Distance along u where the deck drops away (more than 1.5 m below the deck top)."""
+        for u in np.arange(PAD_R, 18.0, 0.1):
+            z, _ = down(F, u, v, top + 20)
+            if z is None or z < top - 1.5: return float(u)
+        return None
+
+    best = None
+    for s in (1, -1):
+        for v0 in np.arange(-3.0, 3.01, 0.25):
+            F = stair_frame(c, d, s, v0)
+            e_land = edge(F, -ST_W / 2)
+            if e_land is None or e_land < PAD_R + 0.8: continue
+            # landing height: the deck surface just inside the edge
+            zs = [down(F, u, v, top + 20)[0] for u in np.arange(e_land - ST_LAND_IN, e_land - 0.05, 0.2)
+                  for v in np.arange(-ST_W, 0.01, 0.3)]
+            zs = [z for z in zs if z is not None and z > top - 1.5]
+            if not zs: continue
+            z_land = float(np.percentile(zs, 90)) + 0.04
+            # flight length from the floor below, measured twice (the length depends on the floor height)
+            # the flight hugs the deck wall at the landing; anything sticking out further along it shows up as a
+            # hit in the clearance check below (the old Meshy plank stair there is small loose parts, so it goes)
+            L, z_low, ef = 5.0, None, e_land
+            uc = ef + ST_GAP + ST_W / 2
+            for _ in range(2):
+                fl = [down(F, u, v, z_land - 0.5)[0] for u in (uc - 0.4, uc, uc + 0.4) for v in np.arange(L - 0.3, L + ST_END, 0.3)]
+                fl = [z for z in fl if z is not None]
+                if len(fl) < 3: z_low = None; break
+                z_low = float(np.percentile(fl, 20))          # the floor, not the sandbags lying on it
+                n = max(2, round((z_land - z_low) / ST_RISE)); L = (n - 1) * ST_RUN
+            if z_low is None or not (2.0 < z_land - z_low < 5.5): continue
+            u0 = ef + ST_GAP; u1 = u0 + ST_W
+            h = (z_land - z_low) / n
+            hard, removable, floor_bad, blockers = 0, set(), 0, {}
+
+            def hit(i):
+                nonlocal hard
+                p = int(part_of[i])
+                if p == 0 or parts[p]["area"] > 15 or float(max(parts[p]["hi"] - parts[p]["lo"])) > 5:
+                    hard += 1; blockers[p] = blockers.get(p, 0) + 1
+                else: removable.add(p)
+            # landing: nothing above its top
+            for u in np.arange(e_land - ST_LAND_IN + 0.1, u1, 0.2):
+                for v in np.arange(-ST_W + 0.1, 0.0, 0.2):
+                    z, i = down(F, u, v, z_land + 2.2, 2.2 - 0.06)
+                    if z is not None: hit(i)
+            # flight: headroom above every tread, nothing overhead
+            for u in np.arange(u0 + 0.1, u1 - 0.05, 0.2):
+                for v in np.arange(0.05, L, 0.2):
+                    zt = z_land - h * (math.floor(v / ST_RUN) + 1)
+                    z, i = down(F, u, v, zt + 2.2, 2.2 - 0.06)
+                    if z is not None: hit(i)
+                    loc, nn, i2, _ = bvh.ray_cast(F(u, v, zt + 0.1), Vector((0, 0, 1)), 2.1)
+                    if loc is not None: hit(i2)
+                # walk-off: level floor, nothing in the way
+                for v in np.arange(L, L + ST_END, 0.2):
+                    z, i = down(F, u, v, z_low + 2.2, 4.0)
+                    if z is None or abs(z - z_low) > 0.25:
+                        if z is not None and z > z_low: hit(i)
+                        else: floor_bad += 1
+            score = 1000 * (hard + floor_bad) + 3 * len(removable) + abs(v0 - ST_W / 2)
+            if DEBUG:
+                log(f"  stairs try s {s:+d} v0 {v0:5.2f}: edge {e_land:.2f}/{ef:.2f} z {z_land:.2f}->{z_low:.2f} L {L:.2f} "
+                    f"hard {hard} floor {floor_bad} removable {len(removable)} blockers "
+                    + ", ".join(f"#{p} x{k} lo {np.round(parts[p]['lo'], 1)} hi {np.round(parts[p]['hi'], 1)} a {parts[p]['area']:.0f}"
+                                for p, k in blockers.items()))
+            if best is None or score < best["score"]:
+                best = dict(score=score, s=s, v0=float(v0), e_land=e_land, ef=ef, u0=u0, u1=u1, z_land=z_land,
+                            z_low=z_low, n=n, h=h, L=L, hard=hard, floor_bad=floor_bad,
+                            remove=sorted(removable), d=d)
+    if best is None or best["hard"] + best["floor_bad"] > 0:
+        log(f"stairs: no clear spot on the door side (best {best and {k: best[k] for k in ('s', 'v0', 'hard', 'floor_bad')}})")
+        return None
+    # also gone: small parts mostly inside the flight's own space (the old Meshy plank stair under it, poles) and
+    # thin rods/cables hanging over the landing and flight. The deck wall (in from the edge) is left alone.
+    t = Vector((-d.y, d.x)) * best["s"]
+    me = o.data; co = np.array([v.co[:] for v in me.vertices])
+    q = co[:, :2] - np.array(c[:2])
+    U = q @ np.array(d[:]); V = q @ np.array(t[:]) - best["v0"]; Z = co[:, 2]
+    eL, u1, zl, zb, L = best["e_land"], best["u1"], best["z_land"], best["z_low"], best["L"]
+    inA = (U > eL - 0.25) & (U < u1 + 0.3) & (V > -ST_W - 0.3) & (V < L + 0.6) & (Z > zb - 0.2) & (Z < zl + 2.2)
+    inB = (U > eL - 2.0) & (U < u1 + 1.0) & (V > -ST_W - 1.0) & (V < L + 1.0) & (Z > zl - 1.0) & (Z < zl + 6.0)
+    # inC: wider box beside the flight top, for small posts and caps standing loose next to it
+    inC = (U > eL - 2.0) & (U < u1 + 3.0) & (V > -3.0) & (V < 2.0) & (Z > zl - 0.5) & (Z < zl + 6.0)
+    extra = []
+    for pi, p in enumerate(parts[1:], 1):
+        if pi in best["remove"]: continue
+        vi = np.unique([v for f in p["faces"] for v in me.polygons[f].vertices])
+        dims = np.sort(p["hi"] - p["lo"])
+        small = p["area"] < 15 and dims[2] < 6
+        if small and inA[vi].mean() > 0.7: extra.append(pi)
+        elif dims[1] < 0.35 and inB[vi].mean() > 0.5: extra.append(pi)
+        elif p["area"] < 1.5 and dims[1] < 0.4 and dims[2] < 2.0 and inC[vi].mean() > 0.5: extra.append(pi)
+    if DEBUG:
+        for pi in extra: log(f"  stairs clear #{pi} lo {np.round(parts[pi]['lo'], 2)} hi {np.round(parts[pi]['hi'], 2)} a {parts[pi]['area']:.1f}")
+        near = (U > eL - 2.0) & (U < u1 + 3.0) & (V > -3.0) & (V < 2.0) & (Z > zl - 0.5) & (Z < zl + 6.0)
+        for pi, p in enumerate(parts[1:], 1):
+            if pi in extra: continue
+            vi = np.unique([v for f in p["faces"] for v in me.polygons[f].vertices])
+            if near[vi].any():
+                log(f"  stairs near #{pi} lo {np.round(p['lo'], 2)} hi {np.round(p['hi'], 2)} a {p['area']:.1f} "
+                    f"in {near[vi].mean():.2f} dims {np.round(np.sort(p['hi'] - p['lo']), 2)}")
+    best["remove"] = sorted(set(best["remove"]) | set(extra))
+    gone = [f for p in best["remove"] for f in parts[p]["faces"]]
+    if gone: delete_faces(o, gone)
+    log(f"stairs: side {best['s']:+d}, landing at v {best['v0']:.2f}, deck edge {best['e_land']:.2f} m (wall {best['ef']:.2f}), "
+        f"{best['z_land']:.2f} -> {best['z_low']:.2f} m, {best['n']} risers of {best['h']:.3f} m, run {best['L']:.2f} m "
+        f"({math.degrees(math.atan2(best['z_land'] - best['z_low'], best['L'])):.0f} deg); {len(best['remove'])} small parts removed")
+    return best
+
+
+def _prism(bm, F, profile, u0, u1):
+    """Solid along u from u0 to u1 with the (v, z) polygon `profile` as its cross-section."""
+    a = [bm.verts.new(F(u0, v, z)) for v, z in profile]
+    b = [bm.verts.new(F(u1, v, z)) for v, z in profile]
+    faces = [bm.faces.new(a[::-1]), bm.faces.new(b)]
+    k = len(profile)
+    for i in range(k):
+        j = (i + 1) % k
+        faces.append(bm.faces.new((a[i], a[j], b[j], b[i])))
+    bmesh.ops.recalc_face_normals(bm, faces=faces)
+    return faces
+
+
+def _rect(v0, v1, z0, z1):
+    return [(v0, z0), (v1, z0), (v1, z1), (v0, z1)]
+
+
+def _slope_bar(v0, v1, za, zb, th):
+    """Bar from (v0, za) to (v1, zb), th thick (vertical)."""
+    return [(v0, za), (v1, zb), (v1, zb + th), (v0, za + th)]
+
+
+def _finish_mesh(bm, name, tile):
+    """World-scale box-projected UVs (same as the outside retexture), mesh object."""
+    uv = bm.loops.layers.uv.new("UVMap")
+    for f in bm.faces:
+        n = f.normal; ax = int(np.argmax(np.abs([n.x, n.y, n.z])))
+        for l in f.loops:
+            co = l.vert.co
+            if ax == 2: uvv = (co.x, co.y * (1 if n.z > 0 else -1))
+            elif ax == 0: uvv = (co.y * (1 if n.x > 0 else -1), co.z)
+            else: uvv = (co.x * (-1 if n.y > 0 else 1), co.z)
+            l[uv].uv = (uvv[0] / tile, uvv[1] / tile)
+    me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+    o = bpy.data.objects.new(name, me); bpy.context.scene.collection.objects.link(o)
+    return o
+
+
+def build_stairs(o, c, plan):
+    """Steel flight (stringers, open treads, railings), landing with legs, and a separate walkable collider
+    (smooth ramp + side walls). Returns (stairs object, collider object, path points in Blender space)."""
+    F = stair_frame(c, plan["d"], plan["s"], plan["v0"])
+    bvh = BVHTree.FromObject(o, bpy.context.evaluated_depsgraph_get())
+    u0, u1, zl, zb, n, h, L = plan["u0"], plan["u1"], plan["z_land"], plan["z_low"], plan["n"], plan["h"], plan["L"]
+    ui = plan["e_land"] - ST_LAND_IN
+    g = ST_RUN; SW, SD, PT = 0.06, 0.32, 0.06          # stringer width / depth, post size
+    bm = bmesh.new()
+    # landing plate and its edge frame
+    _prism(bm, F, _rect(-ST_W, 0.0, zl - 0.06, zl), ui, u1)
+    _prism(bm, F, _rect(-ST_W, -ST_W + 0.08, zl - 0.2, zl - 0.06), ui, u1)
+    _prism(bm, F, _rect(-0.08, 0.0, zl - 0.2, zl - 0.06), ui, u1)
+    # landing legs where the floor under a corner is lower than the plate
+    for uu in (ui + 0.1, u1 - PT):
+        for vv in (-ST_W + 0.04, -0.04 - PT):
+            loc, nn, i, _ = bvh.ray_cast(F(uu + PT / 2, vv + PT / 2, zl - 0.25), Vector((0, 0, -1)), 12)
+            if loc is not None and loc.z < zl - 0.3:
+                _prism(bm, F, _rect(vv, vv + PT, loc.z, zl - 0.2), uu, uu + PT)
+    # stringers: top line h above the nosings, flush with the landing at the top, cut level on the floor
+    vb = L - (SD - h) * g / h
+    prof = [(0.0, zl), (L, zb + h), (L, zb), (vb, zb), (0.0, zl - SD)]
+    for a in (u0, u1 - SW):
+        _prism(bm, F, prof, a, a + SW)
+    # treads (open steel steps between the stringers)
+    for i in range(1, n):
+        zt = zl - i * h
+        _prism(bm, F, _rect((i - 1) * g - 0.02, i * g + 0.01, zt - 0.04, zt), u0 + SW, u1 - SW)
+    # railings: posts on both stringers, sloped top and mid rails; landing back and outer edges
+    def top_at(v): return zl - v * h / g
+    npost = max(2, math.ceil(L / 1.4) + 1)
+    for a in (u0, u1 - SW):
+        for k in range(npost):
+            v = min(L - PT, k * (L - PT) / (npost - 1))
+            _prism(bm, F, _rect(v, v + PT, top_at(v + PT) - 0.02, top_at(v) + ST_RAIL), a, a + SW)
+        for hh, th in ((ST_RAIL, 0.05), (ST_RAIL * 0.5, 0.04)):
+            _prism(bm, F, _slope_bar(0.0, L, zl + hh - th, top_at(L) + hh - th, th), a, a + SW)
+    # landing: back edge rail (along u) and outer edge rail (along v), posts at the corners and mid back edge
+    for uu in (ui, (ui + u1) / 2, u1 - PT):
+        _prism(bm, F, _rect(-ST_W, -ST_W + PT, zl, zl + ST_RAIL), uu, uu + PT)
+    _prism(bm, F, _rect(-0.0 - PT, 0.0, zl, zl + ST_RAIL), u1 - PT, u1)
+    for hh, th in ((ST_RAIL, 0.05), (ST_RAIL * 0.5, 0.04)):
+        _prism(bm, F, _rect(-ST_W, -ST_W + 0.05, zl + hh - th, zl + hh), ui, u1)
+        _prism(bm, F, _rect(-ST_W, 0.0, zl + hh - th, zl + hh), u1 - 0.05, u1)
+    stairs = _finish_mesh(bm, "HelipadStairs", EXT_TILE["Steel"])
+    # walkable collider: landing slab, one smooth slope, low walls along both sides and round the landing. The slope
+    # runs through the tread centres (half a riser below the landing at the top edge, the floor half a tread past
+    # the last tread), so a body on it is always the same height over the tread under its feet: the game's stair
+    # clip (Blender/player_anim.py Stairs_Down_Pistol) lands every foot on a tread.
+    cb = bmesh.new(); WH, WT = 1.1, 0.05
+    Lc = L + g * 0.5
+    _prism(cb, F, _rect(-ST_W, 0.0, zl - 0.1, zl), ui, u1)
+    _prism(cb, F, [(0.0, zl - h * 0.5), (Lc, zb), (Lc, zb - 0.1), (0.0, zl - h * 0.5 - 0.1)], u0, u1)
+    for a, b in ((u0 - WT, u0), (u1, u1 + WT)):
+        _prism(cb, F, [(0.0, zl), (L, zb), (L, zb + WH), (0.0, zl + WH)], a, b)
+    _prism(cb, F, _rect(-ST_W, 0.0, zl, zl + WH), u1, u1 + WT)
+    _prism(cb, F, _rect(-ST_W - WT, -ST_W, zl, zl + WH), ui, u1 + WT)
+    ramp = _finish_mesh(cb, "HelipadStairsRamp", 2.0)
+    ramp.hide_render = True                        # collider only (no renderer in Unity); keeps previews honest
+    um = (u0 + u1) / 2
+    path = [F(plan["e_land"] - 0.7, -ST_W / 2, zl), F(um, 0.0, zl - h * 0.5), F(um, Lc, zb), F(um, Lc + ST_END, zb)]
+    return stairs, ramp, [tuple(p) for p in path]
 
 
 # ------------------------------------------------------------------ outside retexture (2026-11-17, round 2)
@@ -1186,6 +1457,8 @@ def preview(objs, lamps, info, outdir):
         "room_in": ((x1 - 1.0, y0 + 1.0, 1.7), (x0 + 2, y1 - 2, 1.6)),
         "room_in2": ((x0 + 1.0, y1 - 1.0, 1.7), (x1 - 2, y0 + 2, 1.4)),
     }
+    views.update(info.get("extra_views", {}))
+    if ONLY: views = {k: v for k, v in views.items() if k in ONLY}
     for name, (pos, tgt) in views.items():
         cam.location = pos; cam.rotation_euler = (Vector(tgt) - Vector(pos)).to_track_quat("-Z", "Y").to_euler()
         sc.render.filepath = os.path.join(outdir, f"Fort_{name}.png"); bpy.ops.render.render(write_still=True)
@@ -1234,9 +1507,11 @@ def main():
         yaw = best_tail_yaw(fort, pc, ptop)
         rotor, tail = pad_clearance(fort, pc, ptop, yaw)
         stairs = stairs_spot(fort, pc, ptop, preach)
+        plan = stair_plan(fort, pc, ptop, yaw)
+        flight = build_stairs(fort, pc, plan) if plan is not None else None
         pad_obj, pad_lights = build_helipad(pc, ptop, yaw)
         pad = dict(obj=pad_obj, centre=(float(pc[0]), float(pc[1]), ptop + 0.14), yaw=yaw, lights=pad_lights, stairs=stairs,
-                   rotor=rotor, tail=tail)
+                   rotor=rotor, tail=tail, flight=flight)
         log(f"helipad: {2 * PAD_R:.0f} m at ({pc[0]:.1f}, {pc[1]:.1f}, {ptop + 0.14:.2f}), tail toward {math.degrees(yaw):.0f} deg; "
             f"highest thing in the rotor disc {rotor:.2f} m, in the tail strip {tail:.2f} m (limits {ROTOR_H} / 3.0); stairs {stairs}")
     ext = None
@@ -1255,8 +1530,28 @@ def main():
                     material("Helipad_Light", color=(0.4, 1.0, 0.5), emit=(0.4, 1.0, 0.5, 8.0))]
         for m in pad_mats: pad["obj"].data.materials.append(m)
         ext["Helipad"] = (hc, hn, hs, hm)
+        if pad["flight"] is not None:
+            steel = bpy.data.materials.get("Ext_Steel")
+            if steel is None:                         # no thin parts classed as steel: add the class for the stairs
+                ext["Steel"] = tex_gunmetal()
+                steel = material("Ext_Steel", image_from(ext["Steel"][0], "Ext_Steel"), rough=0.85)
+            for so in pad["flight"][:2]: so.data.materials.append(steel)
     log(f"room {x1 - x0:.1f} x {y1 - y0:.1f} m, {ceil:.2f} m high, {info['beams'] - 1} beams, {len(info['pillars'])} pillars, "
         f"{len(lamps)} lamps, doors at y {gate_y:.2f}; flood spots {len(info['spots'])}")
+    if pad is not None:
+        # preview cameras: the pad from above, and the stairs from the side and from the landing
+        cx, cy, cz = pad["centre"]
+        dd = door_dir(pad["yaw"]); dz = Vector((dd.x, dd.y, 0))
+        info["extra_views"] = {"pad": ((cx + 14, cy - 14, cz + 12), (cx, cy, cz)),
+                               "door_side": (tuple(Vector((cx, cy, cz)) + dz * 22 + Vector((0, 0, 1))), tuple(Vector((cx, cy, cz - 2.5)) + dz * 9))}
+        if pad["flight"]:
+            p0, p1, p2, p3 = (Vector(p) for p in pad["flight"][2])
+            out = (p1 - Vector((cx, cy, p1.z))).normalized()
+            mid = (p1 + p2) / 2
+            along = (p2 - p1); along.z = 0; along.normalize()
+            info["extra_views"]["stairs_side"] = (tuple(mid + out * 6 - along * 2 + Vector((0, 0, 1.0))), tuple(mid))
+            info["extra_views"]["stairs_top"] = (tuple(p0 - out * 1.2 - along * 0.5 + Vector((0, 0, 1.7))), tuple(p2))
+            info["extra_views"]["stairs_bottom"] = (tuple(p3 + along * 3.0 + out * 0.3 + Vector((0, 0, 1.6))), tuple(p1))
     if PREVIEW:
         preview([fort, room], lamps, info, PREVIEW)
     if WRITE:
@@ -1281,7 +1576,8 @@ def main():
             for m in meshy_mat.node_tree.nodes:
                 if m.type == "TEX_IMAGE" and m.image is not None and m.image.name == "AO": meshy_mat.node_tree.nodes.remove(m)
         bpy.ops.object.select_all(action="DESELECT")
-        for o in [fort, room] + lamps + ([pad["obj"]] if pad is not None else []): o.select_set(True)
+        extra = [] if pad is None else [pad["obj"]] + (list(pad["flight"][:2]) if pad["flight"] else [])
+        for o in [fort, room] + lamps + extra: o.select_set(True)
         bpy.context.view_layer.objects.active = fort
         bpy.ops.export_scene.fbx(filepath=OUT + "FortressHaven.fbx", use_selection=True, object_types={"MESH"},
                                  apply_unit_scale=True, apply_scale_options="FBX_SCALE_UNITS",
@@ -1303,6 +1599,8 @@ def main():
             helipad=(dict(centre=unity_point(pad["centre"]), nose=unity_point(tuple(Matrix.Rotation(pad["yaw"], 3, "Z") @ Vector((0, 1, 0)))), radius=PAD_R,
                           lights=[unity_point(p) for p in pad["lights"]],
                           stairs=unity_point(pad["stairs"]) if pad["stairs"] else None,
+                          # walk path off the deck: landing, flight top, flight bottom, walk-off end
+                          stairsPath=[unity_point(p) for p in pad["flight"][2]] if pad["flight"] else None,
                           rotorClear=pad["rotor"], tailClear=pad["tail"]) if pad is not None else None),
         )
         with open(OUT + "FortressHaven.json", "w") as f: json.dump(data, f, indent=1)

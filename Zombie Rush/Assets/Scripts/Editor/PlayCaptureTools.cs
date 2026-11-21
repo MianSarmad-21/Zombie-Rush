@@ -113,7 +113,8 @@ namespace ZombieRush.EditorTools
                         // a real online squad through Unity Relay: the plan reports the code or the error
                         ZombieRush.Net.NetSession.Status += s => relayLog.AppendLine("  status: " + s);
                         relayTask = ZombieRush.Net.NetSession.HostSquadAsync();
-                        ZombieRush.Effects.IntroCutscene.Enabled = m == "intro";   // the helicopter intro only in its own test
+                        ZombieRush.Effects.IntroCutscene.Enabled = m == "intro" || m == "introsquad";   // the helicopter intro only in its own tests
+                        ZombieRush.Effects.IntroCutscene.PreviewSquad = m == "introsquad";   // the squad seating, without a network
                         ZombieRush.Core.GameManager.Instance?.BeginMatch();
                         var lob = Object.FindAnyObjectByType<ZombieRush.Net.NetLobbyUI>();
                         if (lob != null) lob.gameObject.SetActive(false);
@@ -121,7 +122,8 @@ namespace ZombieRush.EditorTools
                     }
                     bool ok = m.StartsWith("net") ? ZombieRush.Net.NetSession.StartDirectHost() : ZombieRush.Net.NetSession.StartSolo();
                     if (!ok) { Finish("FAILED: could not start the match."); return; }
-                    ZombieRush.Effects.IntroCutscene.Enabled = m == "intro";   // the helicopter intro only in its own test
+                    ZombieRush.Effects.IntroCutscene.Enabled = m == "intro" || m == "introsquad";   // the helicopter intro only in its own tests
+                    ZombieRush.Effects.IntroCutscene.PreviewSquad = m == "introsquad";   // the squad seating, without a network
                     ZombieRush.Core.GameManager.Instance?.BeginMatch();
                     var lobby = Object.FindAnyObjectByType<ZombieRush.Net.NetLobbyUI>();
                     if (lobby != null) lobby.gameObject.SetActive(false);
@@ -1508,7 +1510,7 @@ namespace ZombieRush.EditorTools
                 return p;
             }
 
-            if (mode == "intro")
+            if (mode == "intro" || mode == "introsquad")
             {
                 // The helicopter intro, played for real: the whole screen (letterbox and lines included) every 1.5 s
                 // of intro time, as Docs/Look/Intro_NN.png, and what was where; then that play started cleanly.
@@ -2002,6 +2004,51 @@ namespace ZombieRush.EditorTools
                 }));
                 p.Add((0.6f, () => { switcher.SetView(CharacterView.ThirdPerson); Put(21f, true); }));
                 p.Add((0.02f, () => Pic("Zombies_TP")));
+                return p;
+            }
+
+            if (mode == "tpprobe")
+            {
+                // Third person standing with each gun: where the body's bones sit against the player, where the camera
+                // is, what the body Animator plays, which way the held gun points.
+                p.Add((0.6f, () =>
+                {
+                    var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(); if (wm != null) wm.enabled = false;
+                    foreach (var z in Object.FindObjectsByType<ZombieRush.Zombie.ZombieHealth>(FindObjectsSortMode.None)) Object.Destroy(z.gameObject);
+                    var ph = switcher.GetComponent<PlayerHealth>(); if (ph != null) ph.enabled = false;
+                    MoveToOpenSpot(switcher.transform, true);
+                    switcher.SetView(CharacterView.ThirdPerson);
+                }));
+                for (int i = 0; i < weapons.weapons.Length; i++)
+                {
+                    int idx = i;
+                    p.Add((1.5f, () => { weapons.Unlock(weapons.weapons[idx].data); weapons.SelectWeapon(idx); }));
+                    p.Add((0.1f, () =>
+                    {
+                        var pl = switcher.transform;
+                        var ar = Object.FindAnyObjectByType<WeaponAimRig>();
+                        var an = ar != null ? ar.GetComponent<Animator>() : null;
+                        string B(HumanBodyBones b) { var t = an != null ? an.GetBoneTransform(b) : null; return t != null ? pl.InverseTransformPoint(t.position).ToString("F2") : "-"; }
+                        var gp = Object.FindAnyObjectByType<BodyGunPose>();
+                        var rig = ar != null && ar.HeldGun != null ? ar.HeldGun.GetComponentInChildren<ZombieRush.Weapons.GunRig>(true) : null;
+                        var gb = rig != null ? rig.GunBone : null;
+                        string gunDir = gb != null ? pl.InverseTransformDirection(gb.forward).ToString("F2") + " / up " + pl.InverseTransformDirection(gb.up).ToString("F2") : "-";
+                        var st = an != null ? an.GetCurrentAnimatorStateInfo(0) : default;
+                        var clips = an != null ? string.Join(",", an.GetCurrentAnimatorClipInfo(0).Select(c => $"{c.clip.name}:{c.weight:0.00}")) : "-";
+                        log.AppendLine($"  {weapons.weapons[idx].name}: hips {B(HumanBodyBones.Hips)} head {B(HumanBodyBones.Head)} chest {B(HumanBodyBones.UpperChest)} rHand {B(HumanBodyBones.RightHand)} lHand {B(HumanBodyBones.LeftHand)}; " +
+                                       $"camera {pl.InverseTransformPoint(cam.transform.position):F2} pitch {cam.transform.eulerAngles.x:0}; gun bone fwd {gunDir}; " +
+                                       $"gunpose active {(gp != null && gp.Active)} handsFromBody {(gp != null && gp.HandsFromBody)} fix {(gp != null ? gp.DebugFix : 0f):0} wantPitch {(gp != null ? gp.DebugWantPitch : 0f):0} gunPitch {(gp != null ? gp.DebugGunPitch : 0f):0}; " +
+                                       $"aiming {(ar != null && ar.Aiming)} holdW {(ar != null ? ar.HoldWeight : 0f):0.00}; anim ctrl {(an != null && an.runtimeAnimatorController != null ? an.runtimeAnimatorController.name : "-")} clips {clips} avatar {(an != null && an.avatar != null ? an.avatar.name + (an.avatar.isValid ? "" : " INVALID") + (an.avatar.isHuman ? " human" : " generic") : "-")}; " +
+                                       $"animator enabled {(an != null && an.enabled)} init {(an != null && an.isInitialized)} bound playables {(an != null && an.hasBoundPlayables)} state hash {st.shortNameHash} len {st.length:0.00} layers {(an != null ? an.layerCount : 0)} " +
+                                       $"params {(an != null ? string.Join(",", an.parameters.Select(q => q.name + "=" + (q.type == AnimatorControllerParameterType.Float ? an.GetFloat(q.name).ToString("0.0") : q.type == AnimatorControllerParameterType.Bool ? an.GetBool(q.name).ToString() : "-"))) : "-")}; " +
+                                       $"animators on player {string.Join(",", pl.GetComponentsInChildren<Animator>(true).Select(x => x.name + (x.enabled ? "" : "(off)") + ":" + (x.runtimeAnimatorController != null ? x.runtimeAnimatorController.name : "none")))}; " +
+                                       $"runtime clips {(an != null && an.runtimeAnimatorController != null ? string.Join(",", an.runtimeAnimatorController.animationClips.Select(c => c == null ? "NULL" : c.name + "/" + c.length.ToString("0.00"))) : "-")}; " +
+                                       $"graph {(an != null && an.playableGraph.IsValid() ? an.playableGraph.GetEditorName() + " outputs " + an.playableGraph.GetOutputCount() : "none")}");
+                        if (an != null) { an.Rebind(); an.Update(0f); log.AppendLine($"    after Rebind: clips {string.Join(",", an.GetCurrentAnimatorClipInfo(0).Select(c => c.clip.name))}, hips {B(HumanBodyBones.Hips)}"); }
+                        Directory.CreateDirectory(Folder);
+                        ScreenCapture.CaptureScreenshot($"{Folder}/TpProbe_{weapons.weapons[idx].name}.png");
+                    }));
+                }
                 return p;
             }
 

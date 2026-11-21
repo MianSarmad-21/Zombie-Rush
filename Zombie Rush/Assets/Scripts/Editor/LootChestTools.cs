@@ -13,7 +13,7 @@ namespace ZombieRush.EditorTools
     ///   - prefabs (Assets/Prefabs/Loot): LootChest (Blender/build_chest.py: body, hinged lid, padlock; gold motes and
     ///     a small beacon light while closed), ChestMedkit (health), ChestArmor (the plate-carrier vest: armour);
     ///   - a ChestSpawner on the ZoneManager (3 chests a wave, +1 per extra squad member, max 6 closed);
-    ///   - the zone wall's fog curtain switched ON (Zone_Fog.mat): nothing outside the zone can be seen.
+    ///   - (no fog curtain: the city outside fades into the night fog, see CityEdgeTools)
     /// Marker: Temp/ZR_RunMapCleanup with "chests" (report in Temp/ZR_MapCleanup.log; saves the scene).
     public static class LootChestTools
     {
@@ -43,17 +43,7 @@ namespace ZombieRush.EditorTools
             EditorUtility.SetDirty(sp);
             sb.AppendLine($"ChestSpawner on '{zone.name}': {sp.perWave} chests each wave (+1 per extra squad member), max {sp.maxClosed} closed.");
 
-            // fog curtain on the zone wall: nothing outside the zone shows
-            var fogMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Environment/Zone/Zone_Fog.mat");
-            if (zone.boundaryVisual != null && zone.boundaryVisual.TryGetComponent<ZoneBoundaryFX>(out var wall) && fogMat != null)
-            {
-                Undo.RecordObject(wall, "Zone fog");
-                wall.fogMaterial = fogMat;
-                wall.enabled = false; wall.enabled = true;
-                EditorUtility.SetDirty(wall);
-                sb.AppendLine($"Zone fog curtain ON ({wall.fogHeight:0} m tall, {wall.fogOffset:0.0} m outside the wall).");
-            }
-            else sb.AppendLine("  NO zone wall / fog material found - fog not set.");
+            // no fog curtain on the zone wall: the city outside fades into the night fog (CityEdgeTools "apply")
 
             // price check: the first expansions, solo and a squad of four
             var wm = Object.FindAnyObjectByType<ZombieRush.Waves.WaveManager>(FindObjectsInactive.Include);

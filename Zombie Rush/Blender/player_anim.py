@@ -12,6 +12,7 @@ Speeds are the game's (PlayerController walk 4, sprint 8, crouch 2.5 m/s) divide
 --export writes Assets/Models/2026-11-14_ShadowOperative_Final/ShadowOperative_Anims.fbx (armature only, one
 take per clip); MeshyBodyTools.ClipSource points at it.
 """
+import json
 import math
 import os
 import sys
@@ -73,6 +74,7 @@ class Pose:
     def __init__(self):
         self.q = {n: Quaternion() for n in NAMES}
         self.hips_loc = Vector()           # in the Hips bone's rest frame
+        self.gun = None                    # the pistol's frame when the hands hold one (previews only)
         self._w = None
 
     def world(self):
@@ -242,6 +244,131 @@ def arms(P, swing_r, swing_l, elbow, out=12.0, fwd_bias=10.0, hand_turn=0.0):
         P.set_world_rot(s + "Hand", Rax(hand_turn * sgn, fa) @ L @ (REST[s + "LowerArm"].to_3x3().inverted() @ REST[s + "Hand"].to_3x3()))
 
 
+# ------------------------------------------------------------------ pistol in both hands (the match intro)
+# The game's own pistol hold (grip_hold.json, read off the baked Pistol_Idle by grip_hold_json.py, same skeleton): the
+# aim pose's arm chain (its shape relative to the chest), every finger, and each hand's frame in the gun's frame
+# (gun frame: origin on the grip, muzzle -Y, top +Z). Low ready is that aim pose with both arms turned down together
+# at the shoulders, the way a shooter lowers the gun: elbows, forearms and wrists keep the aim's straight lines and
+# both hands stay locked on the grip (both shoulder joints lie on the turning axis). The game puts the gun on the
+# animated right hand the same way.
+GRIP = json.load(open(PROJECT + "/Blender/grip_hold.json"))
+HAND_IN_GUN = {s: Matrix(GRIP[s]["hand_in_gun"]) for s in ("Left", "Right")}
+GRIP_ARM = {s: {n: Quaternion(q) for n, q in GRIP[s]["arm"].items()} for s in ("Left", "Right")}
+GRIP_FINGERS = {s: {n: Quaternion(q) for n, q in GRIP[s]["fingers"].items()} for s in ("Left", "Right")}
+LOW_READY_DIP = 40.0          # degrees the muzzle points below level at low ready
+
+
+# How the gun rides: held closer than the extended aim with relaxed elbows, floating on its own slight lag.
+GUN_PULL, GUN_LIFT = 0.10, 0.03        # metres back toward the chest and up, from the arms-lowered aim
+GUN_BOB_M, GUN_BOB_DEG = 0.006, 1.5    # per footfall: how far the gun settles (m) and dips (deg), a beat after the body
+GUN_DRIFT_DEG = 1.2                    # per stride: a slow left-right drift of the muzzle
+GUN_LAG = 1.9                          # radians the gun's settle trails the footfall
+
+
+def _basis(y, n):
+    y = y.normalized(); n = (n - y * n.dot(y)).normalized()
+    return Matrix((y, n, y.cross(n))).transposed()
+
+
+def arm_to(P, side, H):
+    """Arm onto the hand frame H, solved from the aim pose already on the arm: the elbow keeps the aim's side of the
+    shoulder-wrist line, both bones turn the least from the aim, and the hand's remaining twist is mostly taken by
+    the forearm (as a real forearm turns), so the wrist keeps the aim's straight line."""
+    W = P.world()
+    S, E0, W0 = W[side + "UpperArm"].translation, W[side + "LowerArm"].translation, W[side + "Hand"].translation
+    U0, L0, H0 = W[side + "UpperArm"].to_3x3(), W[side + "LowerArm"].to_3x3(), W[side + "Hand"].to_3x3()
+    a, b = (E0 - S).length, (W0 - E0).length
+    d = H.translation - S
+    dist = max(0.05, min(d.length, (a + b) * 0.995))
+    x, x0 = d.normalized(), (W0 - S).normalized()
+    off0 = (E0 - S) - x0 * (E0 - S).dot(x0)
+    k = x0.rotation_difference(x) @ off0
+    k = k - x * k.dot(x)
+    k = k.normalized() if k.length > 1e-6 else -UP
+    cos_a = max(-1.0, min(1.0, (a * a + dist * dist - b * b) / (2 * a * dist)))
+    E = S + x * (a * cos_a) + k * (a * math.sqrt(max(0.0, 1 - cos_a * cos_a)))
+    Wr = S + x * dist
+    n0 = (E0 - S).cross(W0 - E0)
+    n0 = n0 if n0.length > 1e-5 else x0.cross(off0 if off0.length > 1e-6 else -UP)
+    n = (E - S).cross(Wr - E)
+    n = n if n.length > 1e-5 else x.cross(k)
+    P.set_world_rot(side + "UpperArm", _basis(E - S, n) @ _basis(E0 - S, n0).inverted() @ U0)
+    Lq = _basis(Wr - E, n) @ _basis(W0 - E0, n0).inverted() @ L0
+    want = H.to_3x3().normalized()
+    D = (want @ (Lq @ (L0.inverted() @ H0)).inverted()).to_quaternion()
+    ax = (Wr - E).normalized()
+    tw = Vector((D.x, D.y, D.z)).dot(ax)
+    twist = 2.0 * math.atan2(tw, D.w)
+    P.set_world_rot(side + "LowerArm", Matrix.Rotation(twist * 0.7, 3, ax) @ Lq)
+    P.set_world_rot(side + "Hand", want)
+
+
+def pistol_hold(P, step=0.0, stride=0.0, amp=1.0, dip=LOW_READY_DIP, pull=GUN_PULL, lift=GUN_LIFT):
+    """Both hands on the pistol at low ready on the current chest. step / stride: the footfall (two per cycle) and
+    stride (one per cycle) angles, radians, for the gun's float; amp scales the float (standing: small).
+    dip / pull / lift: how far the muzzle points below level (deg) and how far the gun comes back and up (m).
+    Returns the gun's frame (armature space)."""
+    for side, sgn in (("Left", 1.0), ("Right", -1.0)):
+        for n, q in GRIP_ARM[side].items():
+            P.q[n] = q.copy()
+        for n, q in GRIP_FINGERS[side].items():
+            P.q[n] = q.copy()
+    P.dirty()
+    # shoulders lift a touch in turn with the stride
+    for side, sgn in (("Left", 1.0), ("Right", -1.0)):
+        W = P.world()
+        P.set_world_rot(side + "Shoulder", Rax(1.2 * amp * sgn * math.sin(stride), FWD) @ W[side + "Shoulder"].to_3x3())
+    W = P.world()
+    G = W["RightHand"] @ HAND_IN_GUN["Right"].inverted()
+    muzzle = (G.to_3x3() @ Vector((0, -1, 0))).normalized()
+    pitch = math.degrees(math.asin(max(-1.0, min(1.0, -muzzle.z))))          # + = below level
+    pR = W["RightUpperArm"].translation
+    axis = (W["LeftUpperArm"].translation - pR).normalized()
+    fwd = axis.cross(UP).normalized()
+    G = Matrix.Translation(pR) @ Rax(dip - pitch, axis).to_4x4() @ Matrix.Translation(-pR) @ G
+    G = Matrix.Translation(-fwd * pull + UP * lift) @ G
+    # the float: a lagged settle per footfall and a slow drift per stride, about the grip
+    g0 = G.translation.copy()
+    rot = Rax(GUN_BOB_DEG * amp * math.cos(step - GUN_LAG), axis) @ Rz(GUN_DRIFT_DEG * amp * math.sin(stride - 0.7))
+    G = Matrix.Translation(g0 + UP * (GUN_BOB_M * amp * math.cos(step - GUN_LAG))) @ rot.to_4x4() @ Matrix.Translation(-g0) @ G
+    for side in ("Right", "Left"):
+        arm_to(P, side, G @ HAND_IN_GUN[side])
+    P.dirty()
+    W = P.world()
+    P.gun = W["RightHand"] @ HAND_IN_GUN["Right"].inverted()
+    return P.gun
+
+
+def torso_overlap(P, hips_yaw, chest_yaw, lean, roll):
+    """Spine: the chest halfway between the hips' turn and its own, the upper chest fully on its own (the twist
+    spreads over both joints), leaned and rolled."""
+    for n, yaw, ln, rl in (("Chest", 0.5 * (hips_yaw + chest_yaw), lean * 0.5, roll * 0.5), ("UpperChest", chest_yaw, lean, roll)):
+        face = Rz(yaw)
+        P.set_world_rot(n, Rax(ln, face @ LEFT) @ Rax(rl, face @ FWD) @ face @ REST[n].to_3x3())
+
+
+def head_follow(P, chest_yaw, yaw, pitch, roll):
+    """Neck between the chest and the head; the head follows the body loosely (yaw), looks a little down the path
+    (pitch, + = down) and rolls a touch with the step."""
+    fn = Rz(0.5 * (chest_yaw + yaw))
+    P.set_world_rot("Neck", Rax(pitch * 0.4, fn @ LEFT) @ fn @ REST["Neck"].to_3x3())
+    fh = Rz(yaw)
+    P.set_world_rot("Head", Rax(pitch, fh @ LEFT) @ Rax(roll, fh @ FWD) @ fh @ REST["Head"].to_3x3())
+
+
+def pistol_body(P, t, g, duty):
+    """Upper body of a pistol gait with overlapping action: the chest trails the hips, the head trails the chest,
+    the gun floats a beat behind the footfall."""
+    tw, rl, counter = g.get("pelvis_twist", 6.0), g.get("pelvis_roll", 4.0), g.get("counter", 0.7)
+    def hyaw(tt): return tw * math.sin(2 * math.pi * (tt - duty / 2) + math.pi / 2)
+    def hroll(tt): return rl * math.sin(2 * math.pi * (tt - duty / 2))
+    step = 4 * math.pi * (t - duty / 2)
+    chest_yaw = -counter * hyaw(t - 0.06)
+    torso_overlap(P, hyaw(t), chest_yaw, g["lean"] + 0.8 * math.sin(step - 1.0), -0.6 * hroll(t - 0.06))
+    head_follow(P, chest_yaw, -0.35 * counter * hyaw(t - 0.12), g.get("look_down", 8.0) + 1.2 * math.sin(step - 2.0), -0.3 * hroll(t - 0.12))
+    pistol_hold(P, step=step, stride=2 * math.pi * (t - duty / 2), amp=1.0)
+
+
 # ------------------------------------------------------------------ locomotion
 def gait_pose(t, g):
     """One frame of a gait. t in [0, 1): left foot touches down at t = 0, right at t = 0.5."""
@@ -285,10 +412,13 @@ def gait_pose(t, g):
         shorts.append(s_ if planted else 0.0)
         P.set_world_rot(side + "Toes", toes_R)
     # upper body: chest square to the aim
-    upper_body(P, hips_R, 0.0, g["lean"], roll=-hip_roll * 0.6, breathe=0.0, head_pitch=-g["lean"] * 0.8)
     a = g.get("arm_swing", 18.0) * math.sin(2 * math.pi * (t - duty / 2) - math.pi / 2 + math.pi)
-    arms(P, a, -a, g.get("elbow", 70.0), out=g.get("arm_out", 12.0))
-    hands_relaxed(P, g.get("grip", 0.3))
+    if g.get("pistol"):
+        pistol_body(P, t, g, duty)
+    else:
+        upper_body(P, hips_R, 0.0, g["lean"], roll=-hip_roll * 0.6, breathe=0.0, head_pitch=-g["lean"] * 0.8)
+        arms(P, a, -a, g.get("elbow", 70.0), out=g.get("arm_out", 12.0))
+        hands_relaxed(P, g.get("grip", 0.3))
     return P, max(shorts)
 
 
@@ -335,6 +465,10 @@ def gait_feet(t, g):
             lift = g["lift"] * math.sin(math.pi * min(1.0, s * 1.04) ** g.get("lift_skew", 0.7))   # peaks early: the heel comes up behind
             pitch = -g["toe_off"] * (1 - smooth(s / 0.35)) + g["strike"] * smooth((s - 0.7) / 0.3)
             pivot = "ankle"
+        if g.get("slope"):
+            # stairs going down: the ground under a foot is lower the further ahead it is, on the line through the
+            # tread centres (each planted foot sits flat on a tread centre; the swing arcs over the nosing)
+            ground = ground + UP * (-g["slope"] * (ground - Vector((0, HEAD["Hips"].y, 0))).dot(Dw))
         ankle, foot_R, toes_R = foot_pose(side, ground, yaw, pitch, pivot)
         leg_fwd = Rz(yaw - g.get("toe_out", 7.0) * sgn) @ FWD        # where the knee points (the hips' facing)
         if u >= duty:
@@ -380,6 +514,21 @@ GAITS["Sprint"] = dict(frames=16, speed=SPRINT, dir=(0, 1), duty=0.20, land=0.40
                        lean=11.0, arm_swing=36.0, elbow=88.0, pelvis_twist=4.0, pelvis_roll=1.5, pelvis_pitch=6.0, sway=0.004, lift_skew=1.0)
 GAITS["Walk"] = dict(frames=32, speed=1.5 / GAME_SCALE, dir=(0, 1), duty=0.62, bob=0.015, drop=0.04, lift=0.06, kick=0.0, strike=16.0, toe_off=26.0,
                      lean=3.0, arm_swing=14.0, elbow=25.0, pelvis_twist=3.0, pelvis_roll=2.0, pelvis_pitch=2.0, sway=0.012, heel_off=0.6)
+# the match intro: a shooter's walk with the pistol at low ready. Knees kept bent (the hips ride low and level), short
+# heel-to-toe steps at 120/min, no arm swing (both hands on the gun), chest quiet over the hips.
+GAITS["Walk_Pistol"] = dict(frames=30, speed=1.4 / GAME_SCALE, dir=(0, 1), duty=0.60, bob=0.016, drop=0.055, lift=0.07, kick=0.0, strike=14.0,
+                            toe_off=24.0, lean=6.0, pelvis_twist=6.0, pelvis_roll=3.0, pelvis_pitch=5.0, sway=0.014, heel_off=0.58, width=0.11,
+                            toe_out=8.0, counter=0.7, gun_bob=1.5, pistol=True)
+# Down the helipad's steel stairs (Blender/fortress_base.py: tread ST_RUN 0.27 m, 16 risers of 0.192 m), pistol at
+# low ready: one tread per step at 120 steps/min, toes land first, the rear knee folds deep. Each cycle covers two
+# treads; with duty x land = 0.25 every foot lands on a tread centre when the game plays the clip by position
+# (IntroCutscene: phase = metres down the flight / (2 x tread)). The game's stair collider runs through the tread
+# centres, so the body's origin is always on that line.
+STAIR_TREAD, STAIR_RISE = 0.27, 0.192
+GAITS["Stairs_Down_Pistol"] = dict(frames=30, speed=2 * STAIR_TREAD / 1.0 / GAME_SCALE, dir=(0, 1), duty=0.62, land=0.25 / 0.62,
+                                   slope=STAIR_RISE / STAIR_TREAD, bob=0.012, drop=0.04, lift=0.10, kick=0.0, strike=-14.0, toe_off=14.0,
+                                   lean=3.0, pelvis_twist=4.0, pelvis_roll=3.5, pelvis_pitch=2.0, sway=0.016, heel_off=0.65, width=0.11,
+                                   toe_out=8.0, counter=0.6, gun_bob=1.2, pistol=True)
 GAITS["Crouch_Walk"] = dict(frames=24, speed=CROUCH, dir=(0, 1), duty=0.55, bob=0.012, drop=0.25, lift=0.07, kick=0.0, strike=10.0, toe_off=24.0,
                             lean=20.0, arm_swing=8.0, elbow=60.0, pelvis_twist=2.0, pelvis_roll=1.5, pelvis_pitch=8.0, sway=0.008, width=0.13)
 
@@ -399,18 +548,65 @@ def stance_pose(t, s):
         leg_ik(P, side, ankle, Rz(hip_yaw * 0.7 + 4 * sgn) @ FWD + UP * 0.1 + LEFT * sgn * s.get("knee_out", 0.1), foot_R)
         P.set_world_rot(side + "Toes", toes_R)
     breathe = 1.2 * math.sin(2 * math.pi * t * s.get("breaths", 3))
-    upper_body(P, hips_R, 0.0, s["lean"], breathe=breathe, head_pitch=-s["lean"] * 0.7)
-    arms(P, 4 * math.sin(2 * math.pi * t), 4 * math.sin(2 * math.pi * t + 1), s.get("elbow", 30.0), out=s.get("arm_out", 10.0), fwd_bias=s.get("arm_fwd", 8.0))
-    hands_relaxed(P, s.get("grip", 0.25))
+    if s.get("pistol"):
+        # standing ready: breathing in the chest, the head drifting a little as it watches, the gun barely moving
+        br = 2 * math.pi * t * s.get("breaths", 3)
+        look = 6.0 * math.sin(2 * math.pi * t) + 2.0 * math.sin(6 * math.pi * t + 1.0)
+        torso_overlap(P, s.get("yaw", 12.0) * 0.5, 0.0, s["lean"] + 0.8 * math.sin(br), 0.0)
+        head_follow(P, 0.0, look, s.get("look_down", 6.0) + 1.0 * math.sin(br - 0.8), 0.6 * math.sin(2 * math.pi * t + 2.0))
+        pistol_hold(P, step=br, stride=2 * math.pi * t, amp=0.35)
+    else:
+        upper_body(P, hips_R, 0.0, s["lean"], breathe=breathe, head_pitch=-s["lean"] * 0.7)
+        arms(P, 4 * math.sin(2 * math.pi * t), 4 * math.sin(2 * math.pi * t + 1), s.get("elbow", 30.0), out=s.get("arm_out", 10.0), fwd_bias=s.get("arm_fwd", 8.0))
+        hands_relaxed(P, s.get("grip", 0.25))
     return P, 0.0
 
 
 STANCES = {
     "Idle_Aim": dict(frames=120, shift=0.008, drop=0.018, width=0.12, stagger=0.06, lean=5.0, yaw=8.0, elbow=45.0, grip=0.45, arm_fwd=15.0),   # calm: shoulder-width, slight knee bend
+    "Idle_Pistol": dict(frames=120, shift=0.006, drop=0.05, width=0.13, stagger=0.09, lean=6.0, yaw=10.0, pistol=True),   # intro: stands at low ready
     "Idle": dict(frames=150, shift=0.018, drop=0.025, width=0.14, stagger=0.05, lean=2.0, yaw=8.0, elbow=20.0, grip=0.2, arm_fwd=4.0),
     "Crouch_Idle": dict(frames=120, shift=0.008, drop=0.30, width=0.17, stagger=0.16, lean=18.0, yaw=16.0, elbow=60.0, grip=0.45, arm_fwd=20.0,
                         pelvis_pitch=14.0, knee_out=0.3, heel={"Right": -18.0}),
 }
+
+
+# ------------------------------------------------------------------ seated (the match intro: on a troop seat in the helicopter)
+# Sits on a low troop seat (the cabin is only 1.3 m tall), feet flat on the floor, knees a little apart, leaned in
+# over them, pistol held low between the knees, muzzle down, watching out of the open door. The seat: its top SEAT_Z
+# above the clip's origin (the floor), its front edge SEAT_EDGE ahead of the origin (model metres; the game places
+# the body by these, x GAME_SCALE, and builds the seats to match: Blender/heli_refit.py SEAT_H 0.34 m).
+SEAT_Z = 0.323
+SEAT_EDGE = 0.20
+SEATS = {
+    "Sit_Pistol": dict(frames=150, tilt=-6.0, lean=20.0, feet_fwd=0.43, feet_apart=0.16, toe_out=12.0, heel_lift=4.0,
+                       look_down=8.0, scan=10.0, dip=55.0, pull=0.04, lift=0.07),
+}
+
+
+def sit_pose(t, s):
+    P = Pose()
+    w = 2 * math.pi * t
+    br = w * 2                                                    # two breaths per loop
+    # pelvis: the hip joints over the back half of the seat, the pelvis rolled back as a seated pelvis is, a slow sway
+    sway = 1.0 * math.sin(w + 0.4)
+    hips_R = Rax(sway, FWD) @ Rax(s["tilt"], LEFT) @ REST["Hips"].to_3x3()
+    hip_joint_z = SEAT_Z + 0.09
+    hip_joint_y = -SEAT_EDGE + 0.31                               # 0.31 behind the front edge
+    P.set_hips_world(Vector((0, hip_joint_y, hip_joint_z)) - hips_R @ (REST["Hips"].to_3x3().inverted() @ Vector((0, HIPJ["Right"].y, HIPJ["Right"].z))), hips_R)
+    # legs: feet flat on the floor ahead of the seat, knees up and a little apart; one heel lifts and settles now and then
+    for side, sgn in (("Left", 1.0), ("Right", -1.0)):
+        ground = Vector((sgn * s["feet_apart"], hip_joint_y, 0)) + FWD * s["feet_fwd"]
+        heel = s["heel_lift"] * max(0.0, math.sin(w + (0.0 if sgn > 0 else 2.6))) ** 3
+        ankle, foot_R, toes_R = foot_pose(side, ground, s["toe_out"] * sgn, -heel, "ball")
+        leg_ik(P, side, ankle, FWD + UP * 0.6 + LEFT * sgn * 0.25, foot_R)
+        P.set_world_rot(side + "Toes", toes_R)
+    # upper body: leaned in over the knees, breathing; the head looks out and a little down, slowly scanning
+    torso_overlap(P, 0.0, 0.0, s["lean"] + 0.8 * math.sin(br), sway * 0.5)
+    look = s["scan"] * math.sin(w) + 3.0 * math.sin(2 * w + 1.0)
+    head_follow(P, 0.0, look, s["look_down"] + 1.5 * math.sin(w + 1.3) + 0.8 * math.sin(br - 0.8), 0.6 * math.sin(w + 2.0))
+    pistol_hold(P, step=br, stride=w, amp=0.3, dip=s["dip"], pull=s["pull"], lift=s["lift"])
+    return P, 0.0
 
 
 # ------------------------------------------------------------------ one-shots
@@ -482,6 +678,8 @@ for n, g in GAITS.items():
     CLIPS.append((n, g["frames"], True, lambda t, g=g: gait_pose(t, g)))
 for n, s in STANCES.items():
     CLIPS.append((n, s["frames"], True, lambda t, s=s: stance_pose(t, s)))
+for n, s in SEATS.items():
+    CLIPS.append((n, s["frames"], True, lambda t, s=s: sit_pose(t, s)))
 CLIPS.append(("Fall", 30, True, lambda t: fall_pose(t, None)))
 CLIPS.append(("Death", 75, False, lambda t: death_pose(t, None)))
 CLIPS.append(("Fire", 10, False, lambda t: upper_shot(t, "Fire")))
@@ -492,6 +690,7 @@ if ONLY:
 
 # ------------------------------------------------------------------ bake
 made = []
+GUN_AT = {}                       # clip -> frame -> pistol frame (previews draw a stand-in gun there)
 for name, frames, loop, fn in CLIPS:
     act = bpy.data.actions.new(name)
     act.use_fake_user = True
@@ -502,6 +701,8 @@ for name, frames, loop, fn in CLIPS:
         t = ((f - 1) / frames) if loop else (f - 1) / max(1, frames - 1)
         P, short = fn(t % 1.0 if loop else t)
         worst = max(worst, short)
+        if P.gun is not None:
+            GUN_AT.setdefault(name, {})[f] = P.gun.copy()
         for n in NAMES:
             pbn = rig.pose.bones[n]
             pbn.rotation_quaternion = P.q[n]
@@ -538,18 +739,64 @@ if RENDER:
         c = bpy.data.objects.new(name, bpy.data.cameras.new(name)); sc.collection.objects.link(c)
         c.location = loc; c.rotation_euler = (Vector(look) - Vector(loc)).to_track_quat("-Z", "Y").to_euler(); c.data.lens = lens
         return c
+    # a stand-in pistol (slide + grip, gun frame: origin on the grip, muzzle -Y, top +Z; the game's gun is x1.25)
+    import bmesh
+    gm = bpy.data.meshes.new("GunProxy"); bm = bmesh.new()
+    for lo, hi in (((-0.014, -0.21, 0.02), (0.014, 0.035, 0.06)), ((-0.013, -0.005, -0.10), (0.013, 0.045, 0.025))):
+        r = bmesh.ops.create_cube(bm, size=1.0)
+        for v in r["verts"]:
+            v.co = Vector(tuple(lo[i] + (hi[i] - lo[i]) * (v.co[i] + 0.5) for i in range(3))) * 1.25
+    bm.to_mesh(gm); bm.free()
+    gun_proxy = bpy.data.objects.new("GunProxy", gm); sc.collection.objects.link(gun_proxy)
+    gun_proxy.color = (0.08, 0.08, 0.09, 1)
     side = cam("Side", Vector((-4.2, -0.0, 0.95)), Vector((0, 0, 0.85)), 45)
     front = cam("Front", Vector((-1.6, -3.6, 1.3)), Vector((0, 0, 0.8)), 45)
+    close = cam("Close", Vector((-0.75, -1.05, 1.45)), Vector((0.0, -0.2, 1.0)), 45)   # hands and gun, front right
     RX, RY = 300, 400
     sc.render.resolution_x, sc.render.resolution_y = RX, RY
     for act, last in made:
         rig.animation_data.action = act
         frames = [1 + round(i * (last - 1) / 6) for i in range(6)]
+        for o in [o for o in bpy.data.objects if o.name.startswith("Flight")]:
+            bpy.data.objects.remove(o)
+        g = GAITS.get(act.name, {})
+        floor.hide_render = bool(g.get("slope"))
+        if act.name in SEATS:
+            # the ledge it sits on: top at SEAT_Z, front edge SEAT_EDGE ahead of the origin
+            lm = bpy.data.meshes.new("FlightLedge"); bm = bmesh.new()
+            r = bmesh.ops.create_cube(bm, size=1.0)
+            lo, hi = Vector((-0.6, -SEAT_EDGE, SEAT_Z - 0.08)), Vector((0.6, 1.2, SEAT_Z))
+            for v in r["verts"]:
+                v.co = Vector(tuple(lo[i] + (hi[i] - lo[i]) * (v.co[i] + 0.5) for i in range(3)))
+            bm.to_mesh(lm); bm.free()
+            ledge = bpy.data.objects.new("FlightLedge", lm); sc.collection.objects.link(ledge)
+            ledge.color = (0.3, 0.33, 0.3, 1)
+        if g.get("slope"):
+            # the flight under the body: treads on the line through their centres, moving back and up as it walks
+            gt, ht = STAIR_TREAD / GAME_SCALE, STAIR_RISE / GAME_SCALE
+            sm = bpy.data.meshes.new("Flight"); bm = bmesh.new()
+            for k in range(-4, 10):
+                lo = Vector((-0.5, -(k * gt), -(k - 0.5) * ht - 0.05)); hi = Vector((0.5, -((k - 1) * gt), -(k - 0.5) * ht))
+                r = bmesh.ops.create_cube(bm, size=1.0)
+                for v in r["verts"]:
+                    v.co = Vector(tuple(lo[i] + (hi[i] - lo[i]) * (v.co[i] + 0.5) for i in range(3)))
+            bm.to_mesh(sm); bm.free()
+            flight = bpy.data.objects.new("Flight", sm); sc.collection.objects.link(flight)
+            flight.color = (0.25, 0.27, 0.3, 1)
         rows = []
-        for c in (side, front):
+        # seated: the close-up looks at the lap from the side, lower down
+        close.location = Vector((-1.25, -0.55, 0.95)) if act.name in SEATS else Vector((-0.75, -1.05, 1.45))
+        close.rotation_euler = (Vector((0.0, -0.25, 0.75) if act.name in SEATS else (0.0, -0.2, 1.0)) - close.location).to_track_quat("-Z", "Y").to_euler()
+        for c in ((side, front, close) if act.name in GUN_AT else (side, front)):
             row = []
             for f in frames:
                 sc.frame_set(f); sc.camera = c
+                gp = GUN_AT.get(act.name, {}).get(f)
+                gun_proxy.hide_render = gp is None
+                if gp is not None: gun_proxy.matrix_world = gp
+                if g.get("slope"):
+                    vb = g["speed"] * (g["frames"] / FPS) * ((f - 1) / g["frames"])          # metres walked down
+                    flight.location = Vector((0, vb, g["slope"] * vb))                      # FWD is -Y
                 sc.render.filepath = os.path.join(RENDER, "_t.png")
                 bpy.ops.render.render(write_still=True)
                 im = bpy.data.images.load(sc.render.filepath)
@@ -559,6 +806,8 @@ if RENDER:
         im = bpy.data.images.new("s", sheet.shape[1], sheet.shape[0], alpha=True); im.pixels.foreach_set(sheet.ravel())
         im.filepath_raw = os.path.join(RENDER, f"{act.name}.png"); im.file_format = "PNG"; im.save(); bpy.data.images.remove(im)
     bpy.data.objects.remove(floor)
+    for o in [o for o in bpy.data.objects if o.name.startswith("Flight")]:
+        bpy.data.objects.remove(o)
     log("sheets in", RENDER)
 
 if "--save" in argv:
