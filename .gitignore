@@ -5,3 +5,11 @@
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 /[Oo]bj/
+
+# Kept on disk only, never pushed (keeps the GitHub clone small).
+/Zombie Rush/Docs/Look/
+/Zombie Rush/Docs/Map/
+/Zombie Rush/Assets/_Archive/
+/Zombie Rush/Assets/_Archive.meta
+*.zip
+*.zip.meta
