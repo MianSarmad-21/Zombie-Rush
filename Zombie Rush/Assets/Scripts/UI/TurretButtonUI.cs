@@ -53,7 +53,7 @@ namespace ZombieRush.UI
             lastOwned = owned; lastReady = ready; lastSeconds = seconds;
 
             if (lockBadge != null) lockBadge.SetActive(!owned);
-            if (label != null) label.text = !owned ? d.Price : ready ? readyText : seconds + "s";
+            if (label != null) label.text = !owned ? readyText + " · " + d.Price : ready ? readyText : seconds + "s";
             Color c = !owned ? UITheme.Bone : ready ? UITheme.Gold : UITheme.Muted;
             if (label != null) label.color = c;
             if (frame != null) frame.color = c;

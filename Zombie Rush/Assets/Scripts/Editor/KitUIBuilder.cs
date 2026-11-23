@@ -229,12 +229,15 @@ namespace ZombieRush.EditorTools
 
             root.AddComponent<HideInLobby>();
             PrefabUtility.SaveAsPrefabAssetAndConnect(root, GamePrefab, InteractionMode.AutomatedAction);
+            Debug.Log("Zombie Rush: " + BioHudInstaller.Install());   // keep the bio compass + infection meter on rebuilds
+            Debug.Log("Zombie Rush: " + HudSignsRestyler.Run());      // keep the metal key hints + wave sign on rebuilds
             var scene = root.scene;
 
             // ---- the lobby
             var lobby = BuildLobby();
             PrefabUtility.SaveAsPrefabAsset(lobby, LobbyPrefab);
             Object.DestroyImmediate(lobby);
+            Debug.Log("Zombie Rush: " + LobbyRestyler.Run());   // keep the blood-moon lobby art on rebuilds
 
             EditorSceneManager.MarkSceneDirty(scene);
             bool saved = EditorSceneManager.SaveScene(scene);

@@ -50,6 +50,9 @@ namespace ZombieRush.Effects
         // ---- kill streaks: kills close together chain into multi-kills; kills without being hurt make a spree
         static int multiKills, spree;
         static float lastKillAt = -10f;
+
+        /// Kills since the local player was last hurt (the spree behind KILLING SPREE / RAMPAGE / UNSTOPPABLE).
+        public static int Spree => spree;
         static readonly string[] SpreeNames = { "KILLING SPREE", "RAMPAGE", "UNSTOPPABLE" };
 
         static void CountStreak(FeelConfig cfg)
