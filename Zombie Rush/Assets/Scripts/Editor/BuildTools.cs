@@ -17,6 +17,15 @@ namespace ZombieRush.EditorTools
         [MenuItem("Zombie Rush/Build/Android APK", priority = 61)]
         static void AndroidMenu() => Debug.Log("Zombie Rush: " + Android());
 
+        /// Command-line entry: Unity -batchmode -quit -buildTarget Android -executeMethod ZombieRush.EditorTools.BuildTools.AndroidBatch
+        /// Exits with code 1 when the build fails, so scripts can tell.
+        public static void AndroidBatch()
+        {
+            string result = Android();
+            Debug.Log("Zombie Rush: " + result);
+            if (!result.Contains("Succeeded")) EditorApplication.Exit(1);
+        }
+
         /// The Android package name (one per app on a phone).
         const string AndroidId = "com.miansarmad.zombierush";
 
